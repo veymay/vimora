@@ -1,0 +1,9 @@
+[package]
+name = "vimora-ui"
+description = "Vimora shared design system: dark/light themes and Lucide icons for egui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+egui.workspace = true

@@ -1,0 +1,22 @@
+[package]
+name = "vimora-core"
+description = "Vimora shared protocol, networking, auth, screen capture and input injection"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+bincode.workspace = true
+tokio.workspace = true
+image.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+rand.workspace = true
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+x11rb.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
