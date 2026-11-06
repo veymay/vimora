@@ -25,7 +25,7 @@ Rust'da yozilgan, tez ishlaydi. **Windows** va **Ubuntu** uchun.
 | ⚡ **Quvvat** | O'chirish, qayta yoqish, seansdan chiqarish |
 | 🏫 **Xonalar** | Kompyuterlarni xonalarga ajratish, nomini o'zgartirish |
 
-Sichqoncha bilan belgilash (File Explorer kabi), qorong'i va yorug' mavzu, Lucide ikonlari.
+Uch til (o'zbek, ingliz, rus), sichqoncha bilan belgilash (File Explorer kabi), qorong'i va yorug' mavzu, avtomatik yangilanish.
 
 | Yorug' mavzu | Ro'yxat ko'rinishi |
 |---|---|
@@ -44,31 +44,57 @@ Ikki qism bor:
 - **`vimora-server`** — o'qituvchi kompyuteridagi konsol.
 - **`vimora-client`** — har bir o'quvchi kompyuteridagi agent.
 
-O'quvchi kompyuterlari konsolni tarmoqda (Wi-Fi yoki LAN) o'zi topadi va ulanadi. Ular bir xil
-**ulanish kaliti** bilan bir-birini taniydi — kalitni bilmagan odam kompyuterlarni boshqara olmaydi.
+Hech narsa sozlash shart emas: o'rnatsangiz bas. O'quvchi kompyuterlari konsolni tarmoqda
+(Wi-Fi yoki LAN) o'zi topadi va konsolda paydo bo'ladi — xonalarga o'qituvchi o'zi taqsimlaydi.
+
+Har bir kompyuter **birinchi topgan konsoliga bog'lanadi** va keyin faqat unga bo'ysunadi —
+boshqa kompyuterda ochilgan konsol uni boshqara olmaydi. Konsolni almashtirish kerak bo'lsa,
+o'quvchi kompyuterida administrator sifatida `vimora-client unpair` ni ishga tushiring.
 
 ---
 
 ## O'rnatish
 
-### Windows
+Tayyor o'rnatuvchilarni **[Releases](https://github.com/veymay/vimora/releases/latest)** sahifasidan yuklab oling:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File installer\windows\build.ps1
-```
+| Kompyuter | Windows | Ubuntu |
+|---|---|---|
+| O'qituvchi | `vimora-…-windows-x64-setup.exe` → **O'qituvchi** | `vimora-teacher_…_amd64.deb` |
+| O'quvchi | `vimora-…-windows-x64-setup.exe` → **O'quvchi** | `vimora-student_…_amd64.deb` |
 
-`dist\` papkasida o'rnatuvchi paydo bo'ladi. O'rnatishda **O'qituvchi** yoki **O'quvchi**
-kompyuterini tanlaysiz. O'quvchi uchun ulanish kalitini kiritasiz — qolganini o'rnatuvchi o'zi qiladi.
-
-### Ubuntu
+Ubuntu'da:
 
 ```bash
-installer/linux/package.sh
-tar xf dist/vimora-*-linux-x86_64.tar.gz && cd vimora-*-linux-x86_64
-sudo ./install.sh
+sudo apt install ./vimora-student_*_amd64.deb
 ```
 
-`1` — o'qituvchi, `2` — o'quvchi. O'chirish: `sudo ./uninstall.sh`.
+O'quvchi paketi ekranni ko'rish uchun X11 seansini yoqadi — o'rnatgandan keyin kompyuterni qayta yoqing.
+
+### Yangilanish
+
+Vimora o'zini **GitHub Releases'dan o'zi yangilaydi**. Har bir yuklab olingan fayl `SHA256SUMS`
+bilan tekshiriladi.
+
+- **O'quvchi kompyuterlari** har 6 soatda yangi versiyani tekshiradi va so'rovsiz o'rnatadi
+  (Shadow yoqilgan kompyuterlar o'tkazib yuboriladi). Sozlamalar → O'quvchi kompyuterlari'da
+  o'chirib qo'yish yoki "Hozir yangilash" mumkin.
+- **Konsol** yangi versiya chiqqanini ko'rsatadi; o'rnatish — Sozlamalar → Yangilanish → "O'rnatish".
+
+### Sozlamalar
+
+Til (**O'zbekcha, English, Русский**), mavzu (qorong'i / yorug' / tizim), kartochka o'lchami
+(100–200%), tartiblash, qulf ekrani matni va boshqalar. O'zgarishlar darhol saqlanadi.
+
+### O'zingiz yig'ish
+
+```powershell
+powershell -ExecutionPolicy Bypass -File installer\windows\build.ps1     # Windows → dist\*.exe
+```
+
+```bash
+cargo install cargo-deb
+cargo build --release && cargo deb -p vimora-server --no-build && cargo deb -p vimora-client --no-build
+```
 
 ---
 
@@ -83,8 +109,9 @@ cargo test --workspace
 ```
 
 ```
-crates/vimora-core   protokol, kalit bilan himoyalangan ulanish, ekran olish
-crates/vimora-ui     dizayn: ranglar, shriftlar, ikonlar
+crates/vimora-core   protokol, imzolangan ulanish, ekran olish
+crates/vimora-ui     dizayn: ranglar, shriftlar, ikonlar, tarjimalar
+crates/vimora-update GitHub Releases'dan o'zini yangilash
 apps/vimora-server   o'qituvchi konsoli
 apps/vimora-client   o'quvchi agenti + Vimora xizmati (Shadow, yangilanishlar, internet)
 installer/           Windows va Ubuntu o'rnatuvchilari
@@ -97,8 +124,8 @@ installer/           Windows va Ubuntu o'rnatuvchilari
 - **Shadow rejim** Windows'da faqat **Enterprise** yoki **Education** nashrida ishlaydi
   (Home/Pro'da UWF yo'q). Ubuntu'da `overlayroot` orqali ishlaydi.
 - Ubuntu'da ekranni ko'rish va boshqarish **X11** seansida ishlaydi (Wayland'da emas). O'rnatuvchi buni sozlab beradi.
-- Ulanish kalit bilan tekshiriladi, lekin trafik shifrlanmaydi — faqat ishonchli lokal tarmoqda ishlating.
-- Portlar: o'qituvchi — **TCP 47801**, o'quvchi — **UDP 47800**.
+- Buyruqlar konsol imzosi bilan tekshiriladi, lekin trafik shifrlanmaydi — faqat ishonchli lokal tarmoqda ishlating.
+- Portlar: o'qituvchi — **TCP 47801**, o'quvchi — **UDP 47800**. O'rnatuvchilar firewall'ni o'zi sozlaydi.
 - Loyiha yangi: real sinfda sinab ko'rilmoqda. Xato topsangiz, [Issue](https://github.com/veymay/vimora/issues) oching.
 
 ---

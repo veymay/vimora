@@ -1,6 +1,8 @@
 //! UI-side data: per-frame student snapshots, dialogs, actions and small formatting helpers.
 
 use super::*;
+#[allow(unused_imports)]
+use vimora_ui::{tf, tr};
 
 /// Snapshot of a student for one UI frame (so the hub lock isn't held while drawing).
 pub(super) struct View {
@@ -59,7 +61,7 @@ pub(super) enum Dialog {
         safe: bool,
     },
     Power(PowerAction),
-    Settings(Box<ServerConfig>),
+    Settings(SettingsTab),
     /// Create a room (`rename: None`) or rename one.
     Room {
         name: String,
@@ -139,11 +141,12 @@ pub(super) enum ShadowRequest {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Menu {
+    /// Locks the targets, or unlocks them when they are all locked already.
     Lock,
-    Unlock,
     Show,
     Message,
-    Launch,
+    Web,
+    Program,
     File,
     Net,
     Apps,
@@ -177,20 +180,20 @@ pub(super) fn card_height(w: f32) -> f32 {
     STRIP_H + 12.0 + (tw * 9.0 / 16.0).round() + 10.0 + 20.0 + 12.0
 }
 
-/// 6 per row = 100%.
+/// 6 per row = 100%, 3 per row = 200%.
 pub(super) fn zoom_percent(cols: u32) -> u32 {
     (DEFAULT_COLUMNS as f32 / cols as f32 * 100.0).round() as u32
 }
 
 pub(super) fn freeze_label(f: FreezeState) -> &'static str {
     match f {
-        FreezeState::Unknown => "noma'lum",
-        FreezeState::Unsupported => "qo'llanmaydi",
-        FreezeState::Thawed => "o'chiq",
+        FreezeState::Unknown => tr("noma'lum"),
+        FreezeState::Unsupported => tr("qo'llanmaydi"),
+        FreezeState::Thawed => tr("o'chiq"),
         FreezeState::Frozen => "yoqilgan",
-        FreezeState::FreezePending => "qayta yuklanganda yoqiladi",
-        FreezeState::ThawPending => "qayta yuklanganda o'chadi",
-        FreezeState::Maintenance => "xizmat rejimi",
+        FreezeState::FreezePending => tr("qayta yuklanganda yoqiladi"),
+        FreezeState::ThawPending => tr("qayta yuklanganda o'chadi"),
+        FreezeState::Maintenance => tr("xizmat rejimi"),
     }
 }
 
@@ -209,10 +212,10 @@ pub(super) fn updates_label(s: &ClientStatus) -> String {
     }
     match (s.os_updates, s.app_updates) {
         (None, None) => "tekshirilmagan".into(),
-        (o, a) => format!(
-            "tizim {}, dasturlar {}",
-            o.map_or("?".into(), |n| n.to_string()),
-            a.map_or("?".into(), |n| n.to_string())
+        (o, a) => tf!(
+            "tizim {v0}, dasturlar {v1}",
+            v0 = o.map_or("?".into(), |n| n.to_string()),
+            v1 = a.map_or("?".into(), |n| n.to_string())
         ),
     }
 }
@@ -221,8 +224,8 @@ pub(super) fn fmt_dur(s: u64) -> String {
     if s < 60 {
         format!("{s} s")
     } else if s < 3600 {
-        format!("{} daq", s / 60)
+        tf!("{v0} daq", v0 = s / 60)
     } else {
-        format!("{} soat {} daq", s / 3600, (s % 3600) / 60)
+        tf!("{v0} soat {v1} daq", v0 = s / 3600, v1 = (s % 3600) / 60)
     }
 }

@@ -84,6 +84,39 @@ impl Engine {
         self.refresh_freeze();
     }
 
+    /// Background self-update (service, every few hours) unless the teacher turned it off.
+    pub fn auto_update(self: &Arc<Self>) {
+        if self.shield.store().vimora_manual || self.inner.lock().unwrap().busy.is_some() {
+            return;
+        }
+        match self.update_vimora() {
+            Ok(m) if m.contains("o'rnatilmoqda") => self.push(true, m),
+            Ok(_) => {}
+            Err(e) => tracing::info!("self-update skipped: {e:#}"),
+        }
+    }
+
+    /// Installs the newest GitHub release if it is newer than this build.
+    fn update_vimora(&self) -> Result<String> {
+        use vimora_update::Role;
+        let rel = vimora_update::latest()?;
+        if !rel.is_newer() {
+            return Ok(format!(
+                "Vimora {} — eng so'nggi versiya",
+                vimora_update::current()
+            ));
+        }
+        if self.shield.protected_now() {
+            bail!(
+                "Shadow yoqilgan: Vimora {} ni o'rnatish uchun avval Shadow'ni o'chiring",
+                rel.version
+            );
+        }
+        let path = vimora_update::download(&rel, Role::Student, &update_dir(), &|_, _| {})?;
+        vimora_update::install_student(&path)?;
+        Ok(format!("Vimora {} o'rnatilmoqda", rel.version))
+    }
+
     /// Runs `f` on a background thread; the outcome arrives later through [`status`].
     fn job(
         self: &Arc<Self>,
@@ -124,8 +157,10 @@ impl Engine {
             PrivCommand::SetUpdatePolicy(p) => {
                 let msg = updates::set_policy(p)?;
                 self.commit(&updates::policy_touched());
+                self.shield.set_vimora_auto(p.vimora);
                 msg
             }
+            PrivCommand::UpdateVimora => self.job("Vimora yangilanmoqda", |e| e.update_vimora())?,
             PrivCommand::CheckUpdates => self.job("Yangilanishlar tekshirilmoqda", |e| {
                 let p = updates::check()?;
                 let mut i = e.inner.lock().unwrap();
@@ -293,5 +328,21 @@ impl Engine {
         for (ok, m) in events {
             self.push(ok, m);
         }
+    }
+}
+
+/// Where the service keeps downloaded installers.
+fn update_dir() -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        std::path::PathBuf::from(
+            std::env::var_os("ProgramData").unwrap_or_else(|| "C:\\ProgramData".into()),
+        )
+        .join("Vimora")
+        .join("updates")
+    }
+    #[cfg(not(windows))]
+    {
+        std::path::PathBuf::from("/var/cache/vimora")
     }
 }

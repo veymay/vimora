@@ -1,0 +1,22 @@
+[package]
+name = "vimora-update"
+description = "Vimora self-update from GitHub releases"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tracing.workspace = true
+
+# TLS: the operating system's stack and certificate store on Windows (works behind school proxies
+# with their own root CA); rustls with the system roots elsewhere.
+[target.'cfg(windows)'.dependencies]
+ureq = { version = "2", default-features = false, features = ["native-tls", "gzip"] }
+native-tls = "0.2"
+
+[target.'cfg(not(windows))'.dependencies]
+ureq = { version = "2", features = ["native-certs"] }

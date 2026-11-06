@@ -19,12 +19,20 @@ pub(super) async fn session(
     let ServerMsg::Hello {
         version,
         nonce: server_nonce,
+        console_key,
     } = tokio::time::timeout(Duration::from_secs(5), read_msg(&mut rd)).await??
     else {
         bail!("unexpected first message");
     };
     if version != PROTOCOL_VERSION {
         bail!("protocol mismatch: console v{version}, agent v{PROTOCOL_VERSION}");
+    }
+    let pinned = *ctx.pin.lock().unwrap();
+    if pinned.is_some_and(|k| k != console_key) {
+        bail!(
+            "boshqa konsol ({}) — bu kompyuter boshqa konsolga bog'langan",
+            auth::fingerprint(&console_key)
+        );
     }
     let client_nonce = auth::nonce();
     let info = ClientInfo {
@@ -34,55 +42,42 @@ pub(super) async fn session(
         display_name: cfg.name.clone(),
         machine_id: system::machine_id(),
     };
-    let mac = if cfg.key.is_empty() {
-        match service::call(IpcReq::ClientMac {
-            server_nonce: server_nonce.clone(),
-            client_nonce: client_nonce.clone(),
-        })
-        .await?
-        {
-            IpcResp::Mac(m) => m,
-            _ => bail!("Vimora xizmati noto'g'ri javob berdi"),
-        }
-    } else {
-        auth::client_mac(&cfg.key, &server_nonce, &client_nonce)
-    };
     write_msg(
         &mut wr,
         &ClientMsg::Hello {
             version: PROTOCOL_VERSION,
             nonce: client_nonce.clone(),
-            mac,
             info,
         },
     )
     .await?;
     let ServerMsg::Welcome {
-        mac,
+        sig,
         stream: initial,
-    } = tokio::time::timeout(Duration::from_secs(5), read_msg(&mut rd))
-        .await?
-        .context("console rejected us (wrong connection key?)")?
+    } = tokio::time::timeout(Duration::from_secs(5), read_msg(&mut rd)).await??
     else {
-        bail!("console rejected us (wrong connection key?)");
+        bail!("unexpected welcome");
     };
-    // The service (if any) verifies too, and remembers the session for signed commands.
-    let by_service = matches!(
-        service::call(IpcReq::VerifyServer {
-            client_nonce: client_nonce.clone(),
-            server_nonce: server_nonce.clone(),
-            mac: mac.clone()
-        })
-        .await,
-        Ok(IpcResp::Verified(true))
-    );
-    let ok = if cfg.key.is_empty() {
-        by_service
-    } else {
-        auth::verify_server(&cfg.key, &client_nonce, &server_nonce, &mac)
-    };
-    if !ok {
-        bail!("console failed authentication — ignoring it");
+    // The console must prove it owns the key it announced (no impersonation of a paired console).
+    if !auth::verify_welcome(&console_key, &client_nonce, &server_nonce, &sig) {
+        bail!("konsol imzosi noto'g'ri — e'tiborsiz qoldirildi");
+    }
+    // The service pairs on first contact (and refuses a different console afterwards).
+    match service::call(IpcReq::VerifyServer {
+        console_key,
+        client_nonce: client_nonce.clone(),
+        server_nonce: server_nonce.clone(),
+        sig: sig.clone(),
+    })
+    .await
+    {
+        Ok(IpcResp::Verified(true)) | Err(_) => {}
+        Ok(_) => bail!("Vimora xizmati bu konsolni rad etdi (boshqa konsolga bog'langan)"),
+    }
+    if pinned.is_none() {
+        info!("paired with console {}", auth::fingerprint(&console_key));
+        crate::config::save_pin(&console_key);
+        *ctx.pin.lock().unwrap() = Some(console_key);
     }
     *ctx.session.lock().unwrap() = (client_nonce.clone(), 0);
     info!("authenticated with console {addr}");
@@ -168,9 +163,9 @@ pub(super) async fn session(
                 ServerMsg::Privileged {
                     counter,
                     payload,
-                    mac,
+                    sig,
                 } => {
-                    let (ok, message) = match privileged(ctx, counter, payload, mac).await {
+                    let (ok, message) = match privileged(ctx, counter, payload, sig).await {
                         Ok(m) => (true, m),
                         Err(e) => (false, format!("{e:#}")),
                     };
@@ -265,17 +260,17 @@ pub(super) fn spawn_self(args: &[&str]) -> Result<()> {
 }
 
 /// Handles a console-signed privileged command: forwards it to the Vimora service, or (dev mode,
-/// key in the agent config) verifies and runs it locally.
+/// no service running) verifies it against the paired console and runs it locally.
 pub(super) async fn privileged(
     ctx: &Ctx,
     counter: u64,
     payload: Vec<u8>,
-    mac: Vec<u8>,
+    sig: Vec<u8>,
 ) -> Result<String> {
     let cmd: PrivCommand = bincode::deserialize(&payload)?;
     // Logging off has to happen in the user's own session.
     if cmd == PrivCommand::Power(PowerAction::Logoff) {
-        verify_locally_or_trust(ctx, counter, &payload, &mac)?;
+        verify_locally(ctx, counter, &payload, &sig)?;
         system::power(PowerAction::Logoff)?;
         return Ok("seansdan chiqarilmoqda".into());
     }
@@ -284,22 +279,21 @@ pub(super) async fn privileged(
         client_nonce,
         counter,
         payload: payload.clone(),
-        mac: mac.clone(),
+        sig: sig.clone(),
     })
     .await
     {
         Ok(IpcResp::Done { ok: true, message }) => Ok(message),
         Ok(IpcResp::Done { ok: false, message }) => Err(anyhow::anyhow!(message)),
         Ok(_) => Err(anyhow::anyhow!("Vimora xizmati noto'g'ri javob berdi")),
-        Err(e) if !ctx.key.is_empty() => {
+        Err(e) => {
             // No service: run here (works only if the agent itself has the rights).
-            verify_locally_or_trust(ctx, counter, &payload, &mac)?;
+            verify_locally(ctx, counter, &payload, &sig)?;
             let (engine, c) = (ctx.engine.clone(), cmd.clone());
             tokio::task::spawn_blocking(move || engine.execute(c))
                 .await?
                 .map_err(|err| anyhow::anyhow!("{err:#} (Vimora xizmati o'rnatilmagan: {e:#})"))
         }
-        Err(e) => Err(e),
     };
     if res.is_ok() {
         if let PrivCommand::SetNetPolicy(p) = cmd {
@@ -317,17 +311,12 @@ pub(super) async fn privileged(
     res
 }
 
-pub(super) fn verify_locally_or_trust(
-    ctx: &Ctx,
-    counter: u64,
-    payload: &[u8],
-    mac: &[u8],
-) -> Result<()> {
-    if ctx.key.is_empty() {
-        return Ok(()); // the console connection itself was authenticated by the service
-    }
+pub(super) fn verify_locally(ctx: &Ctx, counter: u64, payload: &[u8], sig: &[u8]) -> Result<()> {
+    let Some(key) = *ctx.pin.lock().unwrap() else {
+        bail!("kompyuter hali konsolga bog'lanmagan");
+    };
     let mut s = ctx.session.lock().unwrap();
-    if counter <= s.1 || !auth::verify_priv(&ctx.key, &s.0, counter, payload, mac) {
+    if counter <= s.1 || !auth::verify_priv(&key, &s.0, counter, payload, sig) {
         bail!("imzo noto'g'ri — buyruq rad etildi");
     }
     s.1 = counter;

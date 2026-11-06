@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Bumped whenever the wire format changes incompatibly.
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 10;
 
 /// UDP port the teacher console broadcasts discovery beacons on.
 pub const DISCOVERY_PORT: u16 = 47800;
@@ -19,9 +19,10 @@ pub const BEACON_MAGIC: &[u8; 8] = b"VIMORA01";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Beacon {
     pub version: u32,
-    pub room: String,
     pub server_name: String,
     pub tcp_port: u16,
+    /// The console's public key: paired PCs connect only to the console they pinned.
+    pub console_key: crate::auth::ConsoleKey,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -166,6 +167,13 @@ pub struct UpdatePolicy {
     pub os: OsUpdateMode,
     /// Let applications (Store/winget/snap, Chrome, Edge) update themselves.
     pub apps_auto: bool,
+    /// Vimora updates itself from the project's GitHub releases.
+    #[serde(default = "yes")]
+    pub vimora: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// Commands that need administrator/root rights. They are signed by the console and executed
@@ -178,6 +186,8 @@ pub enum PrivCommand {
     },
     SetUpdatePolicy(UpdatePolicy),
     CheckUpdates,
+    /// Update Vimora itself to the latest GitHub release now.
+    UpdateVimora,
     InstallUpdates {
         os: bool,
         apps: bool,
@@ -339,9 +349,11 @@ pub enum ServerMsg {
     Hello {
         version: u32,
         nonce: Vec<u8>,
+        console_key: crate::auth::ConsoleKey,
     },
+    /// `sig` = console's signature over (client nonce, server nonce).
     Welcome {
-        mac: Vec<u8>,
+        sig: Vec<u8>,
         stream: StreamConfig,
     },
     Command(Command),
@@ -352,11 +364,11 @@ pub enum ServerMsg {
         height: u32,
         jpeg: Vec<u8>,
     },
-    /// Signed [`PrivCommand`] (bincode in `payload`), see [`crate::auth::priv_mac`].
+    /// Signed [`PrivCommand`] (bincode in `payload`), see [`crate::auth::Identity::sign_priv`].
     Privileged {
         counter: u64,
         payload: Vec<u8>,
-        mac: Vec<u8>,
+        sig: Vec<u8>,
     },
     Ping,
 }
@@ -366,7 +378,6 @@ pub enum ClientMsg {
     Hello {
         version: u32,
         nonce: Vec<u8>,
-        mac: Vec<u8>,
         info: ClientInfo,
     },
     Frame {

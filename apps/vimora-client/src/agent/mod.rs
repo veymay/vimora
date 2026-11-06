@@ -100,8 +100,8 @@ struct Ctx {
     state: Shared,
     /// Local executor, used only when no Vimora service is running (dev / unprivileged mode).
     engine: Arc<Engine>,
-    /// Connection key from the agent config. Empty in installed mode: the service holds it.
-    key: Arc<String>,
+    /// The console this PC follows (public key), once paired.
+    pin: Arc<Mutex<Option<vimora_core::auth::ConsoleKey>>>,
     /// Client nonce + last privileged counter of the current session (local verification).
     session: Arc<Mutex<(Vec<u8>, u64)>>,
     /// Sender of the current session (None while disconnected).
@@ -111,15 +111,12 @@ struct Ctx {
 }
 
 pub async fn run(cfg: Config) -> Result<()> {
-    info!(
-        "Vimora agent starting (room: {:?})",
-        if cfg.room.is_empty() { "*" } else { &cfg.room }
-    );
+    info!("Vimora agent starting");
     let state: Shared = Arc::default();
     let ctx = Ctx {
         state: state.clone(),
         engine: Engine::new(),
-        key: Arc::new(cfg.key.clone()),
+        pin: Arc::new(Mutex::new(None)),
         session: Arc::default(),
         uplink: Arc::default(),
         chat: Arc::default(),
@@ -127,6 +124,7 @@ pub async fn run(cfg: Config) -> Result<()> {
     let (ov_tx, ov_rx) = mpsc::channel(16);
     tokio::spawn(overlay_task(state.clone(), ov_rx));
     tokio::spawn(blocker_task(state.clone()));
+    tokio::spawn(restart_on_update());
     tokio::spawn(net_enforce_task(ctx.engine.clone()));
     tokio::spawn(service_status_task(ctx.clone()));
     {
@@ -142,9 +140,10 @@ pub async fn run(cfg: Config) -> Result<()> {
     ));
 
     loop {
+        let pin = refresh_pin(&ctx).await;
         let addr = match &cfg.server {
             Some(s) => s.clone(),
-            None => discover(&cfg.room).await,
+            None => discover(pin).await,
         };
         info!("connecting to console {addr}");
         match session(&cfg, &addr, &ctx, &ov_tx).await {
@@ -164,7 +163,19 @@ pub async fn run(cfg: Config) -> Result<()> {
 }
 
 /// Wait for a console beacon matching our room; returns "ip:port".
-async fn discover(room: &str) -> String {
+/// The console this PC follows: the service's pairing is authoritative (it can't be edited by
+/// the student); without a service the agent's own copy is used.
+async fn refresh_pin(ctx: &Ctx) -> Option<vimora_core::auth::ConsoleKey> {
+    let pin = match service::call(IpcReq::Pin).await {
+        Ok(IpcResp::Pin(p)) => p,
+        _ => crate::config::pin(),
+    };
+    *ctx.pin.lock().unwrap() = pin;
+    pin
+}
+
+/// Waits for a console beacon; once paired, only the paired console's beacon counts.
+async fn discover(pin: Option<vimora_core::auth::ConsoleKey>) -> String {
     loop {
         let sock = match UdpSocket::bind(("0.0.0.0", DISCOVERY_PORT)).await {
             Ok(s) => s,
@@ -182,18 +193,44 @@ async fn discover(room: &str) -> String {
             let Some(b) = vimora_core::net::decode_beacon(&buf[..n]) else {
                 continue;
             };
-            if b.version != PROTOCOL_VERSION {
+            if b.version != PROTOCOL_VERSION || pin.is_some_and(|k| k != b.console_key) {
                 continue;
             }
-            if room.is_empty() || b.room.eq_ignore_ascii_case(room) {
-                info!(
-                    "found console '{}' (room '{}') at {}",
-                    b.server_name,
-                    b.room,
-                    src.ip()
-                );
-                return format!("{}:{}", src.ip(), b.tcp_port);
+            info!(
+                "found console '{}' at {} ({})",
+                b.server_name,
+                src.ip(),
+                vimora_core::auth::fingerprint(&b.console_key)
+            );
+            return format!("{}:{}", src.ip(), b.tcp_port);
+        }
+    }
+}
+
+/// After an update replaced our executable on disk, start the new one and quit (the installer
+/// renames or unlinks the running file, so this process keeps working until then).
+async fn restart_on_update() {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let stamp = |p: &std::path::Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    let Some(start) = stamp(&exe) else { return };
+    loop {
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        match stamp(&exe) {
+            Some(t) if t != start => {
+                // Let the installer finish writing the file.
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                let args: Vec<String> = std::env::args().skip(1).collect();
+                match std::process::Command::new(&exe).args(&args).spawn() {
+                    Ok(_) => {
+                        info!("Vimora was updated — restarting");
+                        std::process::exit(0);
+                    }
+                    Err(e) => warn!("cannot start the updated agent: {e}"),
+                }
             }
+            _ => {}
         }
     }
 }

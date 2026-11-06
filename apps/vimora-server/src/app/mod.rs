@@ -11,9 +11,12 @@ mod model;
 mod overlay;
 mod rooms;
 mod selection;
+mod settings;
 mod viewer;
 
 use crate::config::{self, split_list, ServerConfig, ViewMode};
+#[allow(unused_imports)]
+use vimora_ui::{tf, tr};
 
 use crate::net::{thumb_stream, Level, SharedConfig, SharedHub, Show};
 
@@ -36,17 +39,21 @@ use vimora_core::{
 };
 
 use forms::*;
+use header::NavGroup;
 use model::*;
 use selection::*;
+use settings::*;
 use vimora_ui::{self as ui_kit, icons, with_icon, Kind, Palette, ThemeMode};
 
 const HEADER_H: f32 = 64.0;
 
 const DEFAULT_COLUMNS: u32 = 6;
 
-const MIN_COLUMNS: u32 = 2;
+/// 200%: three computers per row at most.
+const MIN_COLUMNS: u32 = 3;
 
-const MAX_COLUMNS: u32 = 12;
+/// 100% (the default) is the smallest card size.
+const MAX_COLUMNS: u32 = 6;
 
 const STRIP_H: f32 = 36.0;
 
@@ -56,7 +63,15 @@ pub struct ConsoleApp {
     hub: SharedHub,
     cfg: SharedConfig,
     show: Arc<Show>,
+    updater: crate::update::Updater,
     theme: ThemeMode,
+    /// Open header dropdown and the cell it hangs from.
+    nav_open: Option<NavGroup>,
+    nav_anchor: Rect,
+    /// Settings changed and not written to disk yet (saved shortly after the last edit).
+    settings_dirty: Option<Instant>,
+    /// Last automatic save (for the "saved" hint in the settings window).
+    saved_at: Option<Instant>,
     selected: BTreeSet<u64>,
     search: String,
     room_tab: RoomTab,
@@ -92,11 +107,17 @@ impl ConsoleApp {
         hub: SharedHub,
         cfg: SharedConfig,
         show: Arc<Show>,
+        updater: crate::update::Updater,
     ) -> Self {
-        let theme = if cfg.read().unwrap().dark_mode {
-            ThemeMode::Dark
-        } else {
-            ThemeMode::Light
+        updater.set_ctx(cc.egui_ctx.clone());
+        let theme = {
+            let c = cfg.read().unwrap();
+            let system_light = cc.egui_ctx.system_theme() == Some(egui::Theme::Light);
+            if (c.theme_system && !system_light) || (!c.theme_system && c.dark_mode) {
+                ThemeMode::Dark
+            } else {
+                ThemeMode::Light
+            }
         };
         ui_kit::install_fonts(&cc.egui_ctx);
         ui_kit::apply_theme(&cc.egui_ctx, theme);
@@ -106,7 +127,12 @@ impl ConsoleApp {
             hub,
             cfg,
             show,
+            updater,
             theme,
+            nav_open: None,
+            nav_anchor: Rect::NOTHING,
+            settings_dirty: None,
+            saved_at: None,
             selected: BTreeSet::new(),
             search: String::new(),
             room_tab: RoomTab::All,
@@ -134,9 +160,20 @@ impl ConsoleApp {
         match std::env::var("VIMORA_OPEN").as_deref() {
             Ok("net") => app.dev_open = Some(app.net_dialog()),
             Ok("activity") => app.dev_open = Some(Dialog::Activity),
-            Ok("settings") => {
-                let c = app.cfg.read().unwrap().clone();
-                app.dev_open = Some(Dialog::Settings(Box::new(c)));
+            Ok("settings") => app.dev_open = Some(Dialog::Settings(SettingsTab::General)),
+            Ok("nav:send") => app.nav_open = Some(NavGroup::Send),
+            Ok("nav:restrict") => app.nav_open = Some(NavGroup::Restrict),
+            Ok("nav:system") => app.nav_open = Some(NavGroup::System),
+            Ok(s) if s.starts_with("settings:") => {
+                let tab = match &s[9..] {
+                    "appearance" => SettingsTab::Appearance,
+                    "lock" => SettingsTab::LockScreen,
+                    "students" => SettingsTab::Students,
+                    "updates" => SettingsTab::Updates,
+                    "about" => SettingsTab::About,
+                    _ => SettingsTab::General,
+                };
+                app.dev_open = Some(Dialog::Settings(tab));
             }
             Ok("room") => {
                 app.dev_open = Some(Dialog::Room {
@@ -210,9 +247,9 @@ impl ConsoleApp {
     }
 
     fn snapshot(&self) -> Vec<View> {
-        let (assignments, aliases) = {
+        let (assignments, aliases, sort) = {
             let c = self.cfg.read().unwrap();
-            (c.assignments.clone(), c.aliases.clone())
+            (c.assignments.clone(), c.aliases.clone(), c.sort)
         };
         let h = self.hub.lock().unwrap();
         let mut list: Vec<_> = h.students.iter().collect();
@@ -223,7 +260,10 @@ impl ConsoleApp {
                 .cloned()
                 .unwrap_or_else(|| s.info.label().to_string())
         };
-        list.sort_by_key(|(_, s)| natural_key(&label(s)));
+        match sort {
+            config::SortBy::Name => list.sort_by_key(|(_, s)| natural_key(&label(s))),
+            config::SortBy::Ip => list.sort_by_key(|(_, s)| (s.addr.ip(), natural_key(&label(s)))),
+        }
         list.into_iter()
             .enumerate()
             .map(|(i, (id, s))| View {
@@ -270,17 +310,22 @@ impl ConsoleApp {
         let mut h = self.hub.lock().unwrap();
         let n = h.send(ids, &ServerMsg::Command(cmd));
         if !what.is_empty() {
-            h.log(Level::Info, format!("{what} → {n} ta kompyuter"));
+            h.log(
+                Level::Info,
+                tf!("{what} → {n} ta kompyuter", what = what, n = n),
+            );
         }
     }
 
     /// Signed command executed by the privileged Vimora service on each PC.
     fn send_priv(&self, ids: &[u64], cmd: PrivCommand, what: &str) {
-        let key = self.cfg.read().unwrap().key.clone();
         let mut h = self.hub.lock().unwrap();
-        let n = h.send_priv(ids, &cmd, &key);
+        let n = h.send_priv(ids, &cmd);
         if !what.is_empty() {
-            h.log(Level::Info, format!("{what} → {n} ta kompyuter"));
+            h.log(
+                Level::Info,
+                tf!("{what} → {n} ta kompyuter", what = what, n = n),
+            );
         }
     }
 
@@ -289,19 +334,19 @@ impl ConsoleApp {
             let c = self.cfg.read().unwrap();
             (c.lock_title.clone(), c.lock_message.clone())
         };
-        self.send(ids, Command::Lock { title, message }, "Qulflash");
+        self.send(ids, Command::Lock { title, message }, tr("Qulflash"));
     }
 
     fn set_show(&mut self, on: bool, all: &[View]) {
         if on {
             let t = self.targets(all);
             *self.show.targets.lock().unwrap() = t.clone();
-            self.send(&t, Command::ShowStart, "Namoyish boshlandi");
+            self.send(&t, Command::ShowStart, tr("Namoyish boshlandi"));
             self.show.active.store(true, Ordering::Relaxed);
         } else {
             self.show.active.store(false, Ordering::Relaxed);
             let t = std::mem::take(&mut *self.show.targets.lock().unwrap());
-            self.send(&t, Command::ShowStop, "Namoyish to'xtatildi");
+            self.send(&t, Command::ShowStop, tr("Namoyish to'xtatildi"));
         }
         self.showing = on;
     }
@@ -324,11 +369,37 @@ impl ConsoleApp {
     }
 
     fn set_theme(&mut self, ctx: &egui::Context, t: ThemeMode) {
-        self.theme = t;
-        ui_kit::apply_theme(ctx, t);
-        let mut c = self.cfg.write().unwrap();
-        c.dark_mode = t == ThemeMode::Dark;
-        config::save(&c);
+        if self.theme != t {
+            self.theme = t;
+            ui_kit::apply_theme(ctx, t);
+        }
+    }
+
+    /// The theme the settings ask for right now ("system" follows the OS).
+    fn wanted_theme(&self, ctx: &egui::Context) -> ThemeMode {
+        let c = self.cfg.read().unwrap();
+        let dark = if c.theme_system {
+            ctx.system_theme() != Some(egui::Theme::Light)
+        } else {
+            c.dark_mode
+        };
+        if dark {
+            ThemeMode::Dark
+        } else {
+            ThemeMode::Light
+        }
+    }
+
+    /// Writes settings to disk shortly after the last change (they apply immediately anyway).
+    fn autosave(&mut self) {
+        if self
+            .settings_dirty
+            .is_some_and(|t| t.elapsed() > Duration::from_millis(400))
+        {
+            self.settings_dirty = None;
+            config::save(&self.cfg.read().unwrap());
+            self.saved_at = Some(Instant::now());
+        }
     }
 
     fn columns(&self) -> u32 {
@@ -370,8 +441,16 @@ impl ConsoleApp {
     fn menu(&mut self, m: Menu, all: &[View]) {
         let t = self.targets(all);
         match m {
-            Menu::Lock => self.lock(&t),
-            Menu::Unlock => self.send(&t, Command::Unlock, "Qulfdan chiqarish"),
+            Menu::Lock => {
+                let all_locked = !t.is_empty()
+                    && t.iter()
+                        .all(|id| all.iter().any(|v| v.id == *id && v.status.locked));
+                if all_locked {
+                    self.send(&t, Command::Unlock, tr("Qulfdan chiqarish"));
+                } else {
+                    self.lock(&t);
+                }
+            }
             Menu::Show => {
                 let on = !self.showing;
                 self.set_show(on, all);
@@ -386,8 +465,8 @@ impl ConsoleApp {
                     });
                 }
             }
-            Menu::Launch => self.open_dialog(Dialog::Launch {
-                web: true,
+            Menu::Web | Menu::Program => self.open_dialog(Dialog::Launch {
+                web: m == Menu::Web,
                 url: "https://".into(),
                 program: String::new(),
                 args: String::new(),
@@ -447,7 +526,7 @@ impl ConsoleApp {
         }
         if u {
             let t = self.targets(all);
-            self.send(&t, Command::Unlock, "Qulfdan chiqarish");
+            self.send(&t, Command::Unlock, tr("Qulfdan chiqarish"));
         }
         if zin {
             self.set_columns(self.columns() - 1);
@@ -488,6 +567,13 @@ impl ConsoleApp {
 impl eframe::App for ConsoleApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.snapshots(ctx);
+        let want = self.wanted_theme(ctx);
+        self.set_theme(ctx, want);
+        if self.updater.take_exit() {
+            // Windows: the installer is replacing the console.
+            config::save(&self.cfg.read().unwrap());
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         self.sync_textures(ctx);
         let all = self.snapshot();
         if self.showing && !self.show.active.load(Ordering::Relaxed) {
@@ -515,6 +601,7 @@ impl eframe::App for ConsoleApp {
             self.grid(ctx, &p, &all);
         }
         self.dialogs(ctx, &p, &all);
+        self.autosave();
         self.dev_screenshot(ctx);
         // Dev aid: VIMORA_DEV_PRIV=check sends a signed CheckUpdates to everyone once, 4 s after start.
         // Dev aid: VIMORA_DEV_PRIV=chat sends one chat message 4 s after start.
@@ -524,7 +611,7 @@ impl eframe::App for ConsoleApp {
         {
             if let Some(Dialog::Message { text, send }) = &mut self.dialog {
                 self.dev_priv_sent = true;
-                *text = "Salom! Bugun 3-mavzuni boshlaymiz, kitobni oching.".into();
+                *text = tr("Salom! Bugun 3-mavzuni boshlaymiz, kitobni oching.").into();
                 *send = true;
             }
         }
@@ -537,7 +624,7 @@ impl eframe::App for ConsoleApp {
             self.send_priv(
                 &ids,
                 PrivCommand::CheckUpdates,
-                "DEV: yangilanishlarni tekshirish",
+                tr("DEV: yangilanishlarni tekshirish"),
             );
         }
         if std::mem::take(&mut self.want_snapshot) {

@@ -1,12 +1,12 @@
 //! The privileged Vimora service (`vimora-client service`), running as SYSTEM / root.
 //!
-//! It holds the connection key (in a file only administrators can read), so the user-session
-//! agent asks it to compute/verify handshake MACs, and it only executes privileged commands that
-//! carry a valid console signature for the current session. Talks to the agent over
-//! `127.0.0.1:47802`.
+//! It **pins** the public key of the first console the PC pairs with (in a file only
+//! administrators can write) and executes privileged commands only when they carry that
+//! console's signature for the current session. Talks to the user-session agent over
+//! `127.0.0.1:47802`. `vimora-client unpair` (admin) forgets the console.
 
 use crate::privileged::{Engine, PrivStatus};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -14,7 +14,7 @@ use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{info, warn};
 use vimora_core::{
-    auth,
+    auth::{self, ConsoleKey},
     net::{read_msg, write_msg},
     PrivCommand,
 };
@@ -23,36 +23,84 @@ pub const DEFAULT_PORT: u16 = 47802;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IpcReq {
-    ClientMac {
-        server_nonce: Vec<u8>,
-        client_nonce: Vec<u8>,
-    },
+    /// Which console this PC is paired with (None = not paired yet).
+    Pin,
+    /// Check a console's session signature; pairs with it if the PC isn't paired yet.
     VerifyServer {
+        console_key: ConsoleKey,
         client_nonce: Vec<u8>,
         server_nonce: Vec<u8>,
-        mac: Vec<u8>,
+        sig: Vec<u8>,
     },
     Privileged {
         /// Which verified console session the command belongs to.
         client_nonce: Vec<u8>,
         counter: u64,
         payload: Vec<u8>,
-        mac: Vec<u8>,
+        sig: Vec<u8>,
     },
     Status,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IpcResp {
-    Mac(Vec<u8>),
+    Pin(Option<ConsoleKey>),
     Verified(bool),
     Done { ok: bool, message: String },
     Status(PrivStatus),
 }
 
+/// The service's persistent state: the console this PC obeys.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ServiceConfig {
-    pub key: String,
+    /// Hex public key of the paired console.
+    pub console_key: Option<String>,
+}
+
+impl ServiceConfig {
+    fn load() -> Self {
+        std::fs::read_to_string(config_path())
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    fn save(&self) -> Result<()> {
+        let path = config_path();
+        std::fs::create_dir_all(path.parent().unwrap())?;
+        std::fs::write(&path, serde_json::to_string_pretty(self)?)?;
+        restrict(&path)
+    }
+
+    fn pinned(&self) -> Option<ConsoleKey> {
+        self.console_key.as_deref().and_then(auth::key_from_hex)
+    }
+}
+
+/// Trust-on-first-use pairing, persisted by the service.
+struct Pairing(Mutex<ServiceConfig>);
+
+impl Pairing {
+    fn get(&self) -> Option<ConsoleKey> {
+        self.0.lock().unwrap().pinned()
+    }
+
+    /// True if `key` is (now) the paired console.
+    fn accept(&self, key: &ConsoleKey) -> bool {
+        let mut c = self.0.lock().unwrap();
+        match c.pinned() {
+            Some(k) => k == *key,
+            None => {
+                c.console_key = Some(auth::to_hex(key));
+                if let Err(e) = c.save() {
+                    warn!("cannot save pairing: {e:#}");
+                }
+                info!("paired with console {}", auth::fingerprint(key));
+                true
+            }
+        }
+    }
 }
 
 pub fn config_path() -> PathBuf {
@@ -122,20 +170,26 @@ impl Sessions {
 }
 
 pub fn run() -> Result<()> {
-    let path = config_path();
-    let cfg: ServiceConfig = serde_json::from_str(
-        &std::fs::read_to_string(&path).with_context(|| format!("{} topilmadi", path.display()))?,
-    )?;
-    if cfg.key.is_empty() {
-        bail!("{} da ulanish kaliti yo'q", path.display());
-    }
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-    rt.block_on(serve(cfg.key))
+    rt.block_on(serve(Pairing(Mutex::new(ServiceConfig::load()))))
 }
 
-async fn serve(key: String) -> Result<()> {
+/// `vimora-client unpair`: forget the console (the next one found is paired).
+pub fn unpair() -> Result<()> {
+    ServiceConfig::default().save()?;
+    let _ = crate::config::forget_pin();
+    println!("Konsol bilan bog'lanish o'chirildi. Keyingi topilgan konsol bilan qayta bog'lanadi.");
+    Ok(())
+}
+
+async fn serve(pairing: Pairing) -> Result<()> {
+    // Bind first: the watchdog starts a second copy every few minutes, and it must exit before
+    // touching anything (resuming a commit cycle, updating…).
+    let listener = TcpListener::bind(("127.0.0.1", port())).await?;
+    info!("Vimora service listening on 127.0.0.1:{}", port());
+    cleanup_old_binaries();
     let engine = Engine::new();
     {
         let e = engine.clone();
@@ -155,40 +209,61 @@ async fn serve(key: String) -> Result<()> {
             }
         });
     }
+    {
+        // Self-update from GitHub: shortly after start, then every 6 hours.
+        let e = engine.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(180));
+            loop {
+                e.auto_update();
+                std::thread::sleep(Duration::from_secs(6 * 3600));
+            }
+        });
+    }
     let session: Arc<Mutex<Sessions>> = Arc::default();
-    let listener = TcpListener::bind(("127.0.0.1", port())).await?;
-    info!("Vimora service listening on 127.0.0.1:{}", port());
-    let key = Arc::new(key);
+    let pairing = Arc::new(pairing);
     loop {
         let (mut s, _) = listener.accept().await?;
-        let (key, engine, session) = (key.clone(), engine.clone(), session.clone());
+        let (pairing, engine, session) = (pairing.clone(), engine.clone(), session.clone());
         tokio::spawn(async move {
             let Ok(req) = read_msg::<_, IpcReq>(&mut s).await else {
                 return;
             };
-            let resp = handle(req, &key, &engine, &session).await;
+            let resp = handle(req, &pairing, &engine, &session).await;
             let _ = write_msg(&mut s, &resp).await;
         });
     }
 }
 
+/// The Windows installer renames running executables to `*.old.exe` before replacing them.
+fn cleanup_old_binaries() {
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+    {
+        for n in ["vimora-client.old.exe", "vimora-server.old.exe"] {
+            let _ = std::fs::remove_file(dir.join(n));
+        }
+    }
+}
+
 async fn handle(
     req: IpcReq,
-    key: &str,
+    pairing: &Pairing,
     engine: &Arc<Engine>,
     session: &Mutex<Sessions>,
 ) -> IpcResp {
     match req {
-        IpcReq::ClientMac {
-            server_nonce,
-            client_nonce,
-        } => IpcResp::Mac(auth::client_mac(key, &server_nonce, &client_nonce)),
+        IpcReq::Pin => IpcResp::Pin(pairing.get()),
         IpcReq::VerifyServer {
+            console_key,
             client_nonce,
             server_nonce,
-            mac,
+            sig,
         } => {
-            let ok = auth::verify_server(key, &client_nonce, &server_nonce, &mac);
+            // Signature first, so a forged hello can't pair the PC with a fake console.
+            let ok = auth::verify_welcome(&console_key, &client_nonce, &server_nonce, &sig)
+                && pairing.accept(&console_key);
             if ok {
                 session.lock().unwrap().add(client_nonce);
             }
@@ -198,8 +273,14 @@ async fn handle(
             client_nonce,
             counter,
             payload,
-            mac,
+            sig,
         } => {
+            let Some(console) = pairing.get() else {
+                return IpcResp::Done {
+                    ok: false,
+                    message: "konsol bilan bog'lanmagan".into(),
+                };
+            };
             let cmd = {
                 let mut s = session.lock().unwrap();
                 let Some((last_counter, _)) = s.map.get_mut(&client_nonce) else {
@@ -209,7 +290,7 @@ async fn handle(
                     };
                 };
                 if counter <= *last_counter
-                    || !auth::verify_priv(key, &client_nonce, counter, &payload, &mac)
+                    || !auth::verify_priv(&console, &client_nonce, counter, &payload, &sig)
                 {
                     warn!("rejected privileged command (bad signature or replay)");
                     return IpcResp::Done {
@@ -259,26 +340,15 @@ async fn handle(
 // ---------------------------------------------------------------------------------------------
 // `vimora-client setup`: writes configs and registers the service (run elevated by installers).
 
-pub fn setup(key: &str, server: Option<String>, name: Option<String>) -> Result<()> {
-    if key.is_empty() {
-        bail!("--key kerak");
-    }
-    // Service config: key, readable only by SYSTEM/Administrators (root).
+pub fn setup(server: Option<String>, name: Option<String>) -> Result<()> {
+    // Service state (pairing), writable only by SYSTEM/Administrators (root).
     let path = config_path();
-    std::fs::create_dir_all(path.parent().unwrap())?;
-    std::fs::write(
-        &path,
-        serde_json::to_string_pretty(&ServiceConfig { key: key.into() })?,
-    )?;
+    if !path.exists() {
+        ServiceConfig::default().save()?;
+    }
     restrict(&path)?;
-
-    // Agent config without the key: the agent authenticates through the service.
-    let cfg = crate::config::Config {
-        key: String::new(),
-        server,
-        name,
-        ..Default::default()
-    };
+    // Re-running setup (every update does) keeps what an earlier install configured.
+    let cfg = crate::config::load().merge_cli(server, name);
     let cpath = crate::config::save(&cfg)?;
     println!("agent: {}\nservice: {}", cpath.display(), path.display());
     register()
@@ -362,7 +432,9 @@ fn register() -> Result<()> {
     );
     std::fs::write("/etc/systemd/system/vimora-service.service", unit)?;
     crate::sh::run_ok("systemctl", &["daemon-reload"])?;
-    crate::sh::run_ok("systemctl", &["enable", "--now", "vimora-service"])?;
+    crate::sh::run_ok("systemctl", &["enable", "vimora-service"])?;
+    // `restart`, not `start`: after an update the old service must make way for the new one.
+    crate::sh::run_ok("systemctl", &["restart", "vimora-service"])?;
     println!("vimora-service.service yoqildi");
     Ok(())
 }

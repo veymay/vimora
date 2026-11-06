@@ -3,12 +3,12 @@
 #
 #   sudo ./install.sh                         # interactive: asks teacher or student
 #   sudo ./install.sh --role teacher
-#   sudo ./install.sh --role student --key "maxfiy" [--server 192.168.1.10:47801] [--name PC-12] [--x11]
+#   sudo ./install.sh --role student [--server 192.168.1.10:47801] [--name PC-12] [--x11]
 #
 # Looks for vimora-server / vimora-client next to this script, else in ../../target/release.
 set -euo pipefail
 
-ROLE="" ROOM="" KEY="" SERVER="" NAME="" FORCE_X11=""
+ROLE="" SERVER="" NAME="" FORCE_X11=""
 PREFIX=/opt/vimora
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -19,8 +19,6 @@ die()  { printf '%sXato:%s %s\n' "$c_red" "$c_off" "$*" >&2; exit 1; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --role) ROLE="$2"; shift 2 ;;
-    --room) ROOM="$2"; shift 2 ;;
-    --key) KEY="$2"; shift 2 ;;
     --server) SERVER="$2"; shift 2 ;;
     --name) NAME="$2"; shift 2 ;;
     --x11) FORCE_X11=1; shift ;;
@@ -77,19 +75,16 @@ fi
 
 # ------------------------------------------------------------------------------------------------
 # Student
-if [[ -z "$KEY" ]]; then read -rsp "  Ulanish kaliti (o'qituvchi konsolidagi bilan bir xil): " KEY; echo; fi
-[[ -n "$KEY" ]] || die "ulanish kaliti bo'sh bo'lmasligi kerak"
-if [[ -z "$SERVER" && -t 0 ]]; then read -rp "  Konsol manzili (ixtiyoriy, masalan 192.168.1.10:47801): " SERVER; fi
 
 install -m 755 "$(find_bin vimora-client)" "$PREFIX/bin/vimora-client"
 ln -sf "$PREFIX/bin/vimora-client" /usr/local/bin/vimora-client
 
-args=(--key "$KEY")
+args=()
 [[ -n "$SERVER" ]] && args+=(--server "$SERVER")
 [[ -n "$NAME" ]] && args+=(--name "$NAME")
-# Writes /etc/vimora/client.json (no key) and /etc/vimora/service.json (key, root only),
+# Writes /etc/vimora/client.json and /etc/vimora/service.json (paired console, root only),
 # installs and starts vimora-service.service (root: freeze, updates, NetControl).
-"$PREFIX/bin/vimora-client" "${args[@]}" setup
+"$PREFIX/bin/vimora-client" ${args[@]+"${args[@]}"} setup
 chmod 644 /etc/vimora/client.json
 say "Vimora xizmati ishga tushdi (systemctl status vimora-service)"
 

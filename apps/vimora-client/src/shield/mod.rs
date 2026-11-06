@@ -86,6 +86,8 @@ pub struct Store {
     pub queue: Vec<Task>,
     /// A commit cycle was started: the next unprotected boot runs `queue` and re-arms.
     pub cycle: bool,
+    /// The teacher turned off Vimora's automatic self-update.
+    pub vimora_manual: bool,
 }
 
 const STORE: &str = "shield.json";
@@ -230,6 +232,10 @@ impl Shield {
         let msg = self.backend.set_persistent(&clean, &old)?;
         self.update(|s| s.persistent = clean);
         Ok(msg)
+    }
+
+    pub fn set_vimora_auto(&self, on: bool) {
+        self.update(|s| s.vimora_manual = !on);
     }
 
     pub fn set_app_updates(&self, changes: &[(String, bool)]) {

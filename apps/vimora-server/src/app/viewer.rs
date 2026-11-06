@@ -3,6 +3,8 @@
 
 use super::grid::status_badge;
 use super::*;
+#[allow(unused_imports)]
+use vimora_ui::{tf, tr};
 
 /// Height of the viewer's toolbar.
 const BAR_H: f32 = 52.0;
@@ -72,20 +74,20 @@ impl ConsoleApp {
                     |ui| {
                         ui.spacing_mut().item_spacing.x = 0.0;
                         if ui_kit::icon_cell(ui, icons::ARROW_LEFT, BAR_H, false)
-                            .on_hover_text("Ro'yxatga qaytish")
+                            .on_hover_text(tr("Ro'yxatga qaytish"))
                             .clicked()
                         {
                             act.back = true;
                         }
                         ui_kit::rule(ui, BAR_H);
                         if ui_kit::icon_cell(ui, icons::CHEVRON_LEFT, BAR_H, false)
-                            .on_hover_text("Oldingi kompyuter")
+                            .on_hover_text(tr("Oldingi kompyuter"))
                             .clicked()
                         {
                             act.goto = prev;
                         }
                         if ui_kit::icon_cell(ui, icons::CHEVRON_RIGHT, BAR_H, false)
-                            .on_hover_text("Keyingi kompyuter")
+                            .on_hover_text(tr("Keyingi kompyuter"))
                             .clicked()
                         {
                             act.goto = next;
@@ -112,14 +114,14 @@ impl ConsoleApp {
                             ui.spacing_mut().item_spacing.x = 8.0;
                             ui.add_space(8.0);
                             let (kind, label) = if control {
-                                (Kind::Danger, "Boshqaruvni to'xtatish")
+                                (Kind::Danger, tr("Boshqaruvni to'xtatish"))
                             } else {
-                                (Kind::Primary, "Boshqarish")
+                                (Kind::Primary, tr("Boshqarish"))
                             };
                             if ui_kit::button(ui, Some(icons::MOUSE_POINTER_2), label, kind)
-                                .on_hover_text(
+                                .on_hover_text(tr(
                                     "Sichqoncha va klaviaturani shu kompyuterga yuborish",
-                                )
+                                ))
                                 .clicked()
                             {
                                 act.toggle_control = true;
@@ -128,7 +130,7 @@ impl ConsoleApp {
                                 if ui_kit::button(
                                     ui,
                                     Some(icons::LOCK_OPEN),
-                                    "Ochish",
+                                    tr("unlock|Ochish"),
                                     Kind::Outline,
                                 )
                                 .clicked()
@@ -138,7 +140,7 @@ impl ConsoleApp {
                             } else if ui_kit::button(
                                 ui,
                                 Some(icons::LOCK),
-                                "Qulflash",
+                                tr("Qulflash"),
                                 Kind::Outline,
                             )
                             .clicked()
@@ -152,7 +154,7 @@ impl ConsoleApp {
                             if ui_kit::button(
                                 ui,
                                 Some(icons::MESSAGE_SQUARE_TEXT),
-                                "Xabar",
+                                tr("Xabar"),
                                 Kind::Outline,
                             )
                             .clicked()
@@ -179,7 +181,7 @@ impl ConsoleApp {
                         FontId::proportional(36.0),
                         p.faint,
                     );
-                    let g = ui_kit::caps(ui, "Ekran kutilmoqda", 10.0, ui_kit::mono(), p.faint);
+                    let g = ui_kit::caps(ui, tr("Ekran kutilmoqda"), 10.0, ui_kit::mono(), p.faint);
                     ui.painter().galley(
                         pos2(area.center().x - g.size().x / 2.0, area.center().y + 18.0),
                         g,
@@ -208,7 +210,7 @@ impl ConsoleApp {
                 );
                 let hint = ui_kit::caps(
                     ui,
-                    "Boshqaruv faol · klaviatura shu kompyuterga yuboriladi",
+                    tr("Boshqaruv faol · klaviatura shu kompyuterga yuboriladi"),
                     9.5,
                     ui_kit::mono(),
                     Color32::WHITE,

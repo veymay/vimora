@@ -30,12 +30,6 @@ struct Cli {
     #[command(subcommand)]
     cmd: Option<Cmd>,
 
-    /// Classroom key (overrides the config file).
-    #[arg(long, global = true)]
-    key: Option<String>,
-    /// Room name to join (overrides the config file). Empty = any room.
-    #[arg(long, global = true)]
-    room: Option<String>,
     /// Connect directly to this console (ip:port) instead of LAN discovery.
     #[arg(long, global = true)]
     server: Option<String>,
@@ -50,8 +44,10 @@ enum Cmd {
     Run,
     /// Write the effective configuration to the config file and exit.
     Init,
-    /// (Admin) Install mode: key → protected service config, register and start the service.
+    /// (Admin) Install: write configs, register and start the service.
     Setup,
+    /// (Admin) Forget the paired console; the next console found is paired.
+    Unpair,
     /// Privileged Vimora service (runs as SYSTEM / root).
     Service,
     /// Internal: fullscreen lock / presentation overlay (driven over stdin).
@@ -86,15 +82,16 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Popup { title, text, reply }) => popup::run(&title, &text, reply),
         Some(Cmd::Service) => service::run(),
         Some(Cmd::Chat) => chat::run(),
-        Some(Cmd::Setup) => service::setup(cli.key.as_deref().unwrap_or(""), cli.server, cli.name),
+        Some(Cmd::Setup) => service::setup(cli.server, cli.name),
+        Some(Cmd::Unpair) => service::unpair(),
         Some(Cmd::Init) => {
-            let cfg = config::load().merge_cli(cli.key, cli.room, cli.server, cli.name);
+            let cfg = config::load().merge_cli(cli.server, cli.name);
             let path = config::save(&cfg)?;
             println!("config written to {}", path.display());
             Ok(())
         }
         Some(Cmd::Run) | None => {
-            let cfg = config::load().merge_cli(cli.key, cli.room, cli.server, cli.name);
+            let cfg = config::load().merge_cli(cli.server, cli.name);
             system::set_dpi_aware();
             let rt = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()

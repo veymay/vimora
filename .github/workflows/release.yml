@@ -1,0 +1,98 @@
+# Builds the installers and publishes them on the Releases page.
+# Trigger: push a tag that matches the version in Cargo.toml, e.g.  git tag v0.2.0 && git push --tags
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release -p vimora-server -p vimora-client
+      - name: Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $ver = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc "/DAppVer=$ver" installer\windows\vimora.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.exe
+          if-no-files-found: error
+
+  linux:
+    # Oldest supported Ubuntu: the packages then also run on 22.04 lab machines.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+      - name: Build
+        run: cargo build --release -p vimora-server -p vimora-client
+      - name: Packages (.deb)
+        run: |
+          mkdir -p dist
+          cargo deb -p vimora-server --no-build --output dist/
+          cargo deb -p vimora-client --no-build --output dist/
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*.deb
+          if-no-files-found: error
+
+  release:
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          ver=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          [ "${GITHUB_REF_NAME#v}" = "$ver" ] || { echo "tag $GITHUB_REF_NAME != Cargo.toml $ver"; exit 1; }
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            ### Yuklab olish
+
+            | Kompyuter | Windows | Ubuntu |
+            |---|---|---|
+            | O'qituvchi | `vimora-*-windows-x64-setup.exe` → **O'qituvchi** | `vimora-teacher_*_amd64.deb` |
+            | O'quvchi | `vimora-*-windows-x64-setup.exe` → **O'quvchi** | `vimora-student_*_amd64.deb` |
+
+            Ubuntu: `sudo apt install ./vimora-student_*_amd64.deb`
+
+            O'rnatilgan Vimora keyingi versiyalarni shu sahifadan o'zi yuklab oladi (`SHA256SUMS` bilan tekshiriladi).

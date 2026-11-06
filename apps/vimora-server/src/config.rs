@@ -6,14 +6,20 @@ use vimora_core::DEFAULT_TCP_PORT;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct ServerConfig {
-    /// Shared connection key; student agents must use the same key.
-    pub key: String,
-    /// Network group announced on the LAN (advanced; empty = any agent with the key joins).
-    pub room: String,
     /// Name shown to students / in logs.
     pub server_name: String,
     pub port: u16,
+    /// Interface language.
+    pub language: vimora_ui::Lang,
     pub dark_mode: bool,
+    /// Follow the operating system's light/dark setting (overrides `dark_mode`).
+    pub theme_system: bool,
+    /// Open the window maximized instead of at its minimum size.
+    pub start_maximized: bool,
+    /// Order of the computers in the grid and list.
+    pub sort: SortBy,
+    /// Look for a new console version on GitHub at start-up (and every few hours).
+    pub check_updates: bool,
     pub thumb_interval_ms: u32,
     /// Computers per row in the grid (zoom).
     pub grid_columns: u32,
@@ -37,16 +43,40 @@ pub struct ServerConfig {
     pub update_policy: vimora_core::UpdatePolicy,
 }
 
+/// Default lock-screen title and text in each language (the teacher can edit them).
+pub fn default_lock(l: vimora_ui::Lang) -> (&'static str, &'static str) {
+    use vimora_ui::Lang;
+    match l {
+        Lang::Uz => (
+            "Diqqat! Ekran qulflangan",
+            "Iltimos, o'qituvchini tinglang.",
+        ),
+        Lang::En => (
+            "Attention! The screen is locked",
+            "Please listen to your teacher.",
+        ),
+        Lang::Ru => (
+            "Внимание! Экран заблокирован",
+            "Пожалуйста, слушайте учителя.",
+        ),
+    }
+}
+
 impl Default for ServerConfig {
     fn default() -> Self {
+        let language = vimora_ui::Lang::detect();
+        let (lock_title, lock_message) = default_lock(language);
         Self {
-            key: "vimora".into(),
-            room: String::new(),
             server_name: hostname::get()
                 .map(|h| h.to_string_lossy().into_owned())
                 .unwrap_or_else(|_| "Teacher".into()),
             port: DEFAULT_TCP_PORT,
+            language,
             dark_mode: true,
+            theme_system: false,
+            start_maximized: false,
+            sort: SortBy::Name,
+            check_updates: true,
             thumb_interval_ms: 2000,
             grid_columns: 6,
             view: ViewMode::Grid,
@@ -55,8 +85,8 @@ impl Default for ServerConfig {
             aliases: BTreeMap::new(),
             known: BTreeMap::new(),
             persistent_folders: String::new(),
-            lock_title: "Diqqat! Ekran qulflangan".into(),
-            lock_message: "Iltimos, o'qituvchini tinglang.".into(),
+            lock_title: lock_title.into(),
+            lock_message: lock_message.into(),
             app_blocklist: "steam, discord, telegram".into(),
             web_blocklist: "tiktok.com\ninstagram.com".into(),
             keyword_blocklist: "kazino\ncasino\n1xbet".into(),
@@ -64,9 +94,19 @@ impl Default for ServerConfig {
             update_policy: vimora_core::UpdatePolicy {
                 os: vimora_core::OsUpdateMode::Manual,
                 apps_auto: false,
+                vimora: true,
             },
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SortBy {
+    /// Natural order of the shown names (PC-2 before PC-10).
+    #[default]
+    Name,
+    /// By IP address (follows the physical network layout in many rooms).
+    Ip,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -80,6 +120,34 @@ pub enum ViewMode {
 
 fn path() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("vimora").join("server.json"))
+}
+
+/// The console's secret identity. Kept in its own file next to the config: if it were lost,
+/// already paired student PCs would refuse the new console.
+pub fn identity() -> vimora_core::auth::Identity {
+    use vimora_core::auth::Identity;
+    let path = path().map(|p| p.with_file_name("identity.key"));
+    if let Some(id) = path
+        .as_ref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| Identity::from_hex(&s))
+    {
+        return id;
+    }
+    let id = Identity::generate();
+    if let Some(p) = &path {
+        if let Some(d) = p.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        if std::fs::write(p, id.to_hex()).is_ok() {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o600));
+            }
+        }
+    }
+    id
 }
 
 pub fn load() -> ServerConfig {
@@ -107,4 +175,20 @@ pub fn split_list(s: &str) -> Vec<String> {
         .filter(|s| !s.is_empty())
         .map(String::from)
         .collect()
+}
+
+/// Folder with `server.json` and the console identity.
+pub fn dir() -> Option<PathBuf> {
+    path().and_then(|p| p.parent().map(|d| d.to_path_buf()))
+}
+
+/// Opens a web page or folder with the system's default handler.
+pub fn open(target: &str) {
+    #[cfg(windows)]
+    let r = std::process::Command::new("explorer").arg(target).spawn();
+    #[cfg(not(windows))]
+    let r = std::process::Command::new("xdg-open").arg(target).spawn();
+    if let Err(e) = r {
+        tracing::warn!("cannot open {target}: {e}");
+    }
 }

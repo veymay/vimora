@@ -18,6 +18,8 @@ use vimora_core::{
     Beacon, ClientInfo, ClientMsg, ClientStatus, ServerMsg, StreamConfig, DISCOVERY_PORT,
     PROTOCOL_VERSION,
 };
+#[allow(unused_imports)]
+use vimora_ui::{tf, tr};
 
 pub struct Student {
     pub addr: SocketAddr,
@@ -63,8 +65,9 @@ pub struct ChatMsg {
     pub system: bool,
 }
 
-#[derive(Default)]
 pub struct Hub {
+    /// Signs sessions and privileged commands; student PCs pin its public key.
+    pub identity: Arc<auth::Identity>,
     pub students: BTreeMap<u64, Student>,
     pub log: VecDeque<LogEntry>,
     pub chat: VecDeque<ChatMsg>,
@@ -77,6 +80,19 @@ pub struct Hub {
 }
 
 impl Hub {
+    pub fn new(identity: auth::Identity) -> Self {
+        Self {
+            identity: Arc::new(identity),
+            students: BTreeMap::new(),
+            log: VecDeque::new(),
+            chat: VecDeque::new(),
+            chat_members: Default::default(),
+            unread: 0,
+            ctx: None,
+            next_id: 0,
+        }
+    }
+
     pub fn log(&mut self, level: Level, text: impl Into<String>) {
         let text = text.into();
         info!("{text}");
@@ -117,7 +133,7 @@ impl Hub {
             time: chrono::Local::now().format("%H:%M").to_string(),
             outgoing: true,
             who: String::new(),
-            text: "Chat yakunlandi".into(),
+            text: tr("Chat yakunlandi").into(),
             system: true,
         });
         self.repaint();
@@ -130,7 +146,7 @@ impl Hub {
     }
 
     /// Signs `cmd` per student (session nonce + counter) and sends it.
-    pub fn send_priv(&mut self, ids: &[u64], cmd: &vimora_core::PrivCommand, key: &str) -> usize {
+    pub fn send_priv(&mut self, ids: &[u64], cmd: &vimora_core::PrivCommand) -> usize {
         let Ok(payload) = bincode::serialize(cmd) else {
             return 0;
         };
@@ -138,11 +154,13 @@ impl Hub {
         for id in ids {
             if let Some(s) = self.students.get_mut(id) {
                 s.priv_counter += 1;
-                let mac = auth::priv_mac(key, &s.client_nonce, s.priv_counter, &payload);
+                let sig = self
+                    .identity
+                    .sign_priv(&s.client_nonce, s.priv_counter, &payload);
                 let msg = ServerMsg::Privileged {
                     counter: s.priv_counter,
                     payload: payload.clone(),
-                    mac,
+                    sig,
                 };
                 if s.tx.try_send(msg).is_ok() {
                     n += 1;
@@ -179,6 +197,7 @@ pub fn thumb_stream(cfg: &ServerConfig) -> StreamConfig {
 
 /// Starts all network services on a background Tokio runtime.
 pub fn start(hub: SharedHub, cfg: SharedConfig, show: Arc<Show>) {
+    let console_key = hub.lock().unwrap().identity.public();
     let hub2 = hub.clone();
     std::thread::Builder::new()
         .name("vimora-show".into())
@@ -193,18 +212,19 @@ pub fn start(hub: SharedHub, cfg: SharedConfig, show: Arc<Show>) {
                 .build()
                 .expect("tokio runtime");
             rt.block_on(async move {
-                tokio::spawn(beacon_task(cfg.clone()));
+                tokio::spawn(beacon_task(cfg.clone(), console_key));
                 if let Err(e) = listen(hub.clone(), cfg).await {
-                    hub.lock()
-                        .unwrap()
-                        .log(Level::Warn, format!("Tarmoq xatosi: {e:#}"));
+                    hub.lock().unwrap().log(
+                        Level::Warn,
+                        tf!("Tarmoq xatosi: {e}", e = format!("{:#}", e)),
+                    );
                 }
             });
         })
         .expect("spawn net thread");
 }
 
-async fn beacon_task(cfg: SharedConfig) {
+async fn beacon_task(cfg: SharedConfig, console_key: auth::ConsoleKey) {
     let sock = match UdpSocket::bind(("0.0.0.0", 0)).await {
         Ok(s) => s,
         Err(e) => return warn!("beacon socket: {e}"),
@@ -215,9 +235,9 @@ async fn beacon_task(cfg: SharedConfig) {
             let c = cfg.read().unwrap();
             Beacon {
                 version: PROTOCOL_VERSION,
-                room: c.room.clone(),
                 server_name: c.server_name.clone(),
                 tcp_port: c.port,
+                console_key,
             }
         };
         if let Ok(pkt) = vimora_core::net::encode_beacon(&b) {
@@ -237,7 +257,7 @@ async fn listen(hub: SharedHub, cfg: SharedConfig) -> Result<()> {
     let listener = TcpListener::bind(("0.0.0.0", port)).await?;
     hub.lock()
         .unwrap()
-        .log(Level::Ok, format!("Konsol tayyor: TCP {port}"));
+        .log(Level::Ok, tf!("Konsol tayyor: TCP {port}", port = port));
     loop {
         let (stream, addr) = listener.accept().await?;
         let (hub, cfg) = (hub.clone(), cfg.clone());
@@ -258,19 +278,20 @@ async fn session(
     stream.set_nodelay(true)?;
     let (mut rd, mut wr) = stream.into_split();
 
+    let identity = hub.lock().unwrap().identity.clone();
     let server_nonce = auth::nonce();
     write_msg(
         &mut wr,
         &ServerMsg::Hello {
             version: PROTOCOL_VERSION,
             nonce: server_nonce.clone(),
+            console_key: identity.public(),
         },
     )
     .await?;
     let ClientMsg::Hello {
         version,
         nonce: client_nonce,
-        mac,
         info,
     } = tokio::time::timeout(Duration::from_secs(5), read_msg(&mut rd)).await??
     else {
@@ -279,28 +300,21 @@ async fn session(
     if version != PROTOCOL_VERSION {
         hub.lock().unwrap().log(
             Level::Warn,
-            format!("{addr}: protokol versiyasi mos emas (v{version})"),
+            tf!(
+                "{addr}: protokol versiyasi mos emas (v{version})",
+                addr = addr,
+                version = version
+            ),
         );
         bail!("version mismatch");
     }
-    let (key, stream_cfg) = {
-        let c = cfg.read().unwrap();
-        (c.key.clone(), thumb_stream(&c))
-    };
-    if !auth::verify_client(&key, &server_nonce, &client_nonce, &mac) {
-        hub.lock().unwrap().log(
-            Level::Warn,
-            format!(
-                "{} ({addr}): noto'g'ri ulanish kaliti — rad etildi",
-                info.label()
-            ),
-        );
-        bail!("auth failed");
-    }
+    // Any agent on the network may join; the agent checks *our* signature and refuses to
+    // be controlled by a console other than the one it paired with.
+    let stream_cfg = thumb_stream(&cfg.read().unwrap());
     write_msg(
         &mut wr,
         &ServerMsg::Welcome {
-            mac: auth::server_mac(&key, &client_nonce, &server_nonce),
+            sig: identity.sign_welcome(&client_nonce, &server_nonce),
             stream: stream_cfg,
         },
     )
@@ -331,7 +345,12 @@ async fn session(
         );
         h.log(
             Level::Ok,
-            format!("{} ulandi ({}, {})", info.label(), info.username, addr.ip()),
+            tf!(
+                "{v0} ulandi ({v1}, {v2})",
+                v0 = info.label(),
+                v1 = info.username,
+                v2 = addr.ip()
+            ),
         );
         id
     };
@@ -412,7 +431,11 @@ async fn session(
                     }
                     h.log(
                         Level::Warn,
-                        format!("{} yordam so'rayapti: {text}", info.label()),
+                        tf!(
+                            "{v0} yordam so'rayapti: {text}",
+                            v0 = info.label(),
+                            text = text
+                        ),
                     );
                 }
                 ClientMsg::Alert { text } => {
@@ -442,7 +465,7 @@ async fn session(
     pinger.abort();
     let mut h = hub.lock().unwrap();
     h.students.remove(&id);
-    h.log(Level::Info, format!("{} uzildi", info.label()));
+    h.log(Level::Info, tf!("{v0} uzildi", v0 = info.label()));
     result
 }
 
@@ -460,9 +483,10 @@ fn show_loop(hub: SharedHub, show: Arc<Show>) {
             match capture::Capturer::new() {
                 Ok(c) => cap = Some(c),
                 Err(e) => {
-                    hub.lock()
-                        .unwrap()
-                        .log(Level::Warn, format!("Ekranni olish imkonsiz: {e:#}"));
+                    hub.lock().unwrap().log(
+                        Level::Warn,
+                        tf!("Ekranni olish imkonsiz: {e}", e = format!("{:#}", e)),
+                    );
                     show.active.store(false, Ordering::Relaxed);
                     continue;
                 }
@@ -494,7 +518,10 @@ fn show_loop(hub: SharedHub, show: Arc<Show>) {
                 // Stop presenting instead of leaving students on a black screen.
                 hub.lock().unwrap().log(
                     Level::Warn,
-                    format!("Namoyish to'xtatildi — ekranni olib bo'lmadi: {e:#}"),
+                    tf!(
+                        "Namoyish to'xtatildi — ekranni olib bo'lmadi: {e}",
+                        e = format!("{:#}", e)
+                    ),
                 );
                 show.active.store(false, Ordering::Relaxed);
                 cap = None;

@@ -1,6 +1,8 @@
 //! Modal / drawer framework with a blurred backdrop, and what confirming each dialog does.
 
 use super::*;
+#[allow(unused_imports)]
+use vimora_ui::{tf, tr};
 
 /// Open/close animation length for modals and drawers.
 const OVERLAY_ANIM_SECS: f32 = 0.22;
@@ -161,7 +163,28 @@ impl ConsoleApp {
         let targets = self.targets(all);
         let n = targets.len();
         let hub = self.hub.clone();
+        let cfg = self.cfg.clone();
         let screen = ctx.screen_rect();
+        let settings_open = matches!(self.dialog, Some(Dialog::Settings(_)));
+        let fingerprint = if settings_open {
+            vimora_core::auth::fingerprint(&hub.lock().unwrap().identity.public())
+        } else {
+            String::new()
+        };
+        let scx = SettingsCtx {
+            fingerprint: &fingerprint,
+            phase: if settings_open {
+                self.updater.phase()
+            } else {
+                Default::default()
+            },
+            online: all.len(),
+            saved: self
+                .saved_at
+                .is_some_and(|t| t.elapsed() < Duration::from_secs(2)),
+        };
+        let mut settings_out = SettingsOut::default();
+        let mut settings_before: Option<ServerConfig> = None;
 
         // Backdrop: blurred snapshot of the console (or a plain dim until it's ready).
         let backdrop_clicked = egui::Area::new(egui::Id::new("backdrop"))
@@ -202,25 +225,24 @@ impl ConsoleApp {
             Dialog::Net { .. }
                 | Dialog::Message { .. }
                 | Dialog::Apps(_)
-                | Dialog::Settings(_)
                 | Dialog::Activity
                 | Dialog::Freeze { .. }
                 | Dialog::Updates { .. }
         );
         let (title, width) = match dialog {
-            Dialog::Message { .. } => ("Xabarlar", 460.0),
-            Dialog::Launch { .. } => ("Sayt yoki dasturni ochish", 520.0),
-            Dialog::File(_) => ("Fayl yuborish", 500.0),
-            Dialog::Apps(_) => ("Dasturlarni bloklash", 480.0),
-            Dialog::Net { .. } => ("Internet", 540.0),
-            Dialog::Power(_) => ("Kompyuterlarni boshqarish", 540.0),
-            Dialog::Settings(_) => ("Sozlamalar", 480.0),
-            Dialog::Room { rename: None, .. } => ("Yangi xona", 440.0),
-            Dialog::Room { .. } => ("Xona nomini o'zgartirish", 440.0),
-            Dialog::Activity => ("Faollik", 440.0),
-            Dialog::Freeze { .. } => ("Shadow rejim", 600.0),
-            Dialog::Rename { .. } => ("Nomini o'zgartirish", 460.0),
-            Dialog::Updates { .. } => ("Yangilanishlar", 600.0),
+            Dialog::Message { .. } => (tr("Xabarlar"), 460.0),
+            Dialog::Launch { .. } => (tr("Sayt yoki dasturni ochish"), 520.0),
+            Dialog::File(_) => (tr("Fayl yuborish"), 500.0),
+            Dialog::Apps(_) => (tr("Dasturlarni bloklash"), 480.0),
+            Dialog::Net { .. } => (tr("Internet"), 540.0),
+            Dialog::Power(_) => (tr("Kompyuterlarni boshqarish"), 540.0),
+            Dialog::Settings(_) => (tr("Sozlamalar"), SETTINGS_W),
+            Dialog::Room { rename: None, .. } => (tr("Yangi xona"), 440.0),
+            Dialog::Room { .. } => (tr("Xona nomini o'zgartirish"), 440.0),
+            Dialog::Activity => (tr("Faollik"), 440.0),
+            Dialog::Freeze { .. } => (tr("Shadow rejim"), 600.0),
+            Dialog::Rename { .. } => (tr("Nomini o'zgartirish"), 460.0),
+            Dialog::Updates { .. } => (tr("Yangilanishlar"), 600.0),
         };
 
         // Drawers slide in from the right; modals fade in at the centre.
@@ -276,7 +298,7 @@ impl ConsoleApp {
                         );
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if ui_kit::icon_cell(ui, icons::X, HEADER_H, false)
-                                .on_hover_text("Yopish (Esc)")
+                                .on_hover_text(tr("Yopish (Esc)"))
                                 .clicked()
                             {
                                 cancel = true;
@@ -294,7 +316,10 @@ impl ConsoleApp {
                 ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
 
                 // Body
-                let has_footer = !matches!(dialog, Dialog::Activity | Dialog::Message { .. });
+                let has_footer = !matches!(
+                    dialog,
+                    Dialog::Activity | Dialog::Message { .. } | Dialog::Settings(_)
+                );
                 let body_max = if drawer {
                     screen.height()
                         - margin * 2.0
@@ -321,7 +346,7 @@ impl ConsoleApp {
                             ) {
                                 ui.horizontal(|ui| {
                                     ui.label(RichText::new(icons::USERS).color(p.faint));
-                                    ui_kit::hud(ui, &format!("{n} ta kompyuterga"), p.muted);
+                                    ui_kit::hud(ui, &tf!("{n} ta kompyuterga", n = n), p.muted);
                                 });
                                 ui.add_space(4.0);
                             }
@@ -339,7 +364,15 @@ impl ConsoleApp {
                             );
                         });
                 };
-                if let Dialog::Message { text, send } = dialog {
+                if let Dialog::Settings(tab) = dialog {
+                    // Edits go straight into the live config; the app reacts after the frame.
+                    let mut c = cfg.write().unwrap();
+                    let before = c.clone();
+                    settings_page(ui, p, tab, &mut c, &scx, &mut settings_out);
+                    if *c != before {
+                        settings_before = Some(before);
+                    }
+                } else if let Dialog::Message { text, send } = dialog {
                     // The chat lays itself out: messages scroll, the composer stays at the bottom.
                     let size = vec2(width, body_max);
                     ui.allocate_ui(size, |ui| {
@@ -389,10 +422,10 @@ impl ConsoleApp {
                                     && ui_kit::button(
                                         ui,
                                         Some(icons::TRASH_2),
-                                        "Tozalash",
+                                        tr("Tozalash"),
                                         Kind::Outline,
                                     )
-                                    .on_hover_text("Barcha cheklovlarni olib tashlash")
+                                    .on_hover_text(tr("Barcha cheklovlarni olib tashlash"))
                                     .clicked()
                                 {
                                     clear = true;
@@ -400,30 +433,32 @@ impl ConsoleApp {
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                     let (pi, pl) = match dialog {
                                         Dialog::Message { .. } | Dialog::File(_) => {
-                                            (icons::SEND, "Yuborish")
+                                            (icons::SEND, tr("Yuborish"))
                                         }
                                         Dialog::Launch { web: true, .. } => {
-                                            (icons::GLOBE, "Ochish")
+                                            (icons::GLOBE, tr("Ochish"))
                                         }
-                                        Dialog::Launch { .. } => (icons::PLAY, "Ishga tushirish"),
-                                        Dialog::Apps(_) => (icons::BAN, "Bloklash"),
-                                        Dialog::Net { .. } => (icons::SHIELD_CHECK, "Qo'llash"),
-                                        Dialog::Power(_) => (icons::POWER, "Tasdiqlash"),
+                                        Dialog::Launch { .. } => {
+                                            (icons::PLAY, tr("Ishga tushirish"))
+                                        }
+                                        Dialog::Apps(_) => (icons::BAN, tr("Bloklash")),
+                                        Dialog::Net { .. } => (icons::SHIELD_CHECK, tr("Qo'llash")),
+                                        Dialog::Power(_) => (icons::POWER, tr("Tasdiqlash")),
                                         Dialog::Settings(_)
                                         | Dialog::Room { .. }
-                                        | Dialog::Activity => (icons::CHECK, "Saqlash"),
+                                        | Dialog::Activity => (icons::CHECK, tr("Saqlash")),
                                         Dialog::Freeze {
                                             tab: ShadowTab::Folders | ShadowTab::WindowsUpdate,
                                             ..
-                                        } => (icons::CHECK, "Saqlash"),
+                                        } => (icons::CHECK, tr("Saqlash")),
                                         Dialog::Freeze {
                                             tab: ShadowTab::Apps,
                                             ..
-                                        } => (icons::CHECK, "Qo'llash"),
-                                        Dialog::Freeze { .. } => (icons::SNOWFLAKE, "Qo'llash"),
-                                        Dialog::Rename { .. } => (icons::CHECK, "Saqlash"),
+                                        } => (icons::CHECK, tr("Qo'llash")),
+                                        Dialog::Freeze { .. } => (icons::SNOWFLAKE, tr("Qo'llash")),
+                                        Dialog::Rename { .. } => (icons::CHECK, tr("Saqlash")),
                                         Dialog::Updates { .. } => {
-                                            (icons::CHECK, "Siyosatni saqlash")
+                                            (icons::CHECK, tr("Siyosatni saqlash"))
                                         }
                                     };
                                     let kind = if matches!(dialog, Dialog::Power(_)) {
@@ -438,7 +473,7 @@ impl ConsoleApp {
                                     if ui_kit::button(
                                         ui,
                                         Some(icons::X),
-                                        "Bekor qilish",
+                                        tr("Bekor qilish"),
                                         Kind::Outline,
                                     )
                                     .clicked()
@@ -452,6 +487,10 @@ impl ConsoleApp {
             });
         });
 
+        if let Some(before) = settings_before {
+            self.settings_applied(ctx, before);
+        }
+        self.settings_actions(ctx, settings_out);
         if let Some(Dialog::Message { text, send }) = &mut self.dialog {
             self.hub.lock().unwrap().unread = 0;
             if std::mem::take(send) && !text.trim().is_empty() && !targets.is_empty() {
@@ -460,7 +499,7 @@ impl ConsoleApp {
                 self.send(
                     &targets,
                     Command::Message {
-                        title: "O'qituvchidan xabar".into(),
+                        title: tr("O'qituvchidan xabar").into(),
                         text: body.clone(),
                     },
                     "",
@@ -475,7 +514,7 @@ impl ConsoleApp {
                 self.send_priv(
                     &targets,
                     PrivCommand::ListApps,
-                    "Dasturlar ro'yxati so'raldi",
+                    tr("Dasturlar ro'yxati so'raldi"),
                 );
             }
         }
@@ -497,9 +536,9 @@ impl ConsoleApp {
                     },
                 };
                 let what = if r == UpdateRequest::Check {
-                    "Yangilanishlarni tekshirish"
+                    tr("Yangilanishlarni tekshirish")
                 } else {
-                    "Yangilanishlarni o'rnatish"
+                    tr("Yangilanishlarni o'rnatish")
                 };
                 self.send_priv(&targets, cmd, what);
             }
@@ -519,26 +558,26 @@ impl ConsoleApp {
         } else if confirm || clear {
             let d = self.dialog.take().unwrap();
             self.closing = Some(d.clone());
-            self.run_dialog(ctx, d, &targets, clear);
+            self.run_dialog(d, &targets, clear);
         }
     }
 
-    pub(super) fn run_dialog(&mut self, ctx: &egui::Context, d: Dialog, t: &[u64], clear: bool) {
+    pub(super) fn run_dialog(&mut self, d: Dialog, t: &[u64], clear: bool) {
         match d {
             Dialog::Message { text, .. } => {
                 if !text.trim().is_empty() {
                     self.send(
                         t,
                         Command::Message {
-                            title: "O'qituvchidan xabar".into(),
+                            title: tr("O'qituvchidan xabar").into(),
                             text,
                         },
-                        "Xabar",
+                        tr("Xabar"),
                     );
                 }
             }
             Dialog::Launch { web: true, url, .. } => {
-                self.send(t, Command::OpenUrl(url.trim().into()), "Sayt ochish")
+                self.send(t, Command::OpenUrl(url.trim().into()), tr("Sayt ochish"))
             }
             Dialog::Launch { program, args, .. } => {
                 let args = args.split_whitespace().map(String::from).collect();
@@ -548,7 +587,7 @@ impl ConsoleApp {
                         program: program.trim().into(),
                         args,
                     },
-                    "Dastur ishga tushirish",
+                    tr("Dastur ishga tushirish"),
                 );
             }
             Dialog::File(path) => {
@@ -565,19 +604,19 @@ impl ConsoleApp {
                                 name: name.clone(),
                                 data,
                             },
-                            &format!("Fayl: {name}"),
+                            &tf!("Fayl: {name}", name = name),
                         );
                     }
                     Ok(_) => self
                         .hub
                         .lock()
                         .unwrap()
-                        .log(Level::Warn, "Fayl 100 MB dan katta"),
+                        .log(Level::Warn, tr("Fayl 100 MB dan katta")),
                     Err(e) => self
                         .hub
                         .lock()
                         .unwrap()
-                        .log(Level::Warn, format!("Faylni o'qib bo'lmadi: {e}")),
+                        .log(Level::Warn, tf!("Faylni o'qib bo'lmadi: {e}", e = e)),
                 }
             }
             Dialog::Apps(list) => {
@@ -589,9 +628,9 @@ impl ConsoleApp {
                     t,
                     Command::SetAppBlocklist(items),
                     if clear {
-                        "Dastur bloki olib tashlandi"
+                        tr("Dastur bloki olib tashlandi")
                     } else {
-                        "Dasturlar bloklandi"
+                        tr("Dasturlar bloklandi")
                     },
                 );
             }
@@ -615,22 +654,22 @@ impl ConsoleApp {
                     }
                 };
                 let what = if clear {
-                    "NetControl o'chirildi".to_string()
+                    tr("NetControl o'chirildi").to_string()
                 } else {
-                    format!(
-                        "NetControl: {} domen, {} kalit so'z{}",
-                        policy.domains.len(),
-                        policy.keywords.len(),
-                        if safe { ", SafeSearch" } else { "" }
+                    tf!(
+                        "NetControl: {v0} domen, {v1} kalit so'z{v2}",
+                        v0 = policy.domains.len(),
+                        v1 = policy.keywords.len(),
+                        v2 = if safe { ", SafeSearch" } else { "" }
                     )
                 };
                 self.send_priv(t, PrivCommand::SetNetPolicy(policy), &what);
             }
             Dialog::Power(a) => {
                 let what = match a {
-                    PowerAction::Shutdown => "O'chirish",
-                    PowerAction::Restart => "Qayta yoqish",
-                    PowerAction::Logoff => "Seansdan chiqarish",
+                    PowerAction::Shutdown => tr("O'chirish"),
+                    PowerAction::Restart => tr("Qayta yoqish"),
+                    PowerAction::Logoff => tr("Seansdan chiqarish"),
                 };
                 self.send_priv(t, PrivCommand::Power(a), what);
             }
@@ -650,9 +689,9 @@ impl ConsoleApp {
             } => match tab {
                 ShadowTab::Protection => {
                     let what = match action {
-                        FreezeAction::Freeze => "Shadow yoqish",
-                        FreezeAction::Thaw => "Shadow o'chirish",
-                        FreezeAction::Maintenance => "Xizmat rejimi (commit sikli)",
+                        FreezeAction::Freeze => tr("Shadow yoqish"),
+                        FreezeAction::Thaw => tr("Shadow o'chirish"),
+                        FreezeAction::Maintenance => tr("Xizmat rejimi (commit sikli)"),
                     };
                     self.send_priv(t, PrivCommand::Freeze { action, restart }, what);
                 }
@@ -661,7 +700,7 @@ impl ConsoleApp {
                     self.send_priv(
                         t,
                         PrivCommand::SetPersistentFolders(split_list(&folders)),
-                        "Saqlanadigan papkalar",
+                        tr("Saqlanadigan papkalar"),
                     );
                 }
                 ShadowTab::Apps => {
@@ -670,7 +709,7 @@ impl ConsoleApp {
                         self.send_priv(
                             t,
                             PrivCommand::SetAppUpdates(changes),
-                            "Dastur yangilanishlari",
+                            tr("Dastur yangilanishlari"),
                         );
                     }
                 }
@@ -704,16 +743,16 @@ impl ConsoleApp {
                 let current = all_hostname(&self.hub, id);
                 if system && Some(&new) != current.as_ref() {
                     if !vimora_core::valid_computer_name(&new) {
-                        self.hub
-                            .lock()
-                            .unwrap()
-                            .log(Level::Warn, format!("Noto'g'ri kompyuter nomi: {new}"));
+                        self.hub.lock().unwrap().log(
+                            Level::Warn,
+                            tf!("Noto'g'ri kompyuter nomi: {new}", new = new),
+                        );
                     } else {
                         // Rooms and aliases are keyed by hardware id, so they survive the rename.
                         self.send_priv(
                             &[id],
                             PrivCommand::RenameComputer { name: new, restart },
-                            "Kompyuter nomi",
+                            tr("Kompyuter nomi"),
                         );
                     }
                 }
@@ -723,34 +762,69 @@ impl ConsoleApp {
                 self.send_priv(
                     t,
                     PrivCommand::SetUpdatePolicy(policy),
-                    "Yangilanish siyosati",
+                    tr("Yangilanish siyosati"),
                 );
             }
-            Dialog::Settings(c) => {
-                let old = self.cfg.read().unwrap().clone();
-                if c.port != old.port {
-                    self.hub.lock().unwrap().log(
-                        Level::Warn,
-                        "Port o'zgarishi dastur qayta ishga tushganda kuchga kiradi",
-                    );
-                }
-                if c.thumb_interval_ms != old.thumb_interval_ms {
-                    let ids: Vec<u64> = self.hub.lock().unwrap().students.keys().copied().collect();
-                    self.send(&ids, Command::SetStream(thumb_stream(&c)), "");
-                }
-                let theme = if c.dark_mode {
-                    ThemeMode::Dark
-                } else {
-                    ThemeMode::Light
-                };
-                *self.cfg.write().unwrap() = *c;
-                self.set_theme(ctx, theme);
-                self.hub
-                    .lock()
-                    .unwrap()
-                    .log(Level::Ok, "Sozlamalar saqlandi");
-            }
+            Dialog::Settings(_) => {}
         }
         config::save(&self.cfg.read().unwrap());
+    }
+
+    /// Side effects of a live settings change (the config itself is already updated).
+    fn settings_applied(&mut self, ctx: &egui::Context, before: ServerConfig) {
+        let mut c = self.cfg.write().unwrap();
+        if c.language != before.language {
+            vimora_ui::i18n::set_lang(c.language);
+            // Untouched lock-screen texts follow the language.
+            let (old_t, old_m) = config::default_lock(before.language);
+            let (new_t, new_m) = config::default_lock(c.language);
+            if c.lock_title == old_t {
+                c.lock_title = new_t.into();
+            }
+            if c.lock_message == old_m {
+                c.lock_message = new_m.into();
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(
+                vimora_ui::tr("Vimora — O'qituvchi konsoli").into(),
+            ));
+        }
+        c.grid_columns = c.grid_columns.clamp(MIN_COLUMNS, MAX_COLUMNS);
+        let stream = (c.thumb_interval_ms != before.thumb_interval_ms).then(|| thumb_stream(&c));
+        drop(c);
+        if let Some(s) = stream {
+            let ids: Vec<u64> = self.hub.lock().unwrap().students.keys().copied().collect();
+            self.send(&ids, Command::SetStream(s), "");
+        }
+        self.settings_dirty = Some(Instant::now());
+    }
+
+    fn settings_actions(&mut self, ctx: &egui::Context, out: SettingsOut) {
+        if out.check_update {
+            self.updater.check();
+        }
+        if out.install_update {
+            self.updater.install();
+        }
+        if out.restart {
+            config::save(&self.cfg.read().unwrap());
+            crate::update::relaunch();
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        let everyone: Vec<u64> = self.hub.lock().unwrap().students.keys().copied().collect();
+        if out.push_policy {
+            let policy = self.cfg.read().unwrap().update_policy;
+            self.send_priv(
+                &everyone,
+                PrivCommand::SetUpdatePolicy(policy),
+                tr("Yangilanish siyosati"),
+            );
+        }
+        if out.update_students {
+            self.send_priv(
+                &everyone,
+                PrivCommand::UpdateVimora,
+                tr("Vimora yangilanishi"),
+            );
+        }
     }
 }

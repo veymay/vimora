@@ -4,7 +4,10 @@
 //! accent, soft rounded corners, hairline borders, Geist text with Geist Mono upper-case labels
 //! (ArtCraft-inspired) and Lucide outline icons.
 
+pub mod i18n;
 pub mod icons;
+
+pub use i18n::{tr, Lang};
 
 use egui::{
     epaint::Shadow, text::LayoutJob, vec2, Align2, Color32, FontData, FontDefinitions, FontFamily,
@@ -194,14 +197,14 @@ pub fn install_fonts(ctx: &egui::Context) {
         fonts
             .font_data
             .insert(name.into(), FontData::from_static(bytes));
-        let mut stack = vec![name.to_string()];
+        // Lucide right after the text face: egui's emoji fallback also uses the private-use
+        // area and would otherwise shadow some icons.
+        let mut stack = vec![name.to_string(), "lucide".into()];
         stack.extend(fallback.iter().cloned());
-        stack.push("lucide".into());
         fonts.families.insert(family, stack);
     }
-    let mut mono_stack = vec!["GeistMono-Medium".to_string()];
+    let mut mono_stack = vec!["GeistMono-Medium".to_string(), "lucide".into()];
     mono_stack.extend(fallback.iter().cloned());
-    mono_stack.push("lucide".into());
     fonts.families.insert(FontFamily::Monospace, mono_stack);
     ctx.set_fonts(fonts);
 }
@@ -679,4 +682,136 @@ pub fn input_frame(p: &Palette) -> Frame {
             top: 0.0,
             bottom: 0.0,
         })
+}
+
+// ---------------------------------------------------------------------------------------------
+// Brand mark, info tips, switches and dropdown rows.
+
+/// Paints the Vimora mark (clay tile, two-tone V, square dot) into `rect`.
+/// Same geometry as `assets/brand/vimora.svg` (256 grid).
+pub fn logo(painter: &egui::Painter, rect: Rect) {
+    use egui::{epaint::PathShape, pos2, Pos2};
+    let top = hex(0xe08262);
+    let bottom = hex(0xc25e3d);
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(rect.left_top(), top);
+    mesh.colored_vertex(rect.right_top(), top);
+    mesh.colored_vertex(rect.right_bottom(), bottom);
+    mesh.colored_vertex(rect.left_bottom(), bottom);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    painter.add(mesh);
+    let k = rect.width() / 256.0;
+    let at = |x: f32, y: f32| -> Pos2 { pos2(rect.left() + x * k, rect.top() + (y + 6.0) * k) };
+    let poly = |pts: &[(f32, f32)], c: Color32| {
+        let pts = pts.iter().map(|&(x, y)| at(x, y)).collect();
+        painter.add(PathShape::convex_polygon(pts, c, Stroke::NONE));
+    };
+    poly(
+        &[(160.0, 70.0), (206.0, 70.0), (147.0, 196.0), (109.0, 196.0)],
+        hex(0xf7d9cc),
+    );
+    poly(
+        &[(50.0, 70.0), (96.0, 70.0), (147.0, 196.0), (109.0, 196.0)],
+        Color32::WHITE,
+    );
+    poly(
+        &[(110.0, 32.0), (146.0, 32.0), (146.0, 68.0), (110.0, 68.0)],
+        Color32::WHITE,
+    );
+}
+
+/// Small "i" that explains a setting on hover (long descriptions stay out of the layout).
+pub fn info(ui: &mut Ui, text: &str) -> Response {
+    let p = palette(ui.ctx());
+    let (rect, resp) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
+    let col = if resp.hovered() {
+        p.accent_ink
+    } else {
+        p.faint
+    };
+    ui.painter().text(
+        rect.center(),
+        Align2::CENTER_CENTER,
+        icons::INFO,
+        FontId::proportional(14.0),
+        col,
+    );
+    resp.on_hover_ui(|ui| {
+        ui.set_max_width(320.0);
+        ui.label(RichText::new(text).size(12.5));
+    })
+}
+
+/// On/off switch (square, like the rest of the kit). Returns true when toggled.
+pub fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
+    let p = palette(ui.ctx());
+    let (rect, mut resp) = ui.allocate_exact_size(vec2(40.0, 22.0), Sense::click());
+    if resp.clicked() {
+        *on = !*on;
+        resp.mark_changed();
+    }
+    let t = ui.ctx().animate_bool_with_time(resp.id, *on, 0.12);
+    let track = if *on { p.accent } else { p.sunken };
+    let border = if *on { p.accent } else { p.line_strong };
+    ui.painter()
+        .rect(rect, Rounding::ZERO, track, Stroke::new(1.0_f32, border));
+    let knob = Rect::from_min_size(
+        egui::pos2(
+            rect.left() + 3.0 + t * (rect.width() - 22.0),
+            rect.top() + 3.0,
+        ),
+        vec2(16.0, 16.0),
+    );
+    ui.painter().rect_filled(
+        knob,
+        Rounding::ZERO,
+        if *on { Color32::WHITE } else { p.muted },
+    );
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp
+}
+
+/// One row of a dropdown menu: icon, title and a muted one-line hint.
+pub fn menu_row(
+    ui: &mut Ui,
+    icon: &str,
+    title: &str,
+    hint: &str,
+    tint: Option<Color32>,
+) -> Response {
+    let p = palette(ui.ctx());
+    let h = if hint.is_empty() { 40.0 } else { 52.0 };
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), h), Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_filled(rect, Rounding::ZERO, p.hover);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    let ink = tint.unwrap_or(p.text);
+    ui.painter().text(
+        egui::pos2(rect.left() + 24.0, rect.center().y),
+        Align2::CENTER_CENTER,
+        icon,
+        FontId::proportional(17.0),
+        ink,
+    );
+    let x = rect.left() + 48.0;
+    let w = rect.width() - 60.0;
+    let t = truncated(ui, title, FontId::new(13.5, bold()), p.strong, w);
+    if hint.is_empty() {
+        ui.painter().galley(
+            egui::pos2(x, rect.center().y - t.size().y / 2.0),
+            t,
+            p.strong,
+        );
+    } else {
+        ui.painter()
+            .galley(egui::pos2(x, rect.top() + 9.0), t, p.strong);
+        let d = truncated(ui, hint, FontId::proportional(12.0), p.muted, w);
+        ui.painter()
+            .galley(egui::pos2(x, rect.top() + 29.0), d, p.muted);
+    }
+    resp
 }

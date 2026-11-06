@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+if [ "$1" = remove ] || [ "$1" = purge ]; then
+    rm -f /usr/local/bin/vimora-client
+    # Give the network back: our hosts block and browser policies.
+    if [ -f /etc/hosts ]; then
+        sed -i '/^# >>> vimora netcontrol/,/^# <<< vimora netcontrol/d' /etc/hosts
+        chown root:root /etc/hosts && chmod 644 /etc/hosts
+    fi
+    for d in /etc/opt/chrome /etc/chromium /etc/opt/edge /etc/brave /etc/opt/yandex/browser; do
+        rm -f "$d/policies/managed/vimora.json"
+    done
+fi
+if [ "$1" = purge ]; then
+    rm -rf /etc/vimora /var/cache/vimora
+fi
+#DEBHELPER#

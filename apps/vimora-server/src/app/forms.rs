@@ -1,6 +1,8 @@
 //! Bodies of the modals and drawers (one function per dialog).
 
 use super::*;
+#[allow(unused_imports)]
+use vimora_ui::{tf, tr};
 
 pub(super) fn activity_body(
     ui: &mut egui::Ui,
@@ -14,7 +16,7 @@ pub(super) fn activity_body(
         .filter(|v| v.alert.is_some() || v.help.is_some())
         .collect();
     if !attention.is_empty() {
-        ui_kit::hud(ui, "Diqqat talab qiladi", p.warning);
+        ui_kit::hud(ui, tr("Diqqat talab qiladi"), p.warning);
         for v in attention {
             ui_kit::card(p, false, false).fill(p.bg).show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -23,7 +25,7 @@ pub(super) fn activity_body(
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if v.help.is_some()
                             && ui_kit::button(ui, Some(icons::CHECK), "", Kind::Outline)
-                                .on_hover_text("Yordam berildi")
+                                .on_hover_text(tr("Yordam berildi"))
                                 .clicked()
                         {
                             *clear_help = Some(v.id);
@@ -38,9 +40,9 @@ pub(super) fn activity_body(
         ui.add_space(10.0);
     }
     ui.horizontal(|ui| {
-        ui_kit::hud(ui, "Hodisalar", p.muted);
+        ui_kit::hud(ui, tr("Hodisalar"), p.muted);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui_kit::button(ui, Some(icons::TRASH_2), "Tozalash", Kind::Outline).clicked() {
+            if ui_kit::button(ui, Some(icons::TRASH_2), tr("Tozalash"), Kind::Outline).clicked() {
                 hub.lock().unwrap().log.clear();
             }
         });
@@ -48,7 +50,7 @@ pub(super) fn activity_body(
     let h = hub.lock().unwrap();
     if h.log.is_empty() {
         ui.add_space(20.0);
-        ui.vertical_centered(|ui| ui_kit::hud(ui, "Hozircha hech narsa yo'q", p.faint));
+        ui.vertical_centered(|ui| ui_kit::hud(ui, tr("Hozircha hech narsa yo'q"), p.faint));
     }
     for e in h.log.iter() {
         let (ic, col) = match e.level {
@@ -151,10 +153,10 @@ pub(super) fn dialog_body(
             ui_kit::segmented(p).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    if ui_kit::tab(ui, "Sayt", None, *web).clicked() {
+                    if ui_kit::tab(ui, tr("Sayt"), None, *web).clicked() {
                         *web = true;
                     }
-                    if ui_kit::tab(ui, "Dastur", None, !*web).clicked() {
+                    if ui_kit::tab(ui, tr("Dastur"), None, !*web).clicked() {
                         *web = false;
                     }
                 });
@@ -169,29 +171,29 @@ pub(super) fn dialog_body(
                 wide(
                     ui,
                     program,
-                    "notepad.exe · C:\\Program Files\\…\\app.exe · firefox",
+                    tr("notepad.exe · C:\\Program Files\\…\\app.exe · firefox"),
                 );
-                wide(ui, args, "Argumentlar (ixtiyoriy)");
+                wide(ui, args, tr("Argumentlar (ixtiyoriy)"));
             }
         }
         Dialog::File(path) => {
             wide(
                 ui,
                 path,
-                "Fayl yo'li: C:\\Users\\…\\dars.pdf yoki /home/…/dars.pdf",
+                tr("Fayl yo'li: C:\\Users\\…\\dars.pdf yoki /home/…/dars.pdf"),
             );
             ui.label(
-                RichText::new("O'quvchining Yuklanmalar/Vimora papkasiga saqlanadi.")
+                RichText::new(tr("O'quvchining Yuklanmalar/Vimora papkasiga saqlanadi."))
                     .size(12.5)
                     .color(p.faint),
             );
         }
         Dialog::Apps(list) => {
-            ui.label(RichText::new("Jarayon nomlari, har biri yangi qatorda yoki vergul bilan. Ro'yxatdagi dasturlar ochilishi bilan yopiladi.").color(p.muted));
+            ui.label(RichText::new(tr("Jarayon nomlari, har biri yangi qatorda yoki vergul bilan. Ro'yxatdagi dasturlar ochilishi bilan yopiladi.")).color(p.muted));
             ui.add_space(4.0);
             ui.add(
                 ui_kit::text_area(list)
-                    .hint_text("chrome\nsteam.exe\ndiscord")
+                    .hint_text(tr("chrome\nsteam.exe\ndiscord"))
                     .desired_rows(6)
                     .desired_width(f32::INFINITY)
                     .font(egui::TextStyle::Monospace),
@@ -207,9 +209,9 @@ pub(super) fn dialog_body(
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 for (act, ic, label) in [
-                    (PowerAction::Shutdown, icons::POWER, "O'chirish"),
-                    (PowerAction::Restart, icons::ROTATE_CCW, "Qayta yoqish"),
-                    (PowerAction::Logoff, icons::LOG_OUT, "Seansdan chiqish"),
+                    (PowerAction::Shutdown, icons::POWER, tr("O'chirish")),
+                    (PowerAction::Restart, icons::ROTATE_CCW, tr("Qayta yoqish")),
+                    (PowerAction::Logoff, icons::LOG_OUT, tr("Seansdan chiqish")),
                 ] {
                     if power_tile(ui, p, ic, label, *a == act).clicked() {
                         *a = act;
@@ -220,16 +222,16 @@ pub(super) fn dialog_body(
             ui.label(
                 RichText::new(with_icon(
                     icons::TRIANGLE_ALERT,
-                    "Saqlanmagan ishlar yo'qolishi mumkin!",
+                    tr("Saqlanmagan ishlar yo'qolishi mumkin!"),
                 ))
                 .color(p.warning),
             );
         }
-        Dialog::Settings(c) => settings_form(ui, p, c),
+        Dialog::Settings(_) => {}
         Dialog::Room { name, .. } => {
             let r = ui.add(
                 ui_kit::text_field(name)
-                    .hint_text("Masalan: 204-xona, Informatika")
+                    .hint_text(tr("Masalan: 204-xona, Informatika"))
                     .desired_width(f32::INFINITY),
             );
             if ui.memory(|m| m.focused().is_none()) {
@@ -240,9 +242,9 @@ pub(super) fn dialog_body(
             }
             ui.add_space(4.0);
             ui.label(
-                RichText::new(
+                RichText::new(tr(
                     "Kompyuterlarni o'ng tugma → \"Xonaga biriktirish\" orqali qo'shasiz.",
-                )
+                ))
                 .size(12.5)
                 .color(p.faint),
             );
@@ -396,61 +398,61 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, f: ShadowForm<'_>, cx:
         p,
         f.tab,
         &[
-            (ShadowTab::Protection, "Himoya", None),
-            (ShadowTab::Folders, "Papkalar", Some(folder_count)),
-            (ShadowTab::Apps, "Dasturlar", None),
+            (ShadowTab::Protection, tr("Himoya"), None),
+            (ShadowTab::Folders, tr("Papkalar"), Some(folder_count)),
+            (ShadowTab::Apps, tr("Dasturlar"), None),
             (ShadowTab::WindowsUpdate, "Windows Update", None),
         ],
     );
     match f.tab {
         ShadowTab::Protection => protection_tab(ui, p, f.action, f.restart, cx),
         ShadowTab::Folders => {
-            section(ui, p, "Doim saqlanadigan papkalar");
-            note(ui, p, "Bu papkalardagi fayllar qayta yuklanganda o'chmaydi. Har bir papka — yangi qatorda.");
+            section(ui, p, tr("Doim saqlanadigan papkalar"));
+            note(ui, p, tr("Bu papkalardagi fayllar qayta yuklanganda o'chmaydi. Har bir papka — yangi qatorda."));
             ui.add_space(2.0);
             ui.add(
                 ui_kit::text_area(f.folders)
-                    .hint_text("D:\\Darslar\n/home/student/Hujjatlar")
+                    .hint_text(tr("D:\\Darslar\n/home/student/Hujjatlar"))
                     .desired_rows(6)
                     .desired_width(f32::INFINITY)
                     .font(egui::TextStyle::Monospace),
             );
             ui.label(
-                RichText::new("Qayta yuklangandan keyin kuchga kiradi.")
+                RichText::new(tr("Qayta yuklangandan keyin kuchga kiradi."))
                     .size(12.0)
                     .color(p.faint),
             );
-            section(ui, p, "Kompyuterlar");
+            section(ui, p, tr("Kompyuterlar"));
             target_rows(ui, p, cx.all, cx.targets, |v| {
                 let n = v.status.persistent_folders.len();
                 if n == 0 {
-                    ("papka yo'q".into(), p.faint)
+                    (tr("papka yo'q").into(), p.faint)
                 } else {
-                    (format!("{n} ta papka"), p.accent_ink)
+                    (tf!("{n} ta papka", n = n), p.accent_ink)
                 }
             });
         }
         ShadowTab::Apps => apps_tab(ui, p, f.app_changes, f.app_filter, f.request, cx),
         ShadowTab::WindowsUpdate => {
-            section(ui, p, "Tizim yangilanishlari");
+            section(ui, p, tr("Tizim yangilanishlari"));
             ui.spacing_mut().item_spacing.y = 6.0;
             for (m, ic, title, desc) in [
                 (
                     OsUpdateMode::Auto,
                     icons::REFRESH_CW,
-                    "Avtomatik",
+                    tr("Avtomatik"),
                     "Windows o'zi yuklab, o'zi o'rnatadi",
                 ),
                 (
                     OsUpdateMode::Manual,
                     icons::DOWNLOAD,
-                    "Faqat konsoldan",
+                    tr("Faqat konsoldan"),
                     "Qachon o'rnatishni siz \"Yangilash\" menyusidan hal qilasiz",
                 ),
                 (
                     OsUpdateMode::Disabled,
                     icons::BAN,
-                    "O'chirilgan",
+                    tr("O'chirilgan"),
                     "Tizim yangilanmaydi",
                 ),
             ] {
@@ -460,13 +462,13 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, f: ShadowForm<'_>, cx:
             }
             ui.add_space(4.0);
             ui.label(
-                RichText::new(
+                RichText::new(tr(
                     "Shadow yoqilgan kompyuterlarda o'rnatilgan yangilanishlar ham saqlanadi.",
-                )
+                ))
                 .size(12.0)
                 .color(p.faint),
             );
-            section(ui, p, "Kompyuterlar");
+            section(ui, p, tr("Kompyuterlar"));
             target_rows(ui, p, cx.all, cx.targets, |v| {
                 (updates_label(&v.status), p.muted)
             });
@@ -568,10 +570,10 @@ fn shadow_summary(ui: &mut egui::Ui, p: &Palette, cx: &FormCtx<'_>) {
         ui.spacing_mut().item_spacing.x = 6.0;
         for (n, label, col) in [
             (on, "yoqilgan", p.accent_ink),
-            (off, "o'chiq", p.muted),
-            (pending, "qayta yuklash kutilmoqda", p.warning),
-            (unsupported, "qo'llanmaydi", p.faint),
-            (no_service, "xizmat yo'q", p.danger),
+            (off, tr("o'chiq"), p.muted),
+            (pending, tr("qayta yuklash kutilmoqda"), p.warning),
+            (unsupported, tr("qo'llanmaydi"), p.faint),
+            (no_service, tr("xizmat yo'q"), p.danger),
         ] {
             if n > 0 {
                 ui_kit::chip(ui, &format!("{n} {label}"), col);
@@ -587,28 +589,28 @@ fn protection_tab(
     restart: &mut bool,
     cx: &FormCtx<'_>,
 ) {
-    section(ui, p, "Hozirgi holat");
+    section(ui, p, tr("Hozirgi holat"));
     shadow_summary(ui, p, cx);
 
-    section(ui, p, "Nima qilamiz?");
+    section(ui, p, tr("Nima qilamiz?"));
     ui.spacing_mut().item_spacing.y = 6.0;
     for (a, ic, title, desc) in [
         (
             FreezeAction::Freeze,
             icons::SNOWFLAKE,
-            "Shadow ni yoqish",
+            tr("Shadow ni yoqish"),
             "Har qayta yuklashda kompyuter toza holatga qaytadi",
         ),
         (
             FreezeAction::Thaw,
             icons::SUN,
-            "Shadow ni o'chirish",
+            tr("Shadow ni o'chirish"),
             "O'zgarishlar saqlanadi — sozlash yoki dastur o'rnatish uchun",
         ),
         (
             FreezeAction::Maintenance,
             icons::WRENCH,
-            "Yangilab, qayta yoqish",
+            tr("Yangilab, qayta yoqish"),
             "Yangilanishlarni o'rnatadi, keyin Shadow o'zi yoqiladi",
         ),
     ] {
@@ -617,17 +619,19 @@ fn protection_tab(
         }
     }
     ui.add_space(4.0);
-    ui.checkbox(restart, "Hozir qayta yuklash");
+    ui.checkbox(restart, tr("Hozir qayta yuklash"));
     ui.label(
-        RichText::new("O'zgarish faqat qayta yuklangandan keyin kuchga kiradi.")
-            .size(12.0)
-            .color(p.faint),
+        RichText::new(tr(
+            "O'zgarish faqat qayta yuklangandan keyin kuchga kiradi.",
+        ))
+        .size(12.0)
+        .color(p.faint),
     );
 
-    section(ui, p, "Kompyuterlar");
+    section(ui, p, tr("Kompyuterlar"));
     target_rows(ui, p, cx.all, cx.targets, |v| {
         if !v.status.service {
-            return ("Vimora xizmati yo'q".into(), p.danger);
+            return (tr("Vimora xizmati yo'q").into(), p.danger);
         }
         if let (FreezeState::Unsupported, Some(n)) = (v.status.freeze, &v.status.shield_note) {
             return (n.clone(), p.faint);
@@ -637,7 +641,7 @@ fn protection_tab(
             t.push_str(&format!(" · {}%", u.percent()));
         }
         if v.status.queued > 0 {
-            t.push_str(&format!(" · {} vazifa", v.status.queued));
+            t.push_str(&tf!(" · {v0} vazifa", v0 = v.status.queued));
         }
         (t, freeze_color(p, v.status.freeze))
     });
@@ -645,14 +649,14 @@ fn protection_tab(
     ui.label(
         RichText::new(with_icon(
             icons::INFO,
-            "Siz konsoldan qilgan o'zgarishlar Shadow yoqilgan bo'lsa ham saqlanadi.",
+            tr("Siz konsoldan qilgan o'zgarishlar Shadow yoqilgan bo'lsa ham saqlanadi."),
         ))
         .size(12.0)
         .color(p.faint),
     )
-    .on_hover_text(
+    .on_hover_text(tr(
         "Windows: Unified Write Filter (Windows 10/11 Enterprise / Education)\nUbuntu: overlayroot",
-    );
+    ));
 }
 
 /// One row of the merged application table.
@@ -705,7 +709,7 @@ fn apps_tab(
         if ui_kit::button(
             ui,
             Some(icons::REFRESH_CW),
-            "Ro'yxatni olish",
+            tr("Ro'yxatni olish"),
             Kind::Outline,
         )
         .clicked()
@@ -715,7 +719,7 @@ fn apps_tab(
         ui_kit::input_frame(p).show(ui, |ui| {
             ui.add(
                 ui_kit::text_field(filter)
-                    .hint_text("Dasturni qidirish")
+                    .hint_text(tr("Dasturni qidirish"))
                     .frame(false)
                     .desired_width(200.0),
             );
@@ -725,15 +729,16 @@ fn apps_tab(
     note(
         ui,
         p,
-        &format!(
-            "{reported}/{} kompyuter ro'yxat yubordi. Belgini olib tashlasangiz, o'sha dastur yangilanmaydi (o'zi ham, Vimora orqali ham).",
-            cx.targets.len()
-        ),
+        &tf!("{reported}/{v0} kompyuter ro'yxat yubordi. Belgini olib tashlasangiz, o'sha dastur yangilanmaydi (o'zi ham, Vimora orqali ham).", reported = reported, v0 = cx.targets.len()),
     );
     if rows.is_empty() {
         ui.add_space(20.0);
         ui.vertical_centered(|ui| {
-            ui_kit::hud(ui, "Ro'yxat yo'q — \"Ro'yxatni olish\" ni bosing", p.faint)
+            ui_kit::hud(
+                ui,
+                tr("Ro'yxat yo'q — \"Ro'yxatni olish\" ni bosing"),
+                p.faint,
+            )
         });
         return;
     }
@@ -741,7 +746,7 @@ fn apps_tab(
         if ui_kit::button(
             ui,
             Some(icons::CHECK_CHECK),
-            "Hammasi yoqilsin",
+            tr("Hammasi yoqilsin"),
             Kind::Outline,
         )
         .clicked()
@@ -750,7 +755,7 @@ fn apps_tab(
                 changes.insert(r.id.clone(), true);
             }
         }
-        if ui_kit::button(ui, Some(icons::BAN), "Hammasi o'chsin", Kind::Outline).clicked() {
+        if ui_kit::button(ui, Some(icons::BAN), tr("Hammasi o'chsin"), Kind::Outline).clicked() {
             for r in rows.values() {
                 changes.insert(r.id.clone(), false);
             }
@@ -850,7 +855,10 @@ fn apps_tab(
         ui.add_space(6.0);
         ui_kit::hud(
             ui,
-            &format!("{} ta o'zgarish — \"Qo'llash\" ni bosing", changes.len()),
+            &tf!(
+                "{v0} ta o'zgarish — \"Qo'llash\" ni bosing",
+                v0 = changes.len()
+            ),
             p.warning,
         );
     }
@@ -865,15 +873,15 @@ pub(super) fn rename_form(
     restart: &mut bool,
     key: &str,
 ) {
-    section(ui, p, "Konsoldagi nomi");
+    section(ui, p, tr("Konsoldagi nomi"));
     ui.add(
         ui_kit::text_field(alias)
             .hint_text(key)
             .desired_width(f32::INFINITY),
     );
-    note(ui, p, "Faqat shu konsolda ko'rinadi, darhol o'zgaradi. Bo'sh qoldirsangiz — tizim nomi ko'rsatiladi.");
+    note(ui, p, tr("Faqat shu konsolda ko'rinadi, darhol o'zgaradi. Bo'sh qoldirsangiz — tizim nomi ko'rsatiladi."));
     ui.add_space(8.0);
-    ui.checkbox(system, "Kompyuterning tizim nomini ham o'zgartirish");
+    ui.checkbox(system, tr("Kompyuterning tizim nomini ham o'zgartirish"));
     if *system {
         ui.add(
             ui_kit::text_field(system_name)
@@ -885,12 +893,12 @@ pub(super) fn rename_form(
             ui,
             p,
             if ok {
-                "Windows'da qayta yuklangandan keyin kuchga kiradi. Shadow rejimda ham saqlanadi (commit)."
+                tr("Windows'da qayta yuklangandan keyin kuchga kiradi. Shadow rejimda ham saqlanadi (commit).")
             } else {
-                "1–15 ta lotin harfi, raqam yoki '-' (faqat raqamdan iborat bo'lmasin)."
+                tr("1–15 ta lotin harfi, raqam yoki '-' (faqat raqamdan iborat bo'lmasin).")
             },
         );
-        ui.checkbox(restart, "Darhol qayta yuklash");
+        ui.checkbox(restart, tr("Darhol qayta yuklash"));
     }
 }
 
@@ -906,14 +914,14 @@ pub(super) fn updates_form(
     all: &[View],
     targets: &[u64],
 ) {
-    section(ui, p, "Avtomatik yangilanish siyosati");
+    section(ui, p, tr("Avtomatik yangilanish siyosati"));
     ui_kit::segmented(p).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             for (m, label) in [
-                (OsUpdateMode::Auto, "Avtomatik"),
-                (OsUpdateMode::Manual, "Faqat konsoldan"),
-                (OsUpdateMode::Disabled, "O'chirilgan"),
+                (OsUpdateMode::Auto, tr("Avtomatik")),
+                (OsUpdateMode::Manual, tr("Faqat konsoldan")),
+                (OsUpdateMode::Disabled, tr("O'chirilgan")),
             ] {
                 if ui_kit::tab(ui, label, None, policy.os == m).clicked() {
                     policy.os = m;
@@ -922,36 +930,36 @@ pub(super) fn updates_form(
         });
     });
     let hint = match policy.os {
-        OsUpdateMode::Auto => "Windows Update / apt o'zi yuklab, o'zi o'rnatadi.",
+        OsUpdateMode::Auto => tr("Windows Update / apt o'zi yuklab, o'zi o'rnatadi."),
         OsUpdateMode::Manual => {
-            "Kompyuterlar o'zi o'rnatmaydi; siz shu yerdan qachon o'rnatishni hal qilasiz."
+            tr("Kompyuterlar o'zi o'rnatmaydi; siz shu yerdan qachon o'rnatishni hal qilasiz.")
         }
-        OsUpdateMode::Disabled => "Tizim yangilanishlari butunlay o'chiriladi.",
+        OsUpdateMode::Disabled => tr("Tizim yangilanishlari butunlay o'chiriladi."),
     };
     ui.label(RichText::new(hint).size(12.5).color(p.muted));
     ui.checkbox(
         &mut policy.apps_auto,
-        "Dasturlar o'zi yangilansin (Microsoft Store, Chrome, Edge, snap)",
+        tr("Dasturlar o'zi yangilansin (Microsoft Store, Chrome, Edge, snap)"),
     );
 
-    section(ui, p, "Hozir bajarish");
+    section(ui, p, tr("Hozir bajarish"));
     ui.horizontal(|ui| {
-        ui.checkbox(os, "Tizim (Windows Update / apt)");
-        ui.checkbox(apps, "Dasturlar (winget / snap)");
+        ui.checkbox(os, tr("Tizim (Windows Update / apt)"));
+        ui.checkbox(apps, tr("Dasturlar (winget / snap)"));
     });
-    ui.checkbox(restart, "Kerak bo'lsa qayta yuklash");
+    ui.checkbox(restart, tr("Kerak bo'lsa qayta yuklash"));
     ui.horizontal(|ui| {
-        if ui_kit::button(ui, Some(icons::REFRESH_CW), "Tekshirish", Kind::Outline).clicked() {
+        if ui_kit::button(ui, Some(icons::REFRESH_CW), tr("Tekshirish"), Kind::Outline).clicked() {
             *request = Some(UpdateRequest::Check);
         }
-        if ui_kit::button(ui, Some(icons::DOWNLOAD), "O'rnatish", Kind::Primary).clicked()
+        if ui_kit::button(ui, Some(icons::DOWNLOAD), tr("O'rnatish"), Kind::Primary).clicked()
             && (*os || *apps)
         {
             *request = Some(UpdateRequest::Install);
         }
     });
 
-    section(ui, p, "Kompyuterlar");
+    section(ui, p, tr("Kompyuterlar"));
     target_rows(ui, p, all, targets, |v| {
         let col = if v.status.busy.is_some() {
             p.warning
@@ -968,7 +976,7 @@ pub(super) fn updates_form(
     });
     ui.add_space(6.0);
     ui.label(
-        RichText::new("Shadow rejimdagi kompyuterga yangilanish o'rnatilmaydi (qayta yuklanganda yo'qoladi) — Shadow → \"Xizmat rejimi\" ni ishlating.")
+        RichText::new(tr("Shadow rejimdagi kompyuterga yangilanish o'rnatilmaydi (qayta yuklanganda yo'qoladi) — Shadow → \"Xizmat rejimi\" ni ishlating."))
             .size(12.0)
             .color(p.faint),
     );
@@ -999,13 +1007,17 @@ pub(super) fn net_form(
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             for (t, label, n) in [
-                (NetTab::Domains, "Saytlar", Some(split_list(domains).len())),
+                (
+                    NetTab::Domains,
+                    tr("Saytlar"),
+                    Some(split_list(domains).len()),
+                ),
                 (
                     NetTab::Keywords,
-                    "Kalit so'zlar",
+                    tr("Kalit so'zlar"),
                     Some(split_list(keywords).len()),
                 ),
-                (NetTab::Search, "Xavfsiz qidiruv", None),
+                (NetTab::Search, tr("Xavfsiz qidiruv"), None),
             ] {
                 if ui_kit::tab(ui, label, n, *tab == t).clicked() {
                     *tab = t;
@@ -1015,7 +1027,7 @@ pub(super) fn net_form(
     });
     ui.add_space(12.0);
     let presets = |ui: &mut egui::Ui, list: &mut String, sets: &[(&str, &[&str])]| {
-        ui_kit::hud(ui, "Tayyor ro'yxatlar", p.faint);
+        ui_kit::hud(ui, tr("Tayyor ro'yxatlar"), p.faint);
         ui.add_space(2.0);
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
@@ -1029,7 +1041,7 @@ pub(super) fn net_form(
     match tab {
         NetTab::Domains => {
             ui.label(
-                RichText::new("Bu domenlar va ularning barcha subdomenlari ochilmaydi (hosts fayli + Chrome/Edge/Yandex/Brave siyosatlari).")
+                RichText::new(tr("Bu domenlar va ularning barcha subdomenlari ochilmaydi (hosts fayli + Chrome/Edge/Yandex/Brave siyosatlari)."))
                     .color(p.muted),
             );
             ui.add_space(6.0);
@@ -1038,7 +1050,7 @@ pub(super) fn net_form(
                 domains,
                 &[
                     (
-                        "Ijtimoiy tarmoqlar",
+                        tr("Ijtimoiy tarmoqlar"),
                         &[
                             "instagram.com",
                             "tiktok.com",
@@ -1050,7 +1062,7 @@ pub(super) fn net_form(
                         ],
                     ),
                     (
-                        "O'yinlar",
+                        tr("O'yinlar"),
                         &[
                             "roblox.com",
                             "steampowered.com",
@@ -1061,7 +1073,7 @@ pub(super) fn net_form(
                         ],
                     ),
                     (
-                        "Video",
+                        tr("Video"),
                         &["youtube.com", "twitch.tv", "rutube.ru", "kinopoisk.ru"],
                     ),
                 ],
@@ -1069,7 +1081,7 @@ pub(super) fn net_form(
             ui.add_space(6.0);
             ui.add(
                 ui_kit::text_area(domains)
-                    .hint_text("youtube.com\ntiktok.com")
+                    .hint_text(tr("youtube.com\ntiktok.com"))
                     .desired_rows(8)
                     .desired_width(f32::INFINITY)
                     .font(egui::TextStyle::Monospace),
@@ -1078,8 +1090,7 @@ pub(super) fn net_form(
         NetTab::Keywords => {
             ui.label(
                 RichText::new(
-                    "Google, Yandex, Bing, YouTube va boshqa qidiruv tizimlarida shu so'zlar qidirilsa, brauzer tabi darhol yopiladi, \
-                     o'quvchiga ogohlantirish chiqadi va sizga xabar keladi. Har biri yangi qatorda; iboralar ham mumkin.",
+                    tr("Google, Yandex, Bing, YouTube va boshqa qidiruv tizimlarida shu so'zlar qidirilsa, brauzer tabi darhol yopiladi, o'quvchiga ogohlantirish chiqadi va sizga xabar keladi. Har biri yangi qatorda; iboralar ham mumkin."),
                 )
                 .color(p.muted),
             );
@@ -1089,7 +1100,7 @@ pub(super) fn net_form(
                 keywords,
                 &[
                     (
-                        "Qimor",
+                        tr("Qimor"),
                         &[
                             "kazino",
                             "casino",
@@ -1100,9 +1111,12 @@ pub(super) fn net_form(
                             "казино",
                         ],
                     ),
-                    ("Kattalar uchun", &["porn", "xxx", "18+", "порно", "sex"]),
                     (
-                        "O'yinlar",
+                        tr("Kattalar uchun"),
+                        &["porn", "xxx", "18+", "порно", "sex"],
+                    ),
+                    (
+                        tr("O'yinlar"),
                         &[
                             "minecraft",
                             "roblox",
@@ -1116,7 +1130,7 @@ pub(super) fn net_form(
             ui.add_space(6.0);
             ui.add(
                 ui_kit::text_area(keywords)
-                    .hint_text("kazino\nreferat yuklab olish")
+                    .hint_text(tr("kazino\nreferat yuklab olish"))
                     .desired_rows(8)
                     .desired_width(f32::INFINITY)
                     .font(egui::TextStyle::Monospace),
@@ -1126,104 +1140,27 @@ pub(super) fn net_form(
             ui.horizontal(|ui| {
                 ui.checkbox(safe, "");
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Xavfsiz qidiruvni majburlash").family(ui_kit::bold()).size(15.0));
-                    ui.label(RichText::new("Nomaqbul natijalar qidiruvdan olib tashlanadi; o'quvchi bu sozlamani o'chira olmaydi.").color(p.muted));
+                    ui.label(RichText::new(tr("Xavfsiz qidiruvni majburlash")).family(ui_kit::bold()).size(15.0));
+                    ui.label(RichText::new(tr("Nomaqbul natijalar qidiruvdan olib tashlanadi; o'quvchi bu sozlamani o'chira olmaydi.")).color(p.muted));
                 });
             });
             ui.add_space(12.0);
             ui.horizontal_wrapped(|ui| {
                 for (name, what) in [
                     ("Google", "SafeSearch"),
-                    ("Yandex", "Oilaviy qidiruv"),
+                    ("Yandex", tr("Oilaviy qidiruv")),
                     ("Bing", "Strict"),
                     ("DuckDuckGo", "Safe"),
-                    ("YouTube", "Cheklangan rejim"),
+                    ("YouTube", tr("Cheklangan rejim")),
                 ] {
                     let col = if *safe { p.success } else { p.faint };
                     ui_kit::chip(ui, &format!("{name} · {what}"), col);
                 }
             });
             ui.add_space(12.0);
-            ui.label(RichText::new("Brauzerlarda DNS-over-HTTPS o'chiriladi, shuning uchun cheklovlarni chetlab bo'lmaydi.").size(12.5).color(p.faint));
+            ui.label(RichText::new(tr("Brauzerlarda DNS-over-HTTPS o'chiriladi, shuning uchun cheklovlarni chetlab bo'lmaydi.")).size(12.5).color(p.faint));
         }
     }
-}
-
-pub(super) fn settings_form(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
-    // Label above field, full width: nothing can overlap, however tall a field is.
-    let field = |ui: &mut egui::Ui, label: &str, add: &mut dyn FnMut(&mut egui::Ui)| {
-        ui.label(RichText::new(label).size(13.0).color(p.muted));
-        ui.add_space(2.0);
-        add(ui);
-        ui.add_space(10.0);
-    };
-    section(ui, p, "Ulanish");
-    field(ui, "Ulanish kaliti", &mut |ui| {
-        ui.add(
-            ui_kit::text_field(&mut c.key)
-                .password(true)
-                .desired_width(f32::INFINITY),
-        );
-    });
-    field(ui, "Konsol nomi", &mut |ui| {
-        ui.add(ui_kit::text_field(&mut c.server_name).desired_width(f32::INFINITY));
-    });
-    ui.horizontal(|ui| {
-        ui.vertical(|ui| {
-            ui.label(RichText::new("TCP port").size(13.0).color(p.muted));
-            ui.add_space(2.0);
-            ui.add_sized(
-                [140.0, ui_kit::CONTROL_H],
-                egui::DragValue::new(&mut c.port).range(1024..=65535),
-            );
-        });
-        ui.add_space(12.0);
-        ui.vertical(|ui| {
-            ui.label(
-                RichText::new("Miniatyura yangilanishi (ms)")
-                    .size(13.0)
-                    .color(p.muted),
-            );
-            ui.add_space(2.0);
-            ui.add_sized(
-                [140.0, ui_kit::CONTROL_H],
-                egui::DragValue::new(&mut c.thumb_interval_ms)
-                    .range(250..=30000)
-                    .speed(50),
-            );
-        });
-    });
-    ui.add_space(10.0);
-    note(
-        ui,
-        p,
-        "O'quvchi kompyuterlaridagi agentda ham xuddi shu kalit bo'lishi kerak.",
-    );
-
-    section(ui, p, "Qulf ekrani");
-    field(ui, "Sarlavha", &mut |ui| {
-        ui.add(ui_kit::text_field(&mut c.lock_title).desired_width(f32::INFINITY));
-    });
-    field(ui, "Matn", &mut |ui| {
-        ui.add(
-            ui_kit::text_area(&mut c.lock_message)
-                .desired_rows(3)
-                .desired_width(f32::INFINITY),
-        );
-    });
-
-    section(ui, p, "Ko'rinish");
-    ui_kit::segmented(p).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            if ui_kit::tab(ui, "Qorong'i", None, c.dark_mode).clicked() {
-                c.dark_mode = true;
-            }
-            if ui_kit::tab(ui, "Yorug'", None, !c.dark_mode).clicked() {
-                c.dark_mode = false;
-            }
-        });
-    });
 }
 
 /// "PC-01" / "PC-01, PC-02" / "PC-01, PC-02 +5" / "Hammasi (12)".
@@ -1234,8 +1171,8 @@ pub(super) fn recipients_label(all: &[View], targets: &[u64]) -> String {
         .map(|v| v.label.as_str())
         .collect();
     match names.len() {
-        0 => "hech kim".into(),
-        n if n == all.len() && n > 2 => format!("Hammasi ({n})"),
+        0 => tr("hech kim").into(),
+        n if n == all.len() && n > 2 => tf!("Hammasi ({n})", n = n),
         1 | 2 => names.join(", "),
         n => format!("{}, {} +{}", names[0], names[1], n - 2),
     }
@@ -1260,10 +1197,10 @@ pub(super) fn chat_form(
         bar.bottom() - 0.5,
         Stroke::new(1.0_f32, p.line),
     );
-    let to = format!(
-        "{}  Kimga: {}",
-        icons::USERS,
-        recipients_label(cx.all, cx.targets)
+    let to = tf!(
+        "{v0}  Kimga: {v1}",
+        v0 = icons::USERS,
+        v1 = recipients_label(cx.all, cx.targets)
     );
     let g = ui_kit::truncated(
         ui,
@@ -1299,9 +1236,9 @@ pub(super) fn chat_form(
                             ui.vertical_centered(|ui| {
                                 ui.label(ui_kit::icon(icons::MESSAGE_CIRCLE, 34.0, p.faint));
                                 ui.add_space(6.0);
-                                ui.label(RichText::new("Hali xabar yo'q").color(p.muted));
+                                ui.label(RichText::new(tr("Hali xabar yo'q")).color(p.muted));
                                 ui.label(
-                                    RichText::new("Pastda yozing va Enter bosing")
+                                    RichText::new(tr("Pastda yozing va Enter bosing"))
                                         .size(12.0)
                                         .color(p.faint),
                                 );
@@ -1335,7 +1272,7 @@ pub(super) fn chat_form(
         .put(
             edit_rect,
             ui_kit::text_area(text)
-                .hint_text("Xabar yozing…")
+                .hint_text(tr("Xabar yozing…"))
                 .desired_rows(1)
                 .vertical_align(egui::Align::Center)
                 .desired_width(edit_rect.width())
@@ -1345,7 +1282,7 @@ pub(super) fn chat_form(
                     Key::Enter,
                 ))),
         )
-        .on_hover_text("Enter — yuborish · Shift+Enter — yangi qator");
+        .on_hover_text(tr("Enter — yuborish · Shift+Enter — yangi qator"));
     if ui.memory(|m| m.focused().is_none()) {
         edit.request_focus();
     }
@@ -1368,7 +1305,7 @@ pub(super) fn chat_form(
         FontId::proportional(18.0),
         ink,
     );
-    if (resp.on_hover_text("Yuborish").clicked() || enter) && ready {
+    if (resp.on_hover_text(tr("Yuborish")).clicked() || enter) && ready {
         *send = true;
     }
 }

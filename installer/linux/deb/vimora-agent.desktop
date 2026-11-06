@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Vimora Agent
+Exec=/opt/vimora/bin/vimora-client
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Phase=Applications

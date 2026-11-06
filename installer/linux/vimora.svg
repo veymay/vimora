@@ -1,8 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <rect width="256" height="256" fill="#2d81ff"/>
-  <g transform="translate(44 44) scale(7)" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/>
-    <path d="M22 10v6"/>
-    <path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E08262"/>
+      <stop offset="1" stop-color="#C25E3D"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="url(#bg)"/>
+  <g transform="translate(0 6)">
+    <polygon points="160,70 206,70 147,196 109,196" fill="#F7D9CC"/>
+    <polygon points="50,70 96,70 147,196 109,196" fill="#FFFFFF"/>
+    <rect x="110" y="32" width="36" height="36" fill="#FFFFFF"/>
   </g>
 </svg>

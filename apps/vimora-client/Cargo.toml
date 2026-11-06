@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 vimora-core.workspace = true
 vimora-ui.workspace = true
+vimora-update.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -33,3 +34,22 @@ windows-sys.workspace = true
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 x11rb.workspace = true
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+# Ubuntu/Debian package: `cargo deb -p vimora-client` → vimora-student_<v>_amd64.deb
+[package.metadata.deb]
+name = "vimora-student"
+maintainer = "VEYMAY"
+copyright = "2026, VEYMAY"
+extended-description = "Vimora student agent and privileged service. Installs with no questions: the computer finds the teacher console on the network and pairs with it."
+section = "education"
+priority = "optional"
+revision = ""
+depends = "$auto, libgl1, libxkbcommon0, libx11-6, libxcursor1, libxrandr2, libxi6"
+maintainer-scripts = "../../installer/linux/deb/student/"
+assets = [
+    ["target/release/vimora-client", "opt/vimora/bin/", "755"],
+    ["../../installer/linux/deb/vimora-agent.desktop", "etc/xdg/autostart/vimora-client.desktop", "644"],
+]

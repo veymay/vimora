@@ -1,6 +1,8 @@
 //! Rooms: tabs, creating/renaming/deleting rooms and assigning computers to them.
 
 use super::*;
+#[allow(unused_imports)]
+use vimora_ui::{tf, tr};
 
 impl ConsoleApp {
     pub(super) fn in_tab(&self, v: &View) -> bool {
@@ -45,7 +47,7 @@ impl ConsoleApp {
             ui.spacing_mut().item_spacing.x = 0.0;
             if ui_kit::tab(
                 ui,
-                "Hammasi",
+                tr("Hammasi"),
                 Some(all.len()),
                 self.room_tab == RoomTab::All,
             )
@@ -65,7 +67,7 @@ impl ConsoleApp {
                 }
                 resp.context_menu(|ui| {
                     if ui
-                        .button(with_icon(icons::SETTINGS, "Nomini o'zgartirish"))
+                        .button(with_icon(icons::SETTINGS, tr("Nomini o'zgartirish")))
                         .clicked()
                     {
                         self.open_dialog(Dialog::Room {
@@ -75,7 +77,7 @@ impl ConsoleApp {
                         ui.close_menu();
                     }
                     if ui
-                        .button(with_icon(icons::TRASH_2, "Xonani o'chirish"))
+                        .button(with_icon(icons::TRASH_2, tr("Xonani o'chirish")))
                         .clicked()
                     {
                         self.delete_room(r);
@@ -87,7 +89,7 @@ impl ConsoleApp {
                 && unassigned > 0
                 && ui_kit::tab(
                     ui,
-                    "Xonasiz",
+                    tr("Xonasiz"),
                     Some(unassigned),
                     self.room_tab == RoomTab::Unassigned,
                 )
@@ -97,8 +99,8 @@ impl ConsoleApp {
             }
         });
         ui.add_space(8.0);
-        if ui_kit::button(ui, Some(icons::PLUS), "Xona", Kind::Ghost)
-            .on_hover_text("Yangi xona qo'shish")
+        if ui_kit::button(ui, Some(icons::PLUS), tr("Xona"), Kind::Ghost)
+            .on_hover_text(tr("Yangi xona qo'shish"))
             .clicked()
         {
             self.open_dialog(Dialog::Room {
@@ -133,10 +135,10 @@ impl ConsoleApp {
                 .any(|r| r.eq_ignore_ascii_case(&name) && Some(r) != rename.as_ref())
             {
                 drop(c);
-                self.hub
-                    .lock()
-                    .unwrap()
-                    .log(Level::Warn, format!("\"{name}\" nomli xona allaqachon bor"));
+                self.hub.lock().unwrap().log(
+                    Level::Warn,
+                    tf!("\"{name}\" nomli xona allaqachon bor", name = name),
+                );
                 return;
             }
             match &rename {

@@ -4,10 +4,6 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    /// Shared secret; must match the teacher console.
-    pub key: String,
-    /// Room to join. Empty = join any console that knows the key.
-    pub room: String,
     /// Optional fixed console address (ip:port). Skips LAN discovery.
     pub server: Option<String>,
     /// Optional display name.
@@ -19,8 +15,6 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            key: "vimora".into(),
-            room: String::new(),
             server: None,
             name: None,
             unlock_after_disconnect_secs: 120,
@@ -29,19 +23,7 @@ impl Default for Config {
 }
 
 impl Config {
-    pub fn merge_cli(
-        mut self,
-        key: Option<String>,
-        room: Option<String>,
-        server: Option<String>,
-        name: Option<String>,
-    ) -> Self {
-        if let Some(k) = key {
-            self.key = k;
-        }
-        if let Some(r) = room {
-            self.room = r;
-        }
+    pub fn merge_cli(mut self, server: Option<String>, name: Option<String>) -> Self {
         if server.is_some() {
             self.server = server;
         }
@@ -49,6 +31,37 @@ impl Config {
             self.name = name;
         }
         self
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Pairing (public key of the console this PC follows). The authoritative copy lives with the
+// privileged service; this per-user copy lets the agent pick the right console on the network
+// and verify it even without the service (dev mode). It only holds a *public* key.
+
+fn pin_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join("vimora").join("paired-console"))
+}
+
+pub fn pin() -> Option<vimora_core::auth::ConsoleKey> {
+    pin_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| vimora_core::auth::key_from_hex(&s))
+}
+
+pub fn save_pin(key: &vimora_core::auth::ConsoleKey) {
+    if let Some(p) = pin_path() {
+        if let Some(d) = p.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        let _ = std::fs::write(p, vimora_core::auth::to_hex(key));
+    }
+}
+
+pub fn forget_pin() -> std::io::Result<()> {
+    match pin_path() {
+        Some(p) if p.exists() => std::fs::remove_file(p),
+        _ => Ok(()),
     }
 }
 

@@ -1,6 +1,8 @@
 //! The computer grid: room bar, zoom, cards with their status badge, card actions.
 
 use super::*;
+#[allow(unused_imports)]
+use vimora_ui::{tf, tr};
 
 /// The small "● SHADOW" badge on each card.
 pub(super) struct StatusBadge {
@@ -65,24 +67,24 @@ pub(super) fn status_badge(ui: &egui::Ui, p: &Palette, s: &ClientStatus) -> Stat
                 p.accent_ink
             };
             let label = if pct >= 75 {
-                format!("Shadow {pct}%")
+                tf!("Shadow {pct}%", pct = pct)
             } else {
-                "Shadow".into()
+                tr("Shadow").into()
             };
             (Some(icons::SNOWFLAKE), label, col)
         }
         FreezeState::FreezePending => (
             Some(icons::SNOWFLAKE),
-            "Shadow · kutilmoqda".into(),
+            tr("Shadow · kutilmoqda").into(),
             p.warning,
         ),
         FreezeState::ThawPending => (
             Some(icons::SUN_SNOW),
-            "Shadow · o'chmoqda".into(),
+            tr("Shadow · o'chmoqda").into(),
             p.warning,
         ),
-        FreezeState::Maintenance => (Some(icons::WRENCH), "Xizmat".into(), p.warning),
-        _ => (None, "Onlayn".into(), p.muted),
+        FreezeState::Maintenance => (Some(icons::WRENCH), tr("Xizmat").into(), p.warning),
+        _ => (None, tr("Onlayn").into(), p.muted),
     };
     let text = ui_kit::caps(ui, &label, 9.5, ui_kit::mono(), soft(col));
     let width = 9.0 + 8.0 + if icon.is_some() { 15.0 } else { 0.0 } + text.size().x + 9.0;
@@ -140,19 +142,19 @@ fn list_columns(width: f32) -> Vec<(&'static str, f32)> {
     let mut cols = vec![
         ("#", 56.0),
         ("", 74.0),
-        ("Kompyuter", 0.0),
-        ("Holat", 190.0),
-        ("Belgilar", 130.0),
-        ("Xona", 140.0),
+        (tr("Kompyuter"), 0.0),
+        (tr("Holat"), 190.0),
+        (tr("Belgilar"), 130.0),
+        (tr("Xona"), 140.0),
     ];
     if width > 1000.0 {
-        cols.push(("Foydalanuvchi", 140.0));
+        cols.push((tr("Foydalanuvchi"), 140.0));
     }
     if width > 1150.0 {
-        cols.push(("IP", 130.0));
+        cols.push((tr("IP"), 130.0));
     }
     if width > 1250.0 {
-        cols.push(("Ulangan", 90.0));
+        cols.push((tr("Ulangan"), 90.0));
     }
     cols
 }
@@ -411,22 +413,17 @@ impl ConsoleApp {
     }
 }
 
-pub(super) fn empty_state(ui: &mut egui::Ui, p: &Palette, cfg: &ServerConfig) {
+pub(super) fn empty_state(ui: &mut egui::Ui, p: &Palette, _cfg: &ServerConfig) {
     ui.vertical_centered(|ui| {
         ui.add_space(ui.available_height() * 0.2);
         ui.label(ui_kit::icon(icons::WIFI_OFF, 48.0, p.faint));
         ui.add_space(10.0);
-        ui.label(RichText::new("Kompyuterlar hali ulanmagan").family(ui_kit::bold()).size(22.0).color(p.strong));
+        ui.label(RichText::new(tr("Kompyuterlar hali ulanmagan")).family(ui_kit::bold()).size(22.0).color(p.strong));
         ui.add_space(6.0);
         ui.label(
-            RichText::new(format!(
-                "O'quvchi kompyuterlarida Vimora agentini ishga tushiring.\nPort {} · konsoldagi bilan bir xil ulanish kaliti",
-                cfg.port
-            ))
-            .color(p.muted),
+            RichText::new(tr("O'quvchi kompyuterlariga Vimora'ni o'rnating — ular shu yerda o'zi paydo bo'ladi.\nHech narsa sozlash shart emas: bir xil tarmoqda (Wi-Fi yoki LAN) bo'lsa kifoya."))
+                .color(p.muted),
         );
-        ui.add_space(14.0);
-        ui.label(RichText::new("  vimora-client --key <ulanish-kaliti>  ").family(ui_kit::mono()).color(p.text).background_color(p.sunken));
     });
 }
 
@@ -443,7 +440,7 @@ impl ConsoleApp {
                     // Grid / list switch (right-to-left: list first).
                     ui_kit::segmented(p).show(ui, |ui| ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 0.0;
-                        for (mode, ic, tip) in [(ViewMode::List, icons::LIST, "Ro'yxat"), (ViewMode::Grid, icons::LAYOUT_GRID, "Katakchalar")] {
+                        for (mode, ic, tip) in [(ViewMode::List, icons::LIST, tr("Ro'yxat")), (ViewMode::Grid, icons::LAYOUT_GRID, tr("Katakchalar"))] {
                             let on = view == mode;
                             let r = ui_kit::button(ui, Some(ic), "", if on { Kind::Outline } else { Kind::Ghost }).on_hover_text(tip);
                             if r.clicked() {
@@ -459,16 +456,18 @@ impl ConsoleApp {
                         ui_kit::segmented(p).show(ui, |ui| ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 0.0;
                             // Right-to-left parent: add "+" first so it ends up on the right.
-                            if ui_kit::button(ui, Some(icons::PLUS), "", Kind::Ghost).on_hover_text("Kattalashtirish (Ctrl + g'ildirak)").clicked() {
+                            let plus = ui.add_enabled_ui(cols > MIN_COLUMNS, |ui| ui_kit::button(ui, Some(icons::PLUS), "", Kind::Ghost).on_hover_text(tr("Kattalashtirish (Ctrl + g'ildirak)")));
+                            if plus.inner.clicked() {
                                 self.set_columns(cols - 1);
                             }
                             let pct = ui_kit::caps(ui, &format!("{}%", zoom_percent(cols)), ui_kit::HUD, ui_kit::mono_bold(), p.text);
                             let (r, resp) = ui.allocate_exact_size(vec2(58.0, ui_kit::CONTROL_H), Sense::click());
                             ui.painter().galley(r.center() - pct.size() / 2.0, pct, p.text);
-                            if resp.on_hover_text(format!("Qatorda {cols} ta · bosing: 100%")).clicked() {
+                            if resp.on_hover_text(tf!("Qatorda {cols} ta · bosing: 100%", cols = cols)).clicked() {
                                 self.set_columns(DEFAULT_COLUMNS);
                             }
-                            if ui_kit::button(ui, Some(icons::MINUS), "", Kind::Ghost).on_hover_text("Kichiklashtirish (Ctrl + g'ildirak)").clicked() {
+                            let minus = ui.add_enabled_ui(cols < MAX_COLUMNS, |ui| ui_kit::button(ui, Some(icons::MINUS), "", Kind::Ghost).on_hover_text(tr("Kichiklashtirish (Ctrl + g'ildirak)")));
+                            if minus.inner.clicked() {
                                 self.set_columns(cols + 1);
                             }
                         }));
@@ -478,7 +477,7 @@ impl ConsoleApp {
                     ui.add_space(10.0);
                     ui_kit::input_frame(p).show(ui, |ui| {
                         ui.spacing_mut().item_spacing.x = 8.0;
-                        ui.add(ui_kit::text_field(&mut self.search).hint_text("Kompyuterni qidirish").frame(false).desired_width(180.0));
+                        ui.add(ui_kit::text_field(&mut self.search).hint_text(tr("Kompyuterni qidirish")).frame(false).desired_width(180.0));
                         ui.label(RichText::new(icons::SEARCH).color(p.faint));
                     });
                 });
@@ -513,9 +512,9 @@ impl ConsoleApp {
             if visible.is_empty() {
                 ui.add_space(40.0);
                 ui.vertical_centered(|ui| {
-                    ui_kit::hud(ui, "Bu ro'yxatda kompyuter yo'q", p.faint);
+                    ui_kit::hud(ui, tr("Bu ro'yxatda kompyuter yo'q"), p.faint);
                     ui.add_space(6.0);
-                    ui.label(RichText::new("Kompyuterni o'ng tugma bilan bosib, \"Xonaga biriktirish\" ni tanlang.").color(p.muted));
+                    ui.label(RichText::new(tr("Kompyuterni o'ng tugma bilan bosib, \"Xonaga biriktirish\" ni tanlang.")).color(p.muted));
                 });
                 return;
             }
@@ -657,18 +656,7 @@ impl ConsoleApp {
 /// Tooltip text with everything the card/row doesn't show.
 fn details(v: &View) -> String {
     let room = v.room.as_deref().unwrap_or("—");
-    format!(
-        "{}\nFoydalanuvchi: {}\nIP: {}\nTizim: {}\nXona: {room}\nUlangan: {}\nShadow: {}\nYangilanishlar: {}{}{}",
-        v.label,
-        v.user,
-        v.ip,
-        v.os,
-        fmt_dur(v.online_secs),
-        freeze_label(v.status.freeze),
-        updates_label(&v.status),
-        if v.status.service { "" } else { "\n⚠ Vimora xizmati ishlamayapti" },
-        v.alert.as_ref().map(|a| format!("\n⚠ {a}")).unwrap_or_default()
-    )
+    tf!("{v0}\nFoydalanuvchi: {v1}\nIP: {v2}\nTizim: {v3}\nXona: {room}\nUlangan: {v4}\nShadow: {v5}\nYangilanishlar: {v6}{v7}{v8}", v0 = v.label, v1 = v.user, v2 = v.ip, v3 = v.os, room = room, v4 = fmt_dur(v.online_secs), v5 = freeze_label(v.status.freeze), v6 = updates_label(&v.status), v7 = if v.status.service { "" } else { "\n⚠ Vimora xizmati ishlamayapti" }, v8 = v.alert.as_ref().map(|a| format!("\n⚠ {a}")).unwrap_or_default())
 }
 
 /// Click / double-click / context menu, shared by cards and list rows.
@@ -686,16 +674,24 @@ fn item_interactions(resp: &egui::Response, v: &View, rooms: &[String], actions:
     {
         resp.context_menu(|ui| {
             for (ic, label, a) in [
-                (icons::EYE, "Ko'rish", Action::View(v.id, false)),
+                (icons::EYE, tr("Ko'rish"), Action::View(v.id, false)),
                 (
                     icons::MOUSE_POINTER_2,
-                    "Boshqarish",
+                    tr("Boshqarish"),
                     Action::View(v.id, true),
                 ),
-                (icons::LOCK, "Qulflash", Action::Lock(v.id)),
-                (icons::LOCK_OPEN, "Ochish", Action::Unlock(v.id)),
-                (icons::MESSAGE_SQUARE_TEXT, "Xabar", Action::Message(v.id)),
-                (icons::SETTINGS, "Nomini o'zgartirish", Action::Rename(v.id)),
+                (icons::LOCK, tr("Qulflash"), Action::Lock(v.id)),
+                (icons::LOCK_OPEN, tr("unlock|Ochish"), Action::Unlock(v.id)),
+                (
+                    icons::MESSAGE_SQUARE_TEXT,
+                    tr("Xabar"),
+                    Action::Message(v.id),
+                ),
+                (
+                    icons::SETTINGS,
+                    tr("Nomini o'zgartirish"),
+                    Action::Rename(v.id),
+                ),
             ] {
                 if ui.button(with_icon(ic, label)).clicked() {
                     actions.push(a);
@@ -703,33 +699,39 @@ fn item_interactions(resp: &egui::Response, v: &View, rooms: &[String], actions:
                 }
             }
             ui.separator();
-            ui.menu_button(with_icon(icons::LAYOUT_GRID, "Xonaga biriktirish"), |ui| {
-                for r in rooms {
-                    let current = v.room.as_deref() == Some(r.as_str());
-                    if ui.selectable_label(current, r).clicked() {
-                        actions.push(Action::Assign(v.id, Some(r.clone())));
+            ui.menu_button(
+                with_icon(icons::LAYOUT_GRID, tr("Xonaga biriktirish")),
+                |ui| {
+                    for r in rooms {
+                        let current = v.room.as_deref() == Some(r.as_str());
+                        if ui.selectable_label(current, r).clicked() {
+                            actions.push(Action::Assign(v.id, Some(r.clone())));
+                            ui.close_menu();
+                        }
+                    }
+                    if !rooms.is_empty() {
+                        ui.separator();
+                    }
+                    if ui
+                        .button(with_icon(icons::PLUS, tr("Yangi xona…")))
+                        .clicked()
+                    {
+                        actions.push(Action::NewRoomFor(v.id));
                         ui.close_menu();
                     }
-                }
-                if !rooms.is_empty() {
-                    ui.separator();
-                }
-                if ui.button(with_icon(icons::PLUS, "Yangi xona…")).clicked() {
-                    actions.push(Action::NewRoomFor(v.id));
-                    ui.close_menu();
-                }
-                if v.room.is_some()
-                    && ui
-                        .button(with_icon(icons::X, "Xonadan chiqarish"))
-                        .clicked()
-                {
-                    actions.push(Action::Assign(v.id, None));
-                    ui.close_menu();
-                }
-            });
+                    if v.room.is_some()
+                        && ui
+                            .button(with_icon(icons::X, tr("Xonadan chiqarish")))
+                            .clicked()
+                    {
+                        actions.push(Action::Assign(v.id, None));
+                        ui.close_menu();
+                    }
+                },
+            );
             if v.help.is_some()
                 && ui
-                    .button(with_icon(icons::CHECK, "Yordam berildi"))
+                    .button(with_icon(icons::CHECK, tr("Yordam berildi")))
                     .clicked()
             {
                 actions.push(Action::ClearHelp(v.id));
@@ -765,7 +767,7 @@ impl ConsoleApp {
             }
             Action::View(id, control) => self.open_viewer(id, control),
             Action::Lock(id) => self.lock(&[id]),
-            Action::Unlock(id) => self.send(&[id], Command::Unlock, "Qulfdan chiqarish"),
+            Action::Unlock(id) => self.send(&[id], Command::Unlock, tr("Qulfdan chiqarish")),
             Action::Message(id) => {
                 self.selected = [id].into();
                 self.open_dialog(Dialog::Message {

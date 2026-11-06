@@ -1,17 +1,19 @@
-//! Mutual challenge/response authentication based on a shared classroom key.
+//! Zero-configuration pairing: no key or port to type in.
 //!
-//! Both sides prove knowledge of the key without sending it:
-//! * client mac = HMAC(key, "vimora-client" || server_nonce || client_nonce)
-//! * server mac = HMAC(key, "vimora-server" || client_nonce || server_nonce)
+//! * The console creates an **Ed25519 identity** on first start and keeps the secret half.
+//! * A student PC **pins** the public key of the first console it connects to (trust on first
+//!   use) and from then on obeys only that console — every session and every privileged command
+//!   must carry a valid signature from it.
 //!
-//! The client refuses to obey a console that cannot prove it knows the key, so a student
-//! cannot simply run their own console to lock classmates.
+//! So installing the agent is enough for it to appear in the console, while a student who
+//! starts their own console on the same network still can't control anyone's PC.
 
-use hmac::{Hmac, Mac};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::RngCore;
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 
-type HmacSha256 = Hmac<Sha256>;
+/// A console's public key (what student PCs pin).
+pub type ConsoleKey = [u8; 32];
 
 pub fn nonce() -> Vec<u8> {
     let mut n = vec![0u8; 32];
@@ -19,62 +21,120 @@ pub fn nonce() -> Vec<u8> {
     n
 }
 
-fn mac(key: &str, label: &[u8], a: &[u8], b: &[u8]) -> Vec<u8> {
-    let mut m = HmacSha256::new_from_slice(key.as_bytes()).expect("hmac accepts any key length");
-    m.update(label);
-    m.update(a);
-    m.update(b);
-    m.finalize().into_bytes().to_vec()
+/// The console's secret identity.
+pub struct Identity(SigningKey);
+
+impl Identity {
+    pub fn generate() -> Self {
+        let mut seed = [0u8; 32];
+        rand::rngs::OsRng.fill_bytes(&mut seed);
+        Self(SigningKey::from_bytes(&seed))
+    }
+
+    pub fn from_hex(s: &str) -> Option<Self> {
+        let b = from_hex(s)?;
+        let seed: [u8; 32] = b.try_into().ok()?;
+        Some(Self(SigningKey::from_bytes(&seed)))
+    }
+
+    pub fn to_hex(&self) -> String {
+        to_hex(&self.0.to_bytes())
+    }
+
+    pub fn public(&self) -> ConsoleKey {
+        self.0.verifying_key().to_bytes()
+    }
+
+    fn sign(&self, parts: &[&[u8]]) -> Vec<u8> {
+        self.0.sign(&message(parts)).to_bytes().to_vec()
+    }
+
+    /// Proves to a student PC that this session comes from the pinned console.
+    pub fn sign_welcome(&self, client_nonce: &[u8], server_nonce: &[u8]) -> Vec<u8> {
+        self.sign(&[b"vimora-welcome", client_nonce, server_nonce])
+    }
+
+    /// Signs a privileged command, bound to the session nonce and an increasing counter
+    /// (no replay into another session, no replay at all).
+    pub fn sign_priv(&self, client_nonce: &[u8], counter: u64, payload: &[u8]) -> Vec<u8> {
+        self.sign(&[
+            b"vimora-priv",
+            client_nonce,
+            &counter.to_be_bytes(),
+            payload,
+        ])
+    }
 }
 
-fn verify(key: &str, label: &[u8], a: &[u8], b: &[u8], tag: &[u8]) -> bool {
-    let mut m = HmacSha256::new_from_slice(key.as_bytes()).expect("hmac accepts any key length");
-    m.update(label);
-    m.update(a);
-    m.update(b);
-    m.verify_slice(tag).is_ok()
+fn message(parts: &[&[u8]]) -> Vec<u8> {
+    // Length-prefix every part so different splits can't produce the same message.
+    let mut m = Vec::new();
+    for p in parts {
+        m.extend_from_slice(&(p.len() as u32).to_be_bytes());
+        m.extend_from_slice(p);
+    }
+    m
 }
 
-pub fn client_mac(key: &str, server_nonce: &[u8], client_nonce: &[u8]) -> Vec<u8> {
-    mac(key, b"vimora-client", server_nonce, client_nonce)
+fn verify(key: &ConsoleKey, parts: &[&[u8]], sig: &[u8]) -> bool {
+    let (Ok(vk), Ok(sig)) = (VerifyingKey::from_bytes(key), Signature::from_slice(sig)) else {
+        return false;
+    };
+    vk.verify(&message(parts), &sig).is_ok()
 }
 
-pub fn verify_client(key: &str, server_nonce: &[u8], client_nonce: &[u8], tag: &[u8]) -> bool {
-    verify(key, b"vimora-client", server_nonce, client_nonce, tag)
-}
-
-pub fn server_mac(key: &str, client_nonce: &[u8], server_nonce: &[u8]) -> Vec<u8> {
-    mac(key, b"vimora-server", client_nonce, server_nonce)
-}
-
-pub fn verify_server(key: &str, client_nonce: &[u8], server_nonce: &[u8], tag: &[u8]) -> bool {
-    verify(key, b"vimora-server", client_nonce, server_nonce, tag)
-}
-
-/// MAC over a privileged command. Bound to the session's client nonce and a strictly
-/// increasing counter, so it can't be replayed in another session or twice.
-pub fn priv_mac(key: &str, client_nonce: &[u8], counter: u64, payload: &[u8]) -> Vec<u8> {
-    let mut m = HmacSha256::new_from_slice(key.as_bytes()).expect("hmac accepts any key length");
-    m.update(b"vimora-priv");
-    m.update(client_nonce);
-    m.update(&counter.to_be_bytes());
-    m.update(payload);
-    m.finalize().into_bytes().to_vec()
+pub fn verify_welcome(
+    key: &ConsoleKey,
+    client_nonce: &[u8],
+    server_nonce: &[u8],
+    sig: &[u8],
+) -> bool {
+    verify(key, &[b"vimora-welcome", client_nonce, server_nonce], sig)
 }
 
 pub fn verify_priv(
-    key: &str,
+    key: &ConsoleKey,
     client_nonce: &[u8],
     counter: u64,
     payload: &[u8],
-    tag: &[u8],
+    sig: &[u8],
 ) -> bool {
-    let mut m = HmacSha256::new_from_slice(key.as_bytes()).expect("hmac accepts any key length");
-    m.update(b"vimora-priv");
-    m.update(client_nonce);
-    m.update(&counter.to_be_bytes());
-    m.update(payload);
-    m.verify_slice(tag).is_ok()
+    verify(
+        key,
+        &[
+            b"vimora-priv",
+            client_nonce,
+            &counter.to_be_bytes(),
+            payload,
+        ],
+        sig,
+    )
+}
+
+/// Short human-readable fingerprint, e.g. "3F2A-91C0-7B44".
+pub fn fingerprint(key: &ConsoleKey) -> String {
+    let h = Sha256::digest(key);
+    let hex = to_hex(&h[..6]).to_uppercase();
+    format!("{}-{}-{}", &hex[0..4], &hex[4..8], &hex[8..12])
+}
+
+pub fn to_hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+pub fn from_hex(s: &str) -> Option<Vec<u8>> {
+    let s = s.trim();
+    if !s.is_ascii() || !s.len().is_multiple_of(2) {
+        return None;
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+        .collect()
+}
+
+pub fn key_from_hex(s: &str) -> Option<ConsoleKey> {
+    from_hex(s)?.try_into().ok()
 }
 
 #[cfg(test)]
@@ -82,17 +142,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn roundtrip() {
-        let (s, c) = (nonce(), nonce());
-        let cm = client_mac("k", &s, &c);
-        assert!(verify_client("k", &s, &c, &cm));
-        assert!(!verify_client("wrong", &s, &c, &cm));
-        let sm = server_mac("k", &c, &s);
-        assert!(verify_server("k", &c, &s, &sm));
-        assert!(!verify_server("k", &s, &c, &sm));
-        let pm = priv_mac("k", &c, 7, b"cmd");
-        assert!(verify_priv("k", &c, 7, b"cmd", &pm));
-        assert!(!verify_priv("k", &c, 8, b"cmd", &pm));
-        assert!(!verify_priv("k", &s, 7, b"cmd", &pm));
+    fn signatures() {
+        let id = Identity::generate();
+        let pk = id.public();
+        let (c, s) = (nonce(), nonce());
+        let w = id.sign_welcome(&c, &s);
+        assert!(verify_welcome(&pk, &c, &s, &w));
+        assert!(!verify_welcome(&pk, &s, &c, &w));
+        let other = Identity::generate().public();
+        assert!(!verify_welcome(&other, &c, &s, &w));
+
+        let p = id.sign_priv(&c, 7, b"cmd");
+        assert!(verify_priv(&pk, &c, 7, b"cmd", &p));
+        assert!(!verify_priv(&pk, &c, 8, b"cmd", &p));
+        assert!(!verify_priv(&pk, &s, 7, b"cmd", &p));
+        assert!(!verify_priv(&pk, &c, 7, b"cmd!", &p));
+    }
+
+    #[test]
+    fn identity_roundtrip() {
+        let id = Identity::generate();
+        let back = Identity::from_hex(&id.to_hex()).unwrap();
+        assert_eq!(id.public(), back.public());
+        assert_eq!(key_from_hex(&to_hex(&id.public())), Some(id.public()));
+        assert_eq!(fingerprint(&id.public()).len(), 14);
     }
 }
