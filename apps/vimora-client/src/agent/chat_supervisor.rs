@@ -21,11 +21,15 @@ fn frame(msg: &ChatIn) -> Result<Vec<u8>> {
 }
 
 fn spawn(ctx: &Ctx) -> Result<ChatProc> {
-    let mut child = std::process::Command::new(std::env::current_exe()?)
-        .arg("chat")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()?;
+    let mut cmd = std::process::Command::new(std::env::current_exe()?);
+    cmd.arg("chat").stdin(Stdio::piped()).stdout(Stdio::piped());
+    // Wayland doesn't let apps position their windows; run the panel through XWayland so it
+    // can dock to the right screen edge (no-op on Windows and plain X11).
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if std::env::var_os("DISPLAY").is_some() {
+        cmd.env_remove("WAYLAND_DISPLAY");
+    }
+    let mut child = cmd.spawn()?;
     let stdin = child.stdin.take().context("no stdin")?;
     let stdout = child.stdout.take().context("no stdout")?;
     let uplink = ctx.uplink.clone();

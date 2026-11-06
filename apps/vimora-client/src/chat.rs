@@ -61,7 +61,9 @@ pub fn run() -> anyhow::Result<()> {
             .with_taskbar(false)
             .with_resizable(false)
             .with_min_inner_size([STRIP_W, 200.0])
-            .with_inner_size([OPEN_W, 640.0]),
+            .with_inner_size([STRIP_W, 640.0])
+            // Hidden until it has been moved to the right screen edge (no jump on start).
+            .with_visible(false),
         ..Default::default()
     };
     let i2 = inbox.clone();
@@ -165,9 +167,14 @@ impl ChatApp {
         let y = ((monitor.y - h) / 2.0).round();
         let geo = (x, y, self.width.round());
         if self.last_geometry != Some(geo) {
+            let first = self.last_geometry.is_none();
             self.last_geometry = Some(geo);
             ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(geo.2, h)));
             ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(x, y)));
+            if first {
+                // Placed at the edge (still a thin strip): show it, then it slides out.
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            }
         }
     }
 }
@@ -448,7 +455,8 @@ impl ChatApp {
             edit_rect,
             vimora_ui::text_area(&mut self.draft)
                 .hint_text("Javob yozing…")
-                .desired_rows(2)
+                .desired_rows(1)
+                .vertical_align(egui::Align::Center)
                 .desired_width(edit_rect.width())
                 .min_size(edit_rect.size())
                 .return_key(Some(egui::KeyboardShortcut::new(

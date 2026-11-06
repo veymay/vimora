@@ -1336,7 +1336,8 @@ pub(super) fn chat_form(
             edit_rect,
             ui_kit::text_area(text)
                 .hint_text("Xabar yozing…")
-                .desired_rows(2)
+                .desired_rows(1)
+                .vertical_align(egui::Align::Center)
                 .desired_width(edit_rect.width())
                 .min_size(edit_rect.size())
                 .return_key(Some(egui::KeyboardShortcut::new(

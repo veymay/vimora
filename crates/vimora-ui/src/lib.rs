@@ -437,6 +437,22 @@ pub fn button(ui: &mut Ui, icon: Option<&str>, label: &str, kind: Kind) -> Respo
         stroke
     };
     ui.painter().rect(rect, Rounding::ZERO, fill, stroke);
+    if label.is_empty() {
+        // Icon-only: centre the glyph in the square.
+        if let Some(ic) = icon {
+            ui.painter().text(
+                rect.center(),
+                Align2::CENTER_CENTER,
+                ic,
+                FontId::proportional(15.0),
+                ink,
+            );
+        }
+        if hovered {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        return resp;
+    }
     let total = g.size().x + icon_w;
     let mut x = rect.center().x - total / 2.0;
     if let Some(ic) = icon {

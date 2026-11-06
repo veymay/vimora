@@ -58,7 +58,7 @@ impl ConsoleApp {
                         (Menu::Activity, icons::ACTIVITY, "Jurnal", None),
                     ];
                     // Every item gets the same width; on narrow windows they shrink to icons.
-                    let right_w = 260.0;
+                    let right_w = 240.0;
                     let item_w = ((ui.available_width() - right_w) / items.len() as f32)
                         .clamp(52.0, 94.0)
                         .floor();
@@ -116,35 +116,23 @@ impl ConsoleApp {
                         // "12 kompyuter" with "● 9 onlayn" underneath.
                         let online = all.len();
                         let total = self.cfg.read().unwrap().known.len().max(online);
-                        let top = ui_kit::caps(
-                            ui,
-                            &format!("{total} kompyuter"),
-                            ui_kit::HUD,
-                            ui_kit::mono_bold(),
-                            p.text,
-                        );
+                        let font = |t: &str, c: Color32| {
+                            ui_kit::caps(ui, t, ui_kit::HUD, ui_kit::mono_bold(), c)
+                        };
+                        let top = font(&format!("{total} kompyuter"), p.text);
                         let on_col = if online > 0 { p.success } else { p.faint };
-                        let bottom = ui_kit::caps(
-                            ui,
-                            &format!("{online} onlayn"),
-                            10.0,
-                            ui_kit::mono(),
-                            on_col,
-                        );
-                        let w = top.size().x.max(bottom.size().x + 12.0);
+                        let bottom = font(&format!("{online} onlayn"), on_col);
+                        let gap = 5.0;
+                        let w = top.size().x.max(bottom.size().x);
                         let (r, _) = ui.allocate_exact_size(vec2(w, HEADER_H), Sense::hover());
-                        let y0 = r.center().y - (top.size().y + bottom.size().y + 4.0) / 2.0;
-                        let by = y0 + top.size().y + 4.0;
-                        let bh = bottom.size().y;
+                        let block = top.size().y + gap + bottom.size().y;
+                        let y0 = r.center().y - block / 2.0;
+                        // Both lines right-aligned to the same edge.
+                        let by = y0 + top.size().y + gap;
                         ui.painter()
                             .galley(pos2(r.right() - top.size().x, y0), top, p.text);
-                        let bx = r.right() - bottom.size().x;
-                        ui.painter().galley(pos2(bx, by), bottom, on_col);
-                        ui.painter().rect_filled(
-                            Rect::from_center_size(pos2(bx - 8.0, by + bh / 2.0), vec2(6.0, 6.0)),
-                            Rounding::ZERO,
-                            on_col,
-                        );
+                        ui.painter()
+                            .galley(pos2(r.right() - bottom.size().x, by), bottom, on_col);
                     });
                 });
             });

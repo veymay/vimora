@@ -25,7 +25,7 @@ fn main() -> eframe::Result<()> {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("Vimora — O'qituvchi konsoli")
             .with_inner_size([1480.0, 900.0])
-            .with_min_inner_size([900.0, 560.0]),
+            .with_min_inner_size([1360.0, 720.0]),
         ..Default::default()
     };
     eframe::run_native(
