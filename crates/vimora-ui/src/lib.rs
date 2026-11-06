@@ -103,10 +103,10 @@ pub const DARK: Palette = Palette {
     faint: hex(0x85837b),
     line: hex(0x3d3c38),
     line_strong: hex(0x5c5a54),
-    accent: hex(0xd97757),
-    accent_ink: hex(0xe8987c),
-    invert_bg: hex(0xd97757),
-    invert_fg: hex(0xffffff),
+    accent: hex(0x7dba28),
+    accent_ink: hex(0x9ad14a),
+    invert_bg: hex(0x7dba28),
+    invert_fg: hex(0x1a2a08),
     success: hex(0x6fbf73),
     warning: hex(0xe9b44c),
     danger: hex(0xe5685a),
@@ -114,7 +114,7 @@ pub const DARK: Palette = Palette {
     card: hex(0x30302e),
     card_hover: hex(0x363633),
     border: hex(0x3d3c38),
-    on_accent: hex(0xffffff),
+    on_accent: hex(0x1a2a08),
 };
 
 pub const LIGHT: Palette = Palette {
@@ -128,10 +128,10 @@ pub const LIGHT: Palette = Palette {
     faint: hex(0x8f8d85),
     line: hex(0xe3e1d7),
     line_strong: hex(0xc4c1b5),
-    accent: hex(0xc96442),
-    accent_ink: hex(0xae5230),
-    invert_bg: hex(0xc96442),
-    invert_fg: hex(0xffffff),
+    accent: hex(0x7dba28),
+    accent_ink: hex(0x4f7a12),
+    invert_bg: hex(0x7dba28),
+    invert_fg: hex(0x1a2a08),
     success: hex(0x2e7d32),
     warning: hex(0x9a6700),
     danger: hex(0xc0392b),
@@ -139,7 +139,7 @@ pub const LIGHT: Palette = Palette {
     card: hex(0xffffff),
     card_hover: hex(0xfbfaf7),
     border: hex(0xe3e1d7),
-    on_accent: hex(0xffffff),
+    on_accent: hex(0x1a2a08),
 };
 
 /// Colours for numbered tags (one per student, cycling).
@@ -259,6 +259,9 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
     }
     ctx.set_visuals(v);
     ctx.style_mut(|s| {
+        // Tooltips appear at once, even while the pointer is still moving.
+        s.interaction.tooltip_delay = 0.0;
+        s.interaction.show_tooltips_only_when_still = false;
         s.spacing.item_spacing = vec2(8.0, 6.0);
         s.spacing.icon_spacing = 8.0;
         s.spacing.button_padding = vec2(12.0, 6.0);
@@ -510,81 +513,6 @@ pub fn icon_cell(ui: &mut Ui, icon: &str, height: f32, active: bool) -> Response
     resp
 }
 
-/// Menu item: outline icon above an upper-case bold label, flat until hovered.
-/// All items in a menu should get the same `width`; below ~72 px only the icon is drawn.
-pub fn nav_item(
-    ui: &mut Ui,
-    icon: &str,
-    label: &str,
-    width: f32,
-    height: f32,
-    active: bool,
-    tint: Option<Color32>,
-) -> Response {
-    let p = palette(ui.ctx());
-    let base = tint.unwrap_or(p.text);
-    let g = caps(ui, label, 10.0, mono_bold(), base);
-    let compact = width < 72.0;
-    let w = width;
-    let (rect, resp) = ui.allocate_exact_size(vec2(w, height), Sense::click());
-    let hovered = resp.hovered();
-    // Flat cell, full height; items are divided by hairlines (no gaps, no padding).
-    if hovered || active {
-        ui.painter()
-            .rect_filled(rect, Rounding::ZERO, if active { p.card } else { p.hover });
-    }
-    if active {
-        let bar = Rect::from_min_max(egui::pos2(rect.left(), rect.bottom() - 2.0), rect.max);
-        ui.painter()
-            .rect_filled(bar, Rounding::ZERO, tint.unwrap_or(p.accent));
-    }
-    ui.painter().vline(
-        rect.right() - 0.5,
-        rect.y_range(),
-        Stroke::new(1.0_f32, p.line),
-    );
-    let icon_col = if hovered || active {
-        tint.unwrap_or(p.strong)
-    } else {
-        tint.unwrap_or(p.text)
-    };
-    let icon_y = if compact {
-        rect.center().y
-    } else {
-        rect.top() + height * 0.36
-    };
-    ui.painter().text(
-        egui::pos2(rect.center().x, icon_y),
-        Align2::CENTER_CENTER,
-        icon,
-        FontId::proportional(21.0),
-        icon_col,
-    );
-    if !compact {
-        let label_col = if hovered || active {
-            tint.unwrap_or(p.strong)
-        } else {
-            tint.unwrap_or(p.muted)
-        };
-        ui.painter().galley(
-            egui::pos2(
-                rect.center().x - g.size().x / 2.0,
-                rect.top() + height * 0.64,
-            ),
-            g,
-            label_col,
-        );
-    }
-    if hovered {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    if compact {
-        resp.on_hover_text(label.to_uppercase())
-    } else {
-        resp
-    }
-}
-
 /// Selectable mono tab (filter cells).
 pub fn tab(ui: &mut Ui, label: &str, count: Option<usize>, selected: bool) -> Response {
     let p = palette(ui.ctx());
@@ -691,8 +619,8 @@ pub fn input_frame(p: &Palette) -> Frame {
 /// Same geometry as `assets/brand/vimora.svg` (256 grid).
 pub fn logo(painter: &egui::Painter, rect: Rect) {
     use egui::{epaint::PathShape, pos2, Pos2};
-    let top = hex(0xe08262);
-    let bottom = hex(0xc25e3d);
+    let top = hex(0x93cf3f);
+    let bottom = hex(0x69a31c);
     let mut mesh = egui::Mesh::default();
     mesh.colored_vertex(rect.left_top(), top);
     mesh.colored_vertex(rect.right_top(), top);
@@ -709,7 +637,7 @@ pub fn logo(painter: &egui::Painter, rect: Rect) {
     };
     poly(
         &[(160.0, 70.0), (206.0, 70.0), (147.0, 196.0), (109.0, 196.0)],
-        hex(0xf7d9cc),
+        hex(0xe6f4cc),
     );
     poly(
         &[(50.0, 70.0), (96.0, 70.0), (147.0, 196.0), (109.0, 196.0)],
@@ -774,44 +702,294 @@ pub fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
     resp
 }
 
-/// One row of a dropdown menu: icon, title and a muted one-line hint.
-pub fn menu_row(
+/// Dock item: icon above a small label inside the navbar dock. Hover and active states animate.
+/// Active: lifted surface, 2 px accent bar on top, accent icon.
+pub fn dock_item(
     ui: &mut Ui,
     icon: &str,
-    title: &str,
-    hint: &str,
+    label: &str,
+    size: egui::Vec2,
+    active: bool,
     tint: Option<Color32>,
 ) -> Response {
     let p = palette(ui.ctx());
-    let h = if hint.is_empty() { 40.0 } else { 52.0 };
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), h), Sense::click());
-    if resp.hovered() {
-        ui.painter().rect_filled(rect, Rounding::ZERO, p.hover);
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    let ctx = ui.ctx().clone();
+    let hover = ctx.animate_bool_with_time(resp.id.with("hover"), resp.hovered(), 0.12);
+    let on = ctx.animate_bool_with_time(resp.id.with("active"), active, 0.15);
+    let accent = tint.unwrap_or(p.accent_ink);
+    // Surface: transparent → hover → lifted card.
+    let base = Color32::TRANSPARENT;
+    let hover_fill = p.hover.gamma_multiply(0.9);
+    let fill = lerp_color(lerp_color(base, hover_fill, hover), p.card, on);
+    ui.painter().rect_filled(rect, Rounding::ZERO, fill);
+    if on > 0.0 {
+        let w = (rect.width() - 20.0) * on;
+        let bar =
+            Rect::from_center_size(egui::pos2(rect.center().x, rect.top() + 1.0), vec2(w, 2.0));
+        ui.painter().rect_filled(bar, Rounding::ZERO, accent);
     }
-    let ink = tint.unwrap_or(p.text);
+    let rest_icon = tint.unwrap_or(p.muted);
+    let icon_col = lerp_color(
+        lerp_color(rest_icon, tint.unwrap_or(p.strong), hover),
+        accent,
+        on,
+    );
+    let label_col = lerp_color(lerp_color(p.muted, p.strong, hover), p.strong, on);
+    let room = rect.width() - 8.0;
+    let mut font = FontId::new(10.5, medium());
+    let mut g = ui
+        .painter()
+        .layout_no_wrap(label.to_string(), font.clone(), label_col);
+    if g.size().x > room {
+        font.size = (10.5 * room / g.size().x).max(8.0);
+        g = ui
+            .painter()
+            .layout_no_wrap(label.to_string(), font, label_col);
+    }
+    const ICON: f32 = 18.0;
+    const GAP: f32 = 4.0;
+    let block = ICON + GAP + g.size().y;
+    let top = rect.center().y - block / 2.0 + 1.0;
     ui.painter().text(
-        egui::pos2(rect.left() + 24.0, rect.center().y),
+        egui::pos2(rect.center().x, top + ICON / 2.0),
         Align2::CENTER_CENTER,
         icon,
-        FontId::proportional(17.0),
-        ink,
+        FontId::proportional(ICON),
+        icon_col,
     );
-    let x = rect.left() + 48.0;
-    let w = rect.width() - 60.0;
-    let t = truncated(ui, title, FontId::new(13.5, bold()), p.strong, w);
-    if hint.is_empty() {
-        ui.painter().galley(
-            egui::pos2(x, rect.center().y - t.size().y / 2.0),
-            t,
-            p.strong,
-        );
-    } else {
-        ui.painter()
-            .galley(egui::pos2(x, rect.top() + 9.0), t, p.strong);
-        let d = truncated(ui, hint, FontId::proportional(12.0), p.muted, w);
-        ui.painter()
-            .galley(egui::pos2(x, rect.top() + 29.0), d, p.muted);
+    ui.painter().galley(
+        egui::pos2(rect.center().x - g.size().x / 2.0, top + ICON + GAP),
+        g,
+        label_col,
+    );
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     resp
+}
+
+/// Linear blend of two colours (premultiplied, so transparent blends cleanly).
+pub fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let m = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+    Color32::from_rgba_premultiplied(
+        m(a.r(), b.r()),
+        m(a.g(), b.g()),
+        m(a.b(), b.b()),
+        m(a.a(), b.a()),
+    )
+}
+
+/// Sidebar row: icon, label and an optional count on the right. Animated hover; the active row
+/// is lifted with a 2 px accent bar on its left edge.
+pub fn side_row(
+    ui: &mut Ui,
+    icon: &str,
+    label: &str,
+    count: Option<usize>,
+    active: bool,
+    tint: Option<Color32>,
+) -> Response {
+    let p = palette(ui.ctx());
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::click());
+    let ctx = ui.ctx().clone();
+    let hover = ctx.animate_bool_with_time(resp.id.with("hover"), resp.hovered(), 0.12);
+    let on = ctx.animate_bool_with_time(resp.id.with("active"), active, 0.15);
+    let fill = lerp_color(lerp_color(Color32::TRANSPARENT, p.hover, hover), p.card, on);
+    ui.painter().rect_filled(rect, Rounding::ZERO, fill);
+    if on > 0.0 {
+        let h = (rect.height() - 12.0) * on;
+        ui.painter().rect_filled(
+            Rect::from_center_size(egui::pos2(rect.left() + 1.0, rect.center().y), vec2(2.0, h)),
+            Rounding::ZERO,
+            p.accent,
+        );
+    }
+    let ink = lerp_color(lerp_color(p.muted, p.strong, hover), p.strong, on);
+    let icon_ink = tint.unwrap_or(lerp_color(ink, p.accent_ink, on));
+    ui.painter().text(
+        egui::pos2(rect.left() + 22.0, rect.center().y),
+        Align2::CENTER_CENTER,
+        icon,
+        FontId::proportional(16.0),
+        icon_ink,
+    );
+    let mut right = rect.right() - 12.0;
+    if let Some(n) = count {
+        let g = ui.painter().layout_no_wrap(
+            n.to_string(),
+            FontId::new(11.5, mono()),
+            if active { p.accent_ink } else { p.faint },
+        );
+        right -= g.size().x;
+        ui.painter().galley(
+            egui::pos2(right, rect.center().y - g.size().y / 2.0),
+            g,
+            p.faint,
+        );
+        right -= 8.0;
+    }
+    let t = truncated(
+        ui,
+        label,
+        FontId::new(13.5, medium()),
+        ink,
+        right - rect.left() - 44.0,
+    );
+    ui.painter().galley(
+        egui::pos2(rect.left() + 42.0, rect.center().y - t.size().y / 2.0),
+        t,
+        ink,
+    );
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp
+}
+
+// ---------------------------------------------------------------------------------------------
+// Popups with an arrow pointing at the thing they belong to (tooltips and context menus).
+
+/// Height of the arrow and the gap it leaves between the popup and the anchor.
+const ARROW_H: f32 = 7.0;
+
+/// Shows a popup next to `anchor` with a small arrow pointing at it. The popup opens below the
+/// anchor when it fits there, otherwise above. `x` is where the arrow points horizontally
+/// (clamped to the anchor). Returns the popup's rectangle.
+pub fn arrow_popup(
+    ctx: &egui::Context,
+    id: egui::Id,
+    anchor: Rect,
+    x: f32,
+    interactive: bool,
+    add_contents: impl FnOnce(&mut Ui),
+) -> Rect {
+    let p = palette(ctx);
+    let screen = ctx.screen_rect();
+    let size = ctx
+        .data(|d| d.get_temp::<egui::Vec2>(id))
+        .unwrap_or(vec2(240.0, 200.0));
+    let gap = ARROW_H + 2.0;
+    let below = screen.bottom() - anchor.bottom() - gap > size.y + 6.0
+        || anchor.top() - screen.top() < size.y + gap + 6.0;
+    let ax = x.clamp(
+        anchor.left() + 8.0,
+        (anchor.right() - 8.0).max(anchor.left() + 8.0),
+    );
+    let left = (ax - 22.0).clamp(
+        screen.left() + 6.0,
+        (screen.right() - size.x - 6.0).max(6.0),
+    );
+    let (pos, pivot) = if below {
+        (egui::pos2(left, anchor.bottom() + gap), Align2::LEFT_TOP)
+    } else {
+        (egui::pos2(left, anchor.top() - gap), Align2::LEFT_BOTTOM)
+    };
+    let out = egui::Area::new(id)
+        .order(egui::Order::Tooltip)
+        .fixed_pos(pos)
+        .pivot(pivot)
+        .interactable(interactive)
+        .show(ctx, |ui| {
+            Frame::none()
+                .fill(p.card)
+                .stroke(Stroke::new(1.0_f32, p.line_strong))
+                .shadow(Shadow {
+                    offset: vec2(0.0, 6.0),
+                    blur: 18.0,
+                    spread: 0.0,
+                    color: Color32::from_black_alpha(90),
+                })
+                .inner_margin(Margin::same(6.0))
+                .show(ui, add_contents);
+        });
+    let rect = out.response.rect;
+    ctx.data_mut(|d| d.insert_temp(id, rect.size()));
+
+    // Arrow on the edge facing the anchor.
+    let ax = ax.clamp(
+        rect.left() + 12.0,
+        (rect.right() - 12.0).max(rect.left() + 12.0),
+    );
+    let painter = ctx
+        .layer_painter(out.response.layer_id)
+        .with_clip_rect(screen.expand(20.0));
+    let (edge, tip) = if below {
+        (rect.top(), rect.top() - ARROW_H)
+    } else {
+        (rect.bottom(), rect.bottom() + ARROW_H)
+    };
+    let (l, r, t) = (
+        egui::pos2(ax - ARROW_H, edge),
+        egui::pos2(ax + ARROW_H, edge),
+        egui::pos2(ax, tip),
+    );
+    painter.add(egui::epaint::PathShape::convex_polygon(
+        vec![l, t, r],
+        p.card,
+        Stroke::NONE,
+    ));
+    let line = Stroke::new(1.0_f32, p.line_strong);
+    painter.line_segment([l, t], line);
+    painter.line_segment([t, r], line);
+    // Hide the frame's border under the arrow's base.
+    painter.line_segment(
+        [
+            egui::pos2(ax - ARROW_H + 1.0, edge),
+            egui::pos2(ax + ARROW_H - 1.0, edge),
+        ],
+        Stroke::new(2.0_f32, p.card),
+    );
+    rect
+}
+
+/// `response.tip("text")`: a tooltip with an arrow, shown at once while hovering.
+pub trait ResponseExt: Sized {
+    /// Tooltip anchored to the widget; the arrow points at the pointer (or the widget's centre).
+    fn tip(self, text: impl AsRef<str>) -> Self;
+}
+
+impl ResponseExt for Response {
+    fn tip(self, text: impl AsRef<str>) -> Self {
+        if self.hovered() && !self.ctx.input(|i| i.pointer.any_down()) {
+            let p = palette(&self.ctx);
+            let x = self.rect.center().x;
+            arrow_popup(
+                &self.ctx,
+                egui::Id::new(("arrow-tip", self.id)),
+                self.rect,
+                x,
+                false,
+                |ui| {
+                    ui.set_max_width(340.0);
+                    ui.label(RichText::new(text.as_ref()).size(12.5).color(p.text));
+                },
+            );
+        }
+        self
+    }
+}
+
+/// Like [`ResponseExt::tip`] but the arrow follows the pointer along the widget (big cards).
+pub fn tip_at_pointer(resp: &Response, text: &str) {
+    if resp.hovered() && !resp.ctx.input(|i| i.pointer.any_down()) {
+        let p = palette(&resp.ctx);
+        let x = resp
+            .ctx
+            .input(|i| i.pointer.hover_pos())
+            .map(|pos| pos.x)
+            .unwrap_or(resp.rect.center().x);
+        arrow_popup(
+            &resp.ctx,
+            egui::Id::new(("arrow-tip", resp.id)),
+            resp.rect,
+            x,
+            false,
+            |ui| {
+                ui.set_max_width(340.0);
+                ui.label(RichText::new(text).size(12.5).color(p.text));
+            },
+        );
+    }
 }

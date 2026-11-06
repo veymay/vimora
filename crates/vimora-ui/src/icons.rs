@@ -68,6 +68,7 @@ pub const LIST: &str = "\u{e10c}";
 pub const FILTER: &str = "\u{e0d5}";
 pub const KEY_ROUND: &str = "\u{e4a8}";
 pub const CHEVRON_DOWN: &str = "\u{e071}";
+pub const CHEVRON_UP: &str = "\u{e074}";
 pub const EXTERNAL_LINK: &str = "\u{e0bd}";
 pub const TEXT_SEARCH: &str = "\u{e5b2}";
 pub const SNOWFLAKE: &str = "\u{e169}";

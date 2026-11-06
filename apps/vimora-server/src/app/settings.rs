@@ -63,6 +63,7 @@ pub(super) const SETTINGS_W: f32 = 880.0;
 const NAV_W: f32 = 240.0;
 const BODY_H: f32 = 520.0;
 const ROW_H: f32 = 56.0;
+const NAV_ITEM_H: f32 = 46.0;
 
 pub(super) struct SettingsCtx<'a> {
     pub(super) fingerprint: &'a str,
@@ -92,12 +93,13 @@ pub(super) fn settings_page(
         );
         let mut nav_ui = ui.new_child(
             egui::UiBuilder::new()
-                .max_rect(nav.shrink2(vec2(0.0, 10.0)))
+                .max_rect(nav)
                 .layout(Layout::top_down(Align::Min)),
         );
         for t in SettingsTab::ALL {
             let on = *tab == t;
-            let (r, resp) = nav_ui.allocate_exact_size(vec2(NAV_W - 1.0, 40.0), Sense::click());
+            let (r, resp) =
+                nav_ui.allocate_exact_size(vec2(NAV_W - 1.0, NAV_ITEM_H), Sense::click());
             if on || resp.hovered() {
                 nav_ui
                     .painter()
@@ -105,30 +107,44 @@ pub(super) fn settings_page(
             }
             if on {
                 nav_ui.painter().rect_filled(
-                    Rect::from_min_size(r.min, vec2(2.0, r.height())),
+                    Rect::from_min_size(r.min, vec2(3.0, r.height())),
                     Rounding::ZERO,
                     p.accent,
                 );
             }
-            let col = if on { p.strong } else { p.muted };
+            let col = if on { p.strong } else { p.text };
             nav_ui.painter().text(
-                pos2(r.left() + 26.0, r.center().y),
+                pos2(r.left() + 28.0, r.center().y),
                 Align2::CENTER_CENTER,
                 t.icon(),
-                FontId::proportional(16.0),
+                FontId::proportional(17.0),
                 if on { p.accent_ink } else { p.muted },
             );
             let g = ui_kit::truncated(
                 &nav_ui,
                 t.label(),
-                FontId::new(13.5, ui_kit::medium()),
+                FontId::new(13.0, ui_kit::medium()),
                 col,
-                NAV_W - 60.0,
+                NAV_W - 54.0 - 34.0,
             );
             nav_ui.painter().galley(
-                pos2(r.left() + 48.0, r.center().y - g.size().y / 2.0),
+                pos2(r.left() + 54.0, r.center().y - g.size().y / 2.0),
                 g,
                 col,
+            );
+            // Arrow at the right edge: shows where the item leads, brighter when selected.
+            nav_ui.painter().text(
+                pos2(r.right() - 22.0, r.center().y),
+                Align2::CENTER_CENTER,
+                icons::CHEVRON_RIGHT,
+                FontId::proportional(15.0),
+                if on {
+                    p.accent_ink
+                } else if resp.hovered() {
+                    p.muted
+                } else {
+                    p.faint
+                },
             );
             if resp.hovered() {
                 nav_ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -151,7 +167,7 @@ pub(super) fn settings_page(
             NAV_W - 32.0,
         );
         ui.painter().galley(
-            pos2(nav.left() + 18.0, nav.bottom() - 18.0 - g.size().y),
+            pos2(nav.left() + 24.0, nav.bottom() - 18.0 - g.size().y),
             g,
             p.faint,
         );
@@ -260,6 +276,106 @@ fn choice<T: Copy + PartialEq>(
     changed
 }
 
+/// Dropdown list: the current value with a chevron; the popup lists every option with a check mark.
+fn dropdown<T: Copy + PartialEq>(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    id: &str,
+    value: &mut T,
+    items: &[(T, &str)],
+) -> bool {
+    const W: f32 = 220.0;
+    const ITEM_H: f32 = 38.0;
+    let popup_id = egui::Id::new(("dropdown", id));
+    let open = ui.memory(|m| m.is_popup_open(popup_id));
+    let (r, resp) = ui.allocate_exact_size(vec2(W, ui_kit::CONTROL_H), Sense::click());
+    let hov = resp.hovered();
+    ui.painter().rect(
+        r,
+        Rounding::ZERO,
+        if hov || open { p.hover } else { p.sunken },
+        Stroke::new(
+            1.0_f32,
+            if open {
+                p.accent
+            } else if hov {
+                p.line_strong
+            } else {
+                p.line
+            },
+        ),
+    );
+    let label = items
+        .iter()
+        .find(|(v, _)| *v == *value)
+        .map(|(_, l)| *l)
+        .unwrap_or("");
+    ui.painter().text(
+        pos2(r.left() + 14.0, r.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        FontId::new(13.5, ui_kit::medium()),
+        p.strong,
+    );
+    ui.painter().text(
+        pos2(r.right() - 18.0, r.center().y),
+        Align2::CENTER_CENTER,
+        if open {
+            icons::CHEVRON_UP
+        } else {
+            icons::CHEVRON_DOWN
+        },
+        FontId::proportional(15.0),
+        if open { p.accent_ink } else { p.muted },
+    );
+    if hov {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    if resp.clicked() {
+        ui.memory_mut(|m| m.toggle_popup(popup_id));
+    }
+    let mut changed = false;
+    egui::popup_below_widget(
+        ui,
+        popup_id,
+        &resp,
+        egui::PopupCloseBehavior::CloseOnClick,
+        |ui| {
+            ui.set_min_width(W);
+            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+            for (v, label) in items {
+                let (ir, iresp) = ui.allocate_exact_size(vec2(W, ITEM_H), Sense::click());
+                let on = *value == *v;
+                if iresp.hovered() {
+                    ui.painter().rect_filled(ir, Rounding::ZERO, p.hover);
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                ui.painter().text(
+                    pos2(ir.left() + 14.0, ir.center().y),
+                    Align2::LEFT_CENTER,
+                    *label,
+                    FontId::new(13.5, ui_kit::medium()),
+                    if on { p.accent_ink } else { p.text },
+                );
+                if on {
+                    ui.painter().text(
+                        pos2(ir.right() - 18.0, ir.center().y),
+                        Align2::CENTER_CENTER,
+                        icons::CHECK,
+                        FontId::proportional(15.0),
+                        p.accent_ink,
+                    );
+                }
+                if iresp.clicked() && !on {
+                    *value = *v;
+                    changed = true;
+                }
+            }
+        },
+    );
+    changed
+}
+
 fn note(ui: &mut egui::Ui, p: &Palette, text: &str) {
     ui.add_space(8.0);
     ui.label(RichText::new(text).size(12.0).color(p.faint));
@@ -272,7 +388,7 @@ fn general(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
     heading(ui, p, tr("Umumiy"));
     row(ui, p, tr("Til"), None, |ui| {
         let items: Vec<(Lang, &str)> = Lang::ALL.iter().map(|l| (*l, l.native_name())).collect();
-        choice(ui, p, &mut c.language, &items);
+        dropdown(ui, p, "language", &mut c.language, &items);
     });
     row(
         ui,
@@ -287,7 +403,7 @@ fn general(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
         ui,
         p,
         tr("Oynani to'liq ochish"),
-        Some(tr("Yoqilsa, konsol ekranni to'liq egallab ochiladi. O'chiq bo'lsa — eng kichik o'lchamda (1280 × 720) ochiladi. Keyingi ishga tushirishda kuchga kiradi.")),
+        Some(tr("Yoqilsa, konsol ekranni to'liq egallab ochiladi. O'chiq bo'lsa — eng kichik o'lchamda (1120 × 640) ochiladi. Keyingi ishga tushirishda kuchga kiradi.")),
         |ui| {
             ui_kit::toggle(ui, &mut c.start_maximized);
         },
@@ -332,6 +448,15 @@ fn appearance(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
                     c.dark_mode = t == Theme::Dark;
                 }
             }
+        },
+    );
+    row(
+        ui,
+        p,
+        tr("Ixcham tugmalar"),
+        Some(tr("Yoqilsa, yuqoridagi amallar tugmalarida faqat ikonka ko'rinadi (nomi ustiga olib borganda chiqadi). O'chiq bo'lsa — ikonka bilan birga yozuv.")),
+        |ui| {
+            ui_kit::toggle(ui, &mut c.compact_nav);
         },
     );
     row(ui, p, tr("Kompyuterlar"), None, |ui| {

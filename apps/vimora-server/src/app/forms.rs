@@ -270,7 +270,8 @@ pub(super) fn tile(
     selected: bool,
     accent: Color32,
 ) -> egui::Response {
-    let w = (ui.available_width() - 16.0) / 3.0;
+    // Width from the whole row (not what is left), so all three tiles match.
+    let w = (ui.max_rect().width() - 16.0) / 3.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(w.max(120.0), 84.0), Sense::click());
     let fill = if selected {
         p.sunken
@@ -279,12 +280,16 @@ pub(super) fn tile(
     } else {
         p.bg
     };
-    let stroke = if selected {
-        Stroke::new(2.0_f32, accent)
-    } else {
-        Stroke::new(1.0_f32, p.line)
-    };
-    ui.painter().rect(rect, Rounding::ZERO, fill, stroke);
+    ui.painter()
+        .rect(rect, Rounding::ZERO, fill, Stroke::new(1.0_f32, p.line));
+    if selected {
+        // Drawn inside the tile so every tile keeps exactly the same size.
+        ui.painter().rect_stroke(
+            rect.shrink(1.0),
+            Rounding::ZERO,
+            Stroke::new(2.0_f32, accent),
+        );
+    }
     let col = if selected { accent } else { p.text };
     ui.painter().text(
         rect.center() - vec2(0.0, 12.0),

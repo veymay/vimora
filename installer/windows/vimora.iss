@@ -11,7 +11,7 @@
 ;   agent:   setup.exe /VERYSILENT /TYPE=student /COMPONENTS=agent   (as SYSTEM, no prompts)
 
 #ifndef AppVer
-  #define AppVer "0.2.0"
+  #define AppVer "0.3.0"
 #endif
 #ifndef BinDir
   #define BinDir "..\..\target\release"

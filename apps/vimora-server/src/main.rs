@@ -11,7 +11,7 @@ mod update;
 use std::sync::{Arc, Mutex, RwLock};
 
 /// The window opens at (and can't shrink below) this size.
-pub const MIN_WINDOW: [f32; 2] = [1280.0, 720.0];
+pub const MIN_WINDOW: [f32; 2] = [1120.0, 640.0];
 
 fn main() -> eframe::Result<()> {
     tracing_subscriber::fmt()

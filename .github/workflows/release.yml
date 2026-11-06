@@ -1,11 +1,22 @@
 # Builds the installers and publishes them on the Releases page.
 # Trigger: push a tag that matches the version in Cargo.toml, e.g.  git tag v0.2.0 && git push --tags
+# Or: manually via workflow_dispatch with a version input.
 name: Release
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 0.2.0) — defaults to version in Cargo.toml"
+        required: false
+        type: string
+      draft:
+        description: "Publish as a draft release"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -25,7 +36,9 @@ jobs:
       - name: Installer (Inno Setup)
         shell: pwsh
         run: |
-          $ver = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          # Read version from [workspace.package] section in root Cargo.toml
+          $ver = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"(.+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          Write-Host "Building installer for version: $ver"
           $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
           if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
           if (-not (Test-Path $iscc)) {
@@ -69,22 +82,58 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Tag matches Cargo.toml
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           ver=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           [ "${GITHUB_REF_NAME#v}" = "$ver" ] || { echo "tag $GITHUB_REF_NAME != Cargo.toml $ver"; exit 1; }
+
+      - name: Resolve version (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "RELEASE_VERSION=${{ inputs.version }}" >> $GITHUB_ENV
+          else
+            ver=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+            echo "RELEASE_VERSION=$ver" >> $GITHUB_ENV
+          fi
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+
       - name: Checksums
         run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
-      - uses: softprops/action-gh-release@v2
+
+      - name: Release (tag push)
         if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           generate_release_notes: true
+          body: |
+            ### Yuklab olish
+
+            | Kompyuter | Windows | Ubuntu |
+            |---|---|---|
+            | O'qituvchi | `vimora-*-windows-x64-setup.exe` → **O'qituvchi** | `vimora-teacher_*_amd64.deb` |
+            | O'quvchi | `vimora-*-windows-x64-setup.exe` → **O'quvchi** | `vimora-student_*_amd64.deb` |
+
+            Ubuntu: `sudo apt install ./vimora-student_*_amd64.deb`
+
+            O'rnatilgan Vimora keyingi versiyalarni shu sahifadan o'zi yuklab oladi (`SHA256SUMS` bilan tekshiriladi).
+
+      - name: Release (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.RELEASE_VERSION }}
+          name: v${{ env.RELEASE_VERSION }}
+          draft: ${{ inputs.draft }}
+          generate_release_notes: false
+          files: dist/*
           body: |
             ### Yuklab olish
 

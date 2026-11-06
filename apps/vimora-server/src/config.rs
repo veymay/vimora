@@ -16,6 +16,8 @@ pub struct ServerConfig {
     pub theme_system: bool,
     /// Open the window maximized instead of at its minimum size.
     pub start_maximized: bool,
+    /// Navbar buttons show icons only (default: icon + text).
+    pub compact_nav: bool,
     /// Order of the computers in the grid and list.
     pub sort: SortBy,
     /// Look for a new console version on GitHub at start-up (and every few hours).
@@ -75,6 +77,7 @@ impl Default for ServerConfig {
             dark_mode: true,
             theme_system: false,
             start_maximized: false,
+            compact_nav: false,
             sort: SortBy::Name,
             check_updates: true,
             thumb_interval_ms: 2000,

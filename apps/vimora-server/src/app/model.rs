@@ -123,6 +123,8 @@ pub(super) enum Action {
     Message(u64),
     ClearHelp(u64),
     Rename(u64),
+    /// Right click: open the context menu for this computer (anchor rect, pointer x).
+    OpenMenu(u64, Rect, f32),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -139,6 +141,8 @@ pub(super) enum ShadowRequest {
     ListApps,
 }
 
+/// Entries kept for actions that have no navbar button right now (program launch, file send).
+#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Menu {
     /// Locks the targets, or unlocks them when they are all locked already.
@@ -176,8 +180,9 @@ pub(super) fn natural_key(s: &str) -> Vec<(String, u64)> {
 }
 
 pub(super) fn card_height(w: f32) -> f32 {
-    let tw = w - 24.0;
-    STRIP_H + 12.0 + (tw * 9.0 / 16.0).round() + 10.0 + 20.0 + 12.0
+    // thumbnail + name line + badge line; every card gets exactly this height
+    let tw = w - CARD_PAD * 2.0;
+    CARD_PAD + (tw * 9.0 / 16.0).round() + 6.0 + 18.0 + 4.0 + 18.0 + CARD_PAD
 }
 
 /// 6 per row = 100%, 3 per row = 200%.
@@ -228,4 +233,155 @@ pub(super) fn fmt_dur(s: u64) -> String {
     } else {
         tf!("{v0} soat {v1} daq", v0 = s / 3600, v1 = (s % 3600) / 60)
     }
+}
+
+/// Columns of the list view.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Col {
+    Num,
+    Thumb,
+    Name,
+    Status,
+    Shadow,
+    Flags,
+    Room,
+    User,
+    Ip,
+    Online,
+}
+
+impl Col {
+    pub(super) fn title(self) -> &'static str {
+        match self {
+            Col::Num => "#",
+            Col::Thumb => "",
+            Col::Name => tr("Kompyuter"),
+            Col::Status => tr("Holat"),
+            Col::Shadow => tr("Shadow"),
+            Col::Flags => tr("Belgilar"),
+            Col::Room => tr("Xona"),
+            Col::User => tr("Foydalanuvchi"),
+            Col::Ip => tr("IP"),
+            Col::Online => tr("Ulangan"),
+        }
+    }
+
+    /// Columns whose header opens a filter.
+    pub(super) fn filterable(self) -> bool {
+        matches!(
+            self,
+            Col::Name | Col::Status | Col::Shadow | Col::Room | Col::User | Col::Ip
+        )
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub(super) enum StatusFilter {
+    #[default]
+    Any,
+    Locked,
+    Attention,
+}
+
+#[derive(Clone, PartialEq, Eq, Default)]
+pub(super) enum RoomFilter {
+    #[default]
+    Any,
+    Unassigned,
+    Is(String),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub(super) enum ShadowFilter {
+    #[default]
+    Any,
+    On,
+    Off,
+}
+
+/// Column filters of the list view (all conditions must match).
+#[derive(Clone, PartialEq, Eq, Default)]
+pub(super) struct ListFilter {
+    pub(super) name: String,
+    pub(super) user: String,
+    pub(super) ip: String,
+    pub(super) room: RoomFilter,
+    pub(super) status: StatusFilter,
+    pub(super) shadow: ShadowFilter,
+}
+
+impl ListFilter {
+    pub(super) fn active(&self, col: Col) -> bool {
+        match col {
+            Col::Name => !self.name.is_empty(),
+            Col::User => !self.user.is_empty(),
+            Col::Ip => !self.ip.is_empty(),
+            Col::Room => self.room != RoomFilter::Any,
+            Col::Status => self.status != StatusFilter::Any,
+            Col::Shadow => self.shadow != ShadowFilter::Any,
+            _ => false,
+        }
+    }
+
+    pub(super) fn any(&self) -> bool {
+        [
+            Col::Name,
+            Col::User,
+            Col::Ip,
+            Col::Room,
+            Col::Status,
+            Col::Shadow,
+        ]
+        .into_iter()
+        .any(|c| self.active(c))
+    }
+
+    pub(super) fn matches(&self, v: &View) -> bool {
+        let has = |hay: &str, needle: &str| {
+            needle.is_empty() || hay.to_lowercase().contains(&needle.to_lowercase())
+        };
+        has(&v.label, &self.name)
+            && has(&v.user, &self.user)
+            && has(&v.ip, &self.ip)
+            && match &self.room {
+                RoomFilter::Any => true,
+                RoomFilter::Unassigned => v.room.is_none(),
+                RoomFilter::Is(r) => v.room.as_deref() == Some(r.as_str()),
+            }
+            && match self.status {
+                StatusFilter::Any => true,
+                StatusFilter::Locked => v.status.locked,
+                StatusFilter::Attention => v.help.is_some() || v.alert.is_some(),
+            }
+            && {
+                let on = !matches!(
+                    v.status.freeze,
+                    FreezeState::Unknown | FreezeState::Unsupported | FreezeState::Thawed
+                );
+                match self.shadow {
+                    ShadowFilter::Any => true,
+                    ShadowFilter::On => on,
+                    ShadowFilter::Off => !on,
+                }
+            }
+    }
+}
+
+/// What a context menu belongs to.
+#[derive(Clone, PartialEq, Eq)]
+pub(super) enum CtxTarget {
+    Computer(u64),
+    Room(String),
+}
+
+/// The open context menu (drawn as an arrow popup next to its anchor).
+#[derive(Clone)]
+pub(super) struct CtxMenu {
+    pub(super) target: CtxTarget,
+    pub(super) anchor: Rect,
+    pub(super) x: f32,
+    /// Frame it opened in (the click that opened it must not close it).
+    pub(super) frame: u64,
+    /// "Xonaga biriktirish" list expanded.
+    pub(super) rooms_open: bool,
 }

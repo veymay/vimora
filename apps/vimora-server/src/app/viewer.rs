@@ -1,7 +1,7 @@
 //! Live view of one computer, shown full-size in the main area below the navbar, with
 //! remote control.
 
-use super::grid::status_badge;
+use super::grid::status_badges;
 use super::*;
 #[allow(unused_imports)]
 use vimora_ui::{tf, tr};
@@ -162,10 +162,12 @@ impl ConsoleApp {
                                 act.message = true;
                             }
                             ui.add_space(8.0);
-                            let badge = status_badge(ui, p, &info.status);
-                            let (r, _) =
-                                ui.allocate_exact_size(vec2(badge.width, 20.0), Sense::hover());
-                            badge.paint(ui.painter(), r);
+                            for badge in status_badges(ui, p, &info.status) {
+                                let (r, _) =
+                                    ui.allocate_exact_size(vec2(badge.width, 20.0), Sense::hover());
+                                badge.paint(ui.painter(), r);
+                                ui.add_space(4.0);
+                            }
                         });
                     },
                 );

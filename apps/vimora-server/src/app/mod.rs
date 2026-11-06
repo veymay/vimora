@@ -1,13 +1,12 @@
 //! Teacher console UI.
 //!
-//! Layout: one header line (logo · icon menu · count/theme/settings), a room bar
-//! (room tabs · search · zoom), then a hairline grid of student cells. Activity, NetControl and the
-//! other tools open as windows from the menu.
+//! Layout: top navbar (logo · action strip · tools · status), room tabs row,
+//! then a full-width grid of student cards. No sidebar.
 
 mod forms;
 mod grid;
-mod header;
 mod model;
+mod navbar;
 mod overlay;
 mod rooms;
 mod selection;
@@ -39,13 +38,10 @@ use vimora_core::{
 };
 
 use forms::*;
-use header::NavGroup;
 use model::*;
 use selection::*;
 use settings::*;
-use vimora_ui::{self as ui_kit, icons, with_icon, Kind, Palette, ThemeMode};
-
-const HEADER_H: f32 = 64.0;
+use vimora_ui::{self as ui_kit, icons, with_icon, Kind, Palette, ResponseExt, ThemeMode};
 
 const DEFAULT_COLUMNS: u32 = 6;
 
@@ -55,9 +51,10 @@ const MIN_COLUMNS: u32 = 3;
 /// 100% (the default) is the smallest card size.
 const MAX_COLUMNS: u32 = 6;
 
-const STRIP_H: f32 = 36.0;
+/// Card inner padding and the gap between cards.
+const CARD_PAD: f32 = 6.0;
 
-const GAP: f32 = 14.0;
+const GAP: f32 = 8.0;
 
 pub struct ConsoleApp {
     hub: SharedHub,
@@ -65,20 +62,25 @@ pub struct ConsoleApp {
     show: Arc<Show>,
     updater: crate::update::Updater,
     theme: ThemeMode,
-    /// Open header dropdown and the cell it hangs from.
-    nav_open: Option<NavGroup>,
-    nav_anchor: Rect,
     /// Settings changed and not written to disk yet (saved shortly after the last edit).
     settings_dirty: Option<Instant>,
     /// Last automatic save (for the "saved" hint in the settings window).
     saved_at: Option<Instant>,
     selected: BTreeSet<u64>,
     search: String,
+    /// Column filters of the list view.
+    list_filter: ListFilter,
     room_tab: RoomTab,
     /// Rubber-band drag in progress.
     marquee: Option<Marquee>,
     /// Last clicked computer (Shift+click range start).
     anchor: Option<u64>,
+    /// Previous click (for our own double-click detection).
+    last_click: Option<(u64, Instant)>,
+    /// Open right-click menu.
+    ctx_menu: Option<CtxMenu>,
+    /// egui frame number of the current frame.
+    now_frame: u64,
     /// Computers in on-screen order this frame (for Shift ranges).
     visible_order: Vec<u64>,
     zoom_acc: f32,
@@ -129,15 +131,17 @@ impl ConsoleApp {
             show,
             updater,
             theme,
-            nav_open: None,
-            nav_anchor: Rect::NOTHING,
             settings_dirty: None,
             saved_at: None,
             selected: BTreeSet::new(),
             search: String::new(),
+            list_filter: ListFilter::default(),
             room_tab: RoomTab::All,
             marquee: None,
             anchor: None,
+            last_click: None,
+            ctx_menu: None,
+            now_frame: 0,
             visible_order: vec![],
             zoom_acc: 1.0,
             pending_assign: vec![],
@@ -156,14 +160,17 @@ impl ConsoleApp {
                 .ok()
                 .map(|p| (p, Instant::now())),
         };
+        if let Some(n) = std::env::var("VIMORA_DEMO")
+            .ok()
+            .and_then(|n| n.parse().ok())
+        {
+            app.demo_students(n);
+        }
         // Dev aid: VIMORA_OPEN=net|activity|launch opens a window at start (for screenshots).
         match std::env::var("VIMORA_OPEN").as_deref() {
             Ok("net") => app.dev_open = Some(app.net_dialog()),
             Ok("activity") => app.dev_open = Some(Dialog::Activity),
             Ok("settings") => app.dev_open = Some(Dialog::Settings(SettingsTab::General)),
-            Ok("nav:send") => app.nav_open = Some(NavGroup::Send),
-            Ok("nav:restrict") => app.nav_open = Some(NavGroup::Restrict),
-            Ok("nav:system") => app.nav_open = Some(NavGroup::System),
             Ok(s) if s.starts_with("settings:") => {
                 let tab = match &s[9..] {
                     "appearance" => SettingsTab::Appearance,
@@ -175,6 +182,7 @@ impl ConsoleApp {
                 };
                 app.dev_open = Some(Dialog::Settings(tab));
             }
+            Ok("power") => app.dev_open = Some(Dialog::Power(PowerAction::Shutdown)),
             Ok("room") => {
                 app.dev_open = Some(Dialog::Room {
                     name: String::new(),
@@ -217,6 +225,74 @@ impl ConsoleApp {
             _ => {}
         }
         app
+    }
+
+    /// Dev aid: `VIMORA_DEMO=<n>` fills the console with fake computers (never saved to disk).
+    fn demo_students(&mut self, n: usize) {
+        let mut h = self.hub.lock().unwrap();
+        let rooms = self.cfg.read().unwrap().rooms.clone();
+        for i in 0..n {
+            let (tx, _rx) = tokio::sync::mpsc::channel(1);
+            let (w, hgt) = (160usize, 90usize);
+            let mut px = Vec::with_capacity(w * hgt);
+            for y in 0..hgt {
+                for x in 0..w {
+                    let t = (x + y) as f32 / (w + hgt) as f32;
+                    let c = |a: f32, b: f32| (a + (b - a) * t) as u8;
+                    px.push(Color32::from_rgb(
+                        c(30.0 + 12.0 * (i % 5) as f32, 200.0),
+                        c(60.0 + 10.0 * (i % 3) as f32, 220.0),
+                        c(120.0, 245.0),
+                    ));
+                }
+            }
+            let mut status = ClientStatus {
+                service: i % 7 != 3,
+                locked: i % 6 == 2,
+                ..Default::default()
+            };
+            if i % 5 == 1 {
+                status.freeze = FreezeState::Frozen;
+            }
+            if i % 8 == 4 {
+                status.web_blocklist = 3;
+            }
+            let id = 1000 + i as u64;
+            h.students.insert(
+                id,
+                crate::net::Student {
+                    addr: format!("192.168.1.{}:5000", 10 + i).parse().unwrap(),
+                    info: vimora_core::ClientInfo {
+                        hostname: format!("PC-{}", i + 1),
+                        username: ["Ali", "Vali", "Madina", "Sardor"][i % 4].into(),
+                        os: "Windows 11".into(),
+                        display_name: None,
+                        machine_id: format!("demo-{i}"),
+                    },
+                    status,
+                    frame: Some(egui::ColorImage {
+                        size: [w, hgt],
+                        pixels: px,
+                    }),
+                    frame_seq: 1,
+                    frame_size: (1920, 1080),
+                    tx,
+                    connected_at: Instant::now() - Duration::from_secs(600 + 97 * i as u64),
+                    help: (i % 9 == 5).then(|| "Yordam".to_string()),
+                    alert: (i % 11 == 7).then(|| ("Taqiqlangan so'z".to_string(), Instant::now())),
+                    client_nonce: vec![],
+                    priv_counter: 0,
+                    apps: None,
+                },
+            );
+            if let (Some(r), true) = (rooms.first(), i % 2 == 0) {
+                self.cfg
+                    .write()
+                    .unwrap()
+                    .assignments
+                    .insert(format!("demo-{i}"), r.clone());
+            }
+        }
     }
 
     fn sync_textures(&mut self, ctx: &egui::Context) {
@@ -566,6 +642,7 @@ impl ConsoleApp {
 
 impl eframe::App for ConsoleApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.now_frame += 1;
         self.snapshots(ctx);
         let want = self.wanted_theme(ctx);
         self.set_theme(ctx, want);
@@ -583,7 +660,7 @@ impl eframe::App for ConsoleApp {
         let p = self.theme.palette();
 
         self.shortcuts(ctx, &all);
-        self.header(ctx, &p, &all);
+        self.navbar(ctx, &p, &all);
         // Dev aid: VIMORA_OPEN=viewer watches the first computer 3 s after start.
         if std::env::var("VIMORA_OPEN").as_deref() == Ok("viewer")
             && !self.dev_priv_sent
@@ -600,6 +677,23 @@ impl eframe::App for ConsoleApp {
         } else {
             self.grid(ctx, &p, &all);
         }
+        // Dev aid: VIMORA_MENU=1 opens the context menu of the second computer 3 s after start.
+        if std::env::var("VIMORA_MENU").is_ok()
+            && !self.dev_priv_sent
+            && ctx.input(|i| i.time) > 3.0
+        {
+            if let Some(v) = all.get(1) {
+                self.dev_priv_sent = true;
+                self.ctx_menu = Some(CtxMenu {
+                    target: CtxTarget::Computer(v.id),
+                    anchor: Rect::from_min_size(pos2(194.0, 110.0), vec2(172.0, 150.0)),
+                    x: 280.0,
+                    frame: self.now_frame,
+                    rooms_open: true,
+                });
+            }
+        }
+        self.context_menu(ctx, &p, &all);
         self.dialogs(ctx, &p, &all);
         self.autosave();
         self.dev_screenshot(ctx);
@@ -636,6 +730,9 @@ impl eframe::App for ConsoleApp {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if std::env::var("VIMORA_DEMO").is_ok() {
+            return;
+        }
         config::save(&self.cfg.read().unwrap());
     }
 }
