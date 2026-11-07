@@ -190,6 +190,17 @@ impl ConsoleApp {
                 })
             }
             Ok("freeze") => app.dev_open = Some(app.shadow_dialog()),
+            Ok(o @ ("shadow-commit" | "shadow-settings")) => {
+                let mut d = app.shadow_dialog();
+                if let Dialog::Freeze { tab, .. } = &mut d {
+                    *tab = if o == "shadow-commit" {
+                        ShadowTab::Commit
+                    } else {
+                        ShadowTab::Settings
+                    };
+                }
+                app.dev_open = Some(d);
+            }
             Ok("updates") => {
                 let policy = app.cfg.read().unwrap().update_policy;
                 app.dev_open = Some(Dialog::Updates {
@@ -515,6 +526,7 @@ impl ConsoleApp {
     fn shadow_dialog(&self) -> Dialog {
         let c = self.cfg.read().unwrap();
         Dialog::Freeze {
+            tab: ShadowTab::Protection,
             restart: false,
             folders: c.persistent_folders.clone(),
             request: None,

@@ -78,6 +78,7 @@ pub(super) enum Dialog {
         restart: bool,
     },
     Freeze {
+        tab: ShadowTab,
         restart: bool,
         /// Persistent folders, one per line.
         folders: String,
@@ -124,6 +125,13 @@ pub(super) enum Action {
     Rename(u64),
     /// Right click: open the context menu for this computer (anchor rect, pointer x).
     OpenMenu(u64, Rect, f32),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ShadowTab {
+    Protection,
+    Commit,
+    Settings,
 }
 
 /// Inline actions inside the Shadow drawer (they don't close it).

@@ -417,6 +417,9 @@ pub static ROWS: &[Row] = &[
     ("Fayl yoki papka yo'li", "File or folder path", "Путь к файлу или папке"),
     ("Yo'lni qo'shish", "Add path", "Добавить путь"),
     ("Ro'yxatni yangilash", "Refresh list", "Обновить список"),
+    ("Sozlama", "Settings", "Настройки"),
+    ("Windows kompyuterlardagi Shadow Defender paroli. Parol yo'q bo'lsa, bo'sh qoldiring.", "The Shadow Defender password on Windows computers. Leave empty if none.", "Пароль Shadow Defender на компьютерах Windows. Если его нет, оставьте пустым."),
+    ("Bu papkalar qayta yuklanganda ham o'chmaydi. Har biri yangi qatorda.", "These folders survive restarts. One per line.", "Эти папки сохраняются после перезагрузки. Каждая с новой строки."),
 ];
 
 #[cfg(test)]

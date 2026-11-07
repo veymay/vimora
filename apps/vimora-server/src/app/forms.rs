@@ -105,6 +105,7 @@ pub(super) fn dialog_body(
     match dialog {
         Dialog::Activity => activity_body(ui, p, hub, all, clear_help),
         Dialog::Freeze {
+            tab,
             restart,
             folders,
             request,
@@ -115,6 +116,7 @@ pub(super) fn dialog_body(
             ui,
             p,
             ShadowForm {
+                tab,
                 restart,
                 folders,
                 request,
@@ -362,6 +364,7 @@ fn note(ui: &mut egui::Ui, p: &Palette, text: &str) {
 
 /// The Shadow drawer: one page — the switch, the computers, and what to commit.
 pub(super) struct ShadowForm<'a> {
+    pub(super) tab: &'a mut ShadowTab,
     pub(super) restart: &'a mut bool,
     pub(super) folders: &'a mut String,
     pub(super) request: &'a mut Option<ShadowRequest>,
@@ -434,8 +437,25 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
         .iter()
         .any(|v| v.status.service && v.status.freeze.is_frozen());
 
-    // The switch.
-    Frame::none()
+    ui_kit::segmented(p).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            for (t, label) in [
+                (ShadowTab::Protection, tr("Himoya")),
+                (ShadowTab::Commit, "Commit"),
+                (ShadowTab::Settings, tr("Sozlama")),
+            ] {
+                if ui_kit::tab(ui, label, None, *f.tab == t).clicked() {
+                    *f.tab = t;
+                }
+            }
+        });
+    });
+    ui.add_space(12.0);
+
+    if *f.tab == ShadowTab::Protection {
+        // The switch.
+        Frame::none()
         .fill(p.bg)
         .stroke(Stroke::new(1.0_f32, if on { p.accent } else { p.line }))
         .inner_margin(Margin::same(14.0))
@@ -488,117 +508,127 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
             });
         });
 
-    // Problems, one short line each.
-    for (n, text) in [
-        (no_service, tr("{n} ta kompyuterda Vimora xizmati yo'q")),
-        (
-            unsupported,
-            tr("{n} ta kompyuterda Shadow yo'q (Windows: Shadow Defender kerak)"),
-        ),
-    ] {
-        if n > 0 {
-            ui.add_space(6.0);
-            ui.label(
-                RichText::new(with_icon(
-                    icons::TRIANGLE_ALERT,
-                    &text.replace("{n}", &n.to_string()),
-                ))
-                .size(12.0)
-                .color(p.warning),
-            );
+        // Problems, one short line each.
+        for (n, text) in [
+            (no_service, tr("{n} ta kompyuterda Vimora xizmati yo'q")),
+            (
+                unsupported,
+                tr("{n} ta kompyuterda Shadow yo'q (Windows: Shadow Defender kerak)"),
+            ),
+        ] {
+            if n > 0 {
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new(with_icon(
+                        icons::TRIANGLE_ALERT,
+                        &text.replace("{n}", &n.to_string()),
+                    ))
+                    .size(12.0)
+                    .color(p.warning),
+                );
+            }
         }
-    }
 
-    ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
-        ui.add_enabled_ui(usable > 0, |ui| {
-            ui.checkbox(f.restart, tr("Darhol qayta yuklash"));
-        });
-        ui_kit::info(
-            ui,
-            tr("Kompyuterlar o'zi qayta yuklanadi. Saqlanmagan ish yo'qolishi mumkin."),
-        );
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            ui.add_enabled_ui(usable > 0, |ui| {
+                ui.checkbox(f.restart, tr("Darhol qayta yuklash"));
+            });
             ui_kit::info(
                 ui,
-                tr("Shadow'ni vaqtincha o'chirib, yangilanishlarni o'rnatadi va qayta yoqadi."),
+                tr("Kompyuterlar o'zi qayta yuklanadi. Saqlanmagan ish yo'qolishi mumkin."),
             );
-            ui.add_enabled_ui(usable > 0, |ui| {
-                if ui_kit::button(
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui_kit::info(
                     ui,
-                    Some(icons::WRENCH),
-                    tr("Yangilab yoqish"),
-                    Kind::Outline,
-                )
-                .clicked()
-                {
-                    *f.request = Some(ShadowRequest::Apply(FreezeAction::Maintenance));
-                }
-            });
-        });
-    });
-
-    titled(
-        ui,
-        p,
-        tr("Kompyuterlar"),
-        tr("Har bir kompyuterda Shadow holati. Foiz — xotira to'lishi."),
-    );
-    egui::ScrollArea::vertical()
-        .id_salt("shadow-pcs")
-        .max_height(100.0)
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
-            target_rows(ui, p, cx.all, cx.targets, |v| {
-                if !v.status.service {
-                    return (tr("Xizmat yo'q").into(), p.danger);
-                }
-                if v.status.freeze == FreezeState::Unsupported {
-                    return (tr("Mavjud emas").into(), p.faint);
-                }
-                let mut t = freeze_label(v.status.freeze).to_string();
-                if let Some(u) = v.status.shield_usage {
-                    t.push_str(&format!(" · {}%", u.percent()));
-                }
-                (t, freeze_color(p, v.status.freeze))
+                    tr("Shadow'ni vaqtincha o'chirib, yangilanishlarni o'rnatadi va qayta yoqadi."),
+                );
+                ui.add_enabled_ui(usable > 0, |ui| {
+                    if ui_kit::button(
+                        ui,
+                        Some(icons::WRENCH),
+                        tr("Yangilab yoqish"),
+                        Kind::Outline,
+                    )
+                    .clicked()
+                    {
+                        *f.request = Some(ShadowRequest::Apply(FreezeAction::Maintenance));
+                    }
+                });
             });
         });
 
-    commit_section(ui, p, &mut f, cx, any_frozen);
+        titled(
+            ui,
+            p,
+            tr("Kompyuterlar"),
+            tr("Har bir kompyuterda Shadow holati. Foiz — xotira to'lishi."),
+        );
+        egui::ScrollArea::vertical()
+            .id_salt("shadow-pcs")
+            .max_height(220.0)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                target_rows(ui, p, cx.all, cx.targets, |v| {
+                    if !v.status.service {
+                        return (tr("Xizmat yo'q").into(), p.danger);
+                    }
+                    if v.status.freeze == FreezeState::Unsupported {
+                        return (tr("Mavjud emas").into(), p.faint);
+                    }
+                    let mut t = freeze_label(v.status.freeze).to_string();
+                    if let Some(u) = v.status.shield_usage {
+                        t.push_str(&format!(" · {}%", u.percent()));
+                    }
+                    (t, freeze_color(p, v.status.freeze))
+                });
+            });
+    }
 
-    titled(
-        ui,
-        p,
-        tr("Parol va papkalar"),
-        tr("Parol — Windows'dagi Shadow Defender uchun (hamma kompyuterda bir xil, yo'q bo'lsa bo'sh). Papkalar — qayta yuklanganda ham o'chmaydi, har biri yangi qatorda."),
-    );
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
+    if *f.tab == ShadowTab::Commit {
+        commit_section(ui, p, &mut f, cx, any_frozen);
+    }
+
+    if *f.tab == ShadowTab::Settings {
+        let label = |ui: &mut egui::Ui, text: &str, help: &str| {
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui_kit::hud(ui, text, p.muted);
+                ui_kit::info(ui, help);
+            });
+        };
+        label(
+            ui,
+            tr("Shadow Defender paroli"),
+            tr("Windows kompyuterlardagi Shadow Defender paroli. Parol yo'q bo'lsa, bo'sh qoldiring."),
+        );
         ui_kit::input_frame(p).show(ui, |ui| {
             ui.add(
                 ui_kit::text_field(f.password)
                     .password(true)
-                    .hint_text(tr("Parol"))
                     .frame(false)
-                    .desired_width(120.0),
+                    .desired_width(ui.available_width()),
             );
         });
-        ui_kit::input_frame(p).show(ui, |ui| {
-            ui.add(
-                ui_kit::text_field(f.folders)
-                    .hint_text(tr("D:\\Darslar"))
-                    .frame(false)
-                    .desired_width(ui.available_width() - 56.0),
-            );
-        });
-        if ui_kit::icon_cell(ui, icons::CHECK, 34.0, false)
-            .tip(tr("Saqlash"))
-            .clicked()
-        {
+        label(
+            ui,
+            tr("Doim saqlanadigan papkalar"),
+            tr("Bu papkalar qayta yuklanganda ham o'chmaydi. Har biri yangi qatorda."),
+        );
+        ui.add(
+            ui_kit::text_area(f.folders)
+                .hint_text(tr("D:\\Darslar"))
+                .desired_rows(4)
+                .desired_width(f32::INFINITY)
+                .font(egui::TextStyle::Monospace),
+        );
+        ui.add_space(8.0);
+        if ui_kit::button(ui, Some(icons::CHECK), tr("Saqlash"), Kind::Primary).clicked() {
             *f.request = Some(ShadowRequest::SaveFolders);
         }
-    });
+    }
 }
 
 /// Pick what must survive restarts, press Commit.
@@ -641,7 +671,7 @@ fn commit_section(
     } else {
         egui::ScrollArea::vertical()
             .id_salt("shadow-changes")
-            .max_height(110.0)
+            .max_height(280.0)
             .auto_shrink([false, true])
             .show(ui, |ui| {
                 Frame::none()
