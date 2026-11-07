@@ -527,6 +527,10 @@ impl ConsoleApp {
                     );
                     painter.galley(pos2(inner.left(), cy - g.size().y / 2.0), g, p.strong);
                 }
+                Col::Status if !v.online => {
+                    let g = ui_kit::caps(ui, tr("Oflayn"), 9.5, ui_kit::mono(), p.faint);
+                    painter.galley(pos2(inner.left(), cy - g.size().y / 2.0), g, p.faint);
+                }
                 Col::Status => {
                     let badge = online_badge(ui, p, &v.status);
                     let w = badge.width;
@@ -559,6 +563,7 @@ impl ConsoleApp {
                         Col::Room => v.room.clone().unwrap_or_else(|| "—".into()),
                         Col::User => v.user.clone(),
                         Col::Ip => v.ip.clone(),
+                        _ if !v.online => last_seen_text(v),
                         _ => fmt_dur(v.online_secs),
                     };
                     let g = ui_kit::truncated(
@@ -571,6 +576,9 @@ impl ConsoleApp {
                     painter.galley(pos2(inner.left(), cy - g.size().y / 2.0), g, p.muted);
                 }
             }
+        }
+        if !v.online {
+            painter.rect_filled(rect, Rounding::ZERO, p.bg.gamma_multiply(0.5));
         }
         item_interactions(&resp, v, actions, false);
     }
@@ -770,11 +778,14 @@ impl ConsoleApp {
         painter.circle_filled(
             pos2(rect.right() - pad - 4.0, info_top + name_h / 2.0),
             4.0,
-            p.success,
+            if v.online { p.success } else { p.faint },
         );
 
-        // Line 2: Shadow, left aligned with room for its full text.
-        if let Some(shadow) = shadow_badge(ui, p, &v.status) {
+        // Line 2: Shadow, left aligned with room for its full text (offline: just say so).
+        if !v.online {
+            let g = ui_kit::caps(ui, tr("Oflayn"), 9.5, ui_kit::mono(), p.faint);
+            painter.galley(pos2(rect.left() + pad, info_top + 22.0), g, p.faint);
+        } else if let Some(shadow) = shadow_badge(ui, p, &v.status) {
             let w = shadow.width.min(tw);
             shadow.paint(
                 &painter,
@@ -782,12 +793,39 @@ impl ConsoleApp {
             );
         }
 
+        if !v.online {
+            painter.rect_filled(rect, Rounding::ZERO, p.bg.gamma_multiply(0.5));
+        }
         item_interactions(&resp, v, actions, self.ctx_menu.is_none());
+    }
+}
+
+/// "5 daq oldin" for a computer that is not connected.
+fn last_seen_text(v: &View) -> String {
+    if v.last_seen == 0 {
+        return "—".into();
+    }
+    let ago = crate::net::unix_now().saturating_sub(v.last_seen);
+    if ago >= 24 * 3600 {
+        tf!("{n} kun oldin", n = ago / 86400)
+    } else {
+        tf!("{v} oldin", v = fmt_dur(ago))
     }
 }
 
 /// Tooltip text with everything the card/row doesn't show.
 fn details(v: &View) -> String {
+    if !v.online {
+        return format!(
+            "{}\n{}: {}\nIP: {}\n{}: {}",
+            v.label,
+            tr("Foydalanuvchi"),
+            v.user,
+            v.ip,
+            tr("Oxirgi ulanish"),
+            last_seen_text(v)
+        );
+    }
     let room = v.room.as_deref().unwrap_or("—");
     tf!("{v0}\nFoydalanuvchi: {v1}\nIP: {v2}\nTizim: {v3}\nXona: {room}\nUlangan: {v4}\nShadow: {v5}\nYangilanishlar: {v6}{v7}{v8}", v0 = v.label, v1 = v.user, v2 = v.ip, v3 = v.os, room = room, v4 = fmt_dur(v.online_secs), v5 = freeze_label(v.status.freeze), v6 = updates_label(&v.status), v7 = if v.status.service { "" } else { "\n⚠ Vimora xizmati ishlamayapti" }, v8 = v.alert.as_ref().map(|a| format!("\n⚠ {a}")).unwrap_or_default())
 }
@@ -901,6 +939,38 @@ impl ConsoleApp {
                         return;
                     };
                     let id = *id;
+                    if !v.online {
+                        if menu_row(
+                            ui,
+                            p,
+                            icons::SETTINGS,
+                            tr("Nomini o'zgartirish"),
+                            None,
+                            None,
+                            false,
+                        )
+                        .clicked()
+                        {
+                            actions.push(Action::Rename(id));
+                            close = true;
+                        }
+                        menu_sep(ui, p);
+                        if menu_row(
+                            ui,
+                            p,
+                            icons::TRASH_2,
+                            tr("Ro'yxatdan o'chirish"),
+                            None,
+                            Some(p.danger),
+                            false,
+                        )
+                        .clicked()
+                        {
+                            actions.push(Action::Forget(id));
+                            close = true;
+                        }
+                        return;
+                    }
                     for (ic, label, a) in [
                         (icons::EYE, tr("Ko'rish"), Action::View(id, false)),
                         (
@@ -1098,6 +1168,13 @@ impl ConsoleApp {
                         system_name: v.hostname.clone(),
                         restart: false,
                     });
+                }
+            }
+            Action::Forget(id) => {
+                if let Some(v) = all.iter().find(|v| v.id == id && !v.online) {
+                    let key = v.key.clone();
+                    self.selected.remove(&id);
+                    self.forget(&[key]);
                 }
             }
             Action::View(id, control) => self.open_viewer(id, control),

@@ -143,18 +143,74 @@ fn write_state(s: &str) {
     let _ = std::fs::write(dir.join(STATE), s);
 }
 
+/// Quotes a CmdTool argument the way its help shows them: `/commit:"C:\Test dir"`.
+fn arg_with_value(name: &str, value: &str) -> String {
+    if value.contains(' ') || name == "/commit" {
+        format!("{name}:\"{value}\"")
+    } else {
+        format!("{name}:{value}")
+    }
+}
+
+/// Runs CmdTool and returns (exit code, printed text). It is a GUI-subsystem program: it must be
+/// started with its output redirected to files and waited for, otherwise nothing is captured.
+#[cfg(windows)]
+fn run_tool(tool: &Path, args: &[String]) -> Result<(i32, String)> {
+    let ps_quote = |s: &str| format!("'{}'", s.replace('\'', "''"));
+    let list = args
+        .iter()
+        .map(|a| ps_quote(a))
+        .collect::<Vec<_>>()
+        .join(",");
+    let code = format!(
+        "$o=[IO.Path]::GetTempFileName(); $e=[IO.Path]::GetTempFileName(); \
+         try {{ $p=Start-Process -FilePath {tool} -ArgumentList @({list}) -Wait -PassThru \
+           -WindowStyle Hidden -RedirectStandardOutput $o -RedirectStandardError $e; \
+           'EXIT:' + $p.ExitCode; Get-Content -Raw $o; Get-Content -Raw $e }} \
+         finally {{ Remove-Item $o,$e -ErrorAction SilentlyContinue }}",
+        tool = ps_quote(&tool.to_string_lossy()),
+    );
+    let (_, out) = sh::script(&code)?;
+    Ok(split_exit(&out))
+}
+
+#[cfg(not(windows))]
+fn run_tool(tool: &Path, args: &[String]) -> Result<(i32, String)> {
+    let strs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let (ok, out) = sh::run(&tool.to_string_lossy(), &strs)?;
+    Ok((if ok { 0 } else { 1 }, out))
+}
+
+/// Splits the `EXIT:<code>` marker line from the rest of the output.
+pub fn split_exit(out: &str) -> (i32, String) {
+    let mut code = -1;
+    let mut rest = vec![];
+    for l in out.lines() {
+        match l.trim().strip_prefix("EXIT:") {
+            Some(c) if code == -1 => code = c.trim().parse().unwrap_or(-1),
+            _ => rest.push(l),
+        }
+    }
+    (code, rest.join("\n").trim().to_string())
+}
+
 /// Runs CmdTool with the stored password. Returns what it printed (often nothing).
 fn cmd(args: &[&str]) -> Result<String> {
     let Some(tool) = find_tool() else {
         bail!("Shadow Defender o'rnatilmagan (CmdTool.exe topilmadi)");
     };
-    let pwd = format!("/pwd:{}", password());
-    let mut all: Vec<&str> = vec![&pwd];
-    all.extend_from_slice(args);
-    let (ok, out) = sh::run(&tool.to_string_lossy(), &all)?;
-    if !ok {
+    let mut all = vec![arg_with_value("/pwd", &password())];
+    all.extend(args.iter().map(|a| {
+        // "/enter:C" → name and value split at the first colon.
+        match a.split_once(':') {
+            Some((n, v)) => arg_with_value(n, v),
+            None => a.to_string(),
+        }
+    }));
+    let (code, out) = run_tool(&tool, &all)?;
+    if code != 0 {
         bail!(
-            "Shadow Defender buyrug'i bajarilmadi ({}) — parol to'g'rimi? {}",
+            "Shadow Defender buyrug'i bajarilmadi ({}, kod {code}) — parol to'g'rimi? {}",
             args.first().copied().unwrap_or(""),
             sh::tail(&out, 2)
         );
@@ -175,7 +231,13 @@ impl Backend for ShadowDefender {
             };
         }
         let saved = read_state();
-        let letters = cmd(&["/list"]).map(|o| parse_list(&o)).unwrap_or_default();
+        let listed = cmd(&["/list"]);
+        let raw = listed
+            .as_ref()
+            .map(|o| o.trim().to_string())
+            .unwrap_or_default();
+        let err = listed.as_ref().err().map(|e| format!("{e:#}"));
+        let letters = listed.map(|o| parse_list(&o)).unwrap_or_default();
         let sys = system_drive_letter();
         // /list answered: trust it. Otherwise fall back to what Vimora last asked for.
         let on_now = if letters.is_empty() {
@@ -189,10 +251,16 @@ impl Backend for ShadowDefender {
             (false, "on-pending") => FreezeState::FreezePending,
             (false, _) => FreezeState::Thawed,
         };
+        // Say what the program answered, so a wrong guess is visible in the console.
+        let note = match (&err, raw.is_empty()) {
+            (Some(e), _) => Some(e.clone()),
+            (None, true) => Some("Shadow Defender javob bermadi (holat taxminiy)".into()),
+            (None, false) => Some(format!("Shadow Defender: {}", sh::tail(&raw, 3))),
+        };
         Probe {
             state,
             usage: None,
-            note: None,
+            note,
         }
     }
 
@@ -277,6 +345,20 @@ mod tests {
         assert_eq!(parse_list("C\r\nE\r\n"), vec!['C', 'E']);
         assert!(parse_list("").is_empty());
         assert!(parse_list("No drive in Shadow Mode").is_empty());
+    }
+
+    #[test]
+    fn exit_marker() {
+        assert_eq!(split_exit("EXIT:0\nC: D:"), (0, "C: D:".to_string()));
+        assert_eq!(split_exit("EXIT:5"), (5, String::new()));
+        assert_eq!(split_exit("nothing").0, -1);
+    }
+
+    #[test]
+    fn args() {
+        assert_eq!(arg_with_value("/pwd", "123"), "/pwd:123");
+        assert_eq!(arg_with_value("/pwd", ""), "/pwd:");
+        assert_eq!(arg_with_value("/commit", "C:\\a b"), "/commit:\"C:\\a b\"");
     }
 
     #[test]

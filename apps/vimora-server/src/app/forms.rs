@@ -338,7 +338,8 @@ fn pick_rows(
                                on: bool,
                                name: &str,
                                bold: bool,
-                               chip: Option<(String, Color32)>|
+                               chip: Option<(String, Color32)>,
+                               tip: Option<&str>|
                      -> bool {
                         let (rect, resp) = ui
                             .allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
@@ -401,9 +402,12 @@ fn pick_rows(
                             );
                             ui_kit::paint_chip(ui.painter(), r, g, col);
                         }
+                        if let Some(t) = tip {
+                            resp.clone().tip(t);
+                        }
                         resp.clicked()
                     };
-                    if row(ui, true, all_on, tr("Hammasi"), true, None) {
+                    if row(ui, true, all_on, tr("Hammasi"), true, None, None) {
                         if all_on {
                             chosen.clear();
                         } else {
@@ -412,7 +416,8 @@ fn pick_rows(
                     }
                     for v in all {
                         let on = chosen.contains(&v.id);
-                        if row(ui, false, on, &v.label, false, Some(chip(v))) {
+                        let note = v.status.shield_note.as_deref().filter(|_| v.status.service);
+                        if row(ui, false, on, &v.label, false, Some(chip(v)), note) {
                             if on {
                                 chosen.remove(&v.id);
                             } else {

@@ -42,6 +42,13 @@ pub struct Student {
     pub changes: Option<Vec<vimora_core::ChangeInfo>>,
 }
 
+pub fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Level {
     Info,
@@ -379,11 +386,22 @@ async fn session(
         id
     };
     {
-        // Remember every computer ever seen (navbar shows total vs online).
+        // Remember every computer ever seen: it stays in the console (offline) after it
+        // disconnects, until the teacher removes it.
         let mut c = cfg.write().unwrap();
-        if c.known
-            .insert(info.key(), info.label().to_string())
-            .is_none()
+        let entry = crate::config::KnownPc {
+            label: info.label().to_string(),
+            hostname: info.hostname.clone(),
+            user: info.username.clone(),
+            os: info.os.clone(),
+            ip: addr.ip().to_string(),
+            last_seen: unix_now(),
+        };
+        let a = c.known.insert(info.key(), info.label().to_string());
+        let b = c.known_pcs.insert(info.key(), entry.clone());
+        if a.is_none()
+            || b.as_ref()
+                .is_none_or(|o| o.label != entry.label || o.ip != entry.ip || o.user != entry.user)
         {
             crate::config::save(&c);
         }
@@ -504,6 +522,13 @@ async fn session(
 
     writer.abort();
     pinger.abort();
+    {
+        let mut c = cfg.write().unwrap();
+        if let Some(k) = c.known_pcs.get_mut(&info.key()) {
+            k.last_seen = unix_now();
+            crate::config::save(&c);
+        }
+    }
     let mut h = hub.lock().unwrap();
     h.students.remove(&id);
     h.log(Level::Info, tf!("{v0} uzildi", v0 = info.label()));

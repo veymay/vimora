@@ -232,6 +232,23 @@ impl ConsoleApp {
 
     /// Dev aid: `VIMORA_DEMO=<n>` fills the console with fake computers (never saved to disk).
     fn demo_students(&mut self, n: usize) {
+        {
+            let mut c = self.cfg.write().unwrap();
+            for (i, name) in ["PC-15", "PC-16", "Eski-PC"].into_iter().enumerate() {
+                c.known.insert(format!("demo-off-{i}"), name.into());
+                c.known_pcs.insert(
+                    format!("demo-off-{i}"),
+                    config::KnownPc {
+                        label: name.into(),
+                        hostname: name.into(),
+                        user: "Ali".into(),
+                        os: "windows".into(),
+                        ip: format!("192.168.1.{}", 40 + i),
+                        last_seen: crate::net::unix_now() - 3600 * (i as u64 + 1) * 5,
+                    },
+                );
+            }
+        }
         let mut h = self.hub.lock().unwrap();
         let rooms = self.cfg.read().unwrap().rooms.clone();
         for i in 0..n {
@@ -356,9 +373,15 @@ impl ConsoleApp {
     }
 
     fn snapshot(&self) -> Vec<View> {
-        let (assignments, aliases, sort) = {
+        let (assignments, aliases, sort, known, known_pcs) = {
             let c = self.cfg.read().unwrap();
-            (c.assignments.clone(), c.aliases.clone(), c.sort)
+            (
+                c.assignments.clone(),
+                c.aliases.clone(),
+                c.sort,
+                c.known.clone(),
+                c.known_pcs.clone(),
+            )
         };
         let h = self.hub.lock().unwrap();
         let mut list: Vec<_> = h.students.iter().collect();
@@ -373,7 +396,11 @@ impl ConsoleApp {
             config::SortBy::Name => list.sort_by_key(|(_, s)| natural_key(&label(s))),
             config::SortBy::Ip => list.sort_by_key(|(_, s)| (s.addr.ip(), natural_key(&label(s)))),
         }
-        list.into_iter()
+        let connected: std::collections::HashSet<String> =
+            list.iter().map(|(_, s)| s.info.key()).collect();
+        let n_online = list.len();
+        let mut views: Vec<View> = list
+            .into_iter()
             .enumerate()
             .map(|(i, (id, s))| View {
                 id: *id,
@@ -394,25 +421,70 @@ impl ConsoleApp {
                 room: assignments.get(&s.info.key()).cloned(),
                 frame_size: s.frame_size,
                 online_secs: s.connected_at.elapsed().as_secs(),
+                online: true,
+                last_seen: 0,
             })
-            .collect()
+            .collect();
+        // Computers seen before but not connected now stay in the list, greyed out.
+        let mut offline: Vec<(String, String)> = known
+            .into_iter()
+            .filter(|(k, _)| !connected.contains(k))
+            .collect();
+        offline.sort_by_key(|(k, name)| {
+            natural_key(&aliases.get(k).cloned().unwrap_or_else(|| name.clone()))
+        });
+        for (i, (key, name)) in offline.into_iter().enumerate() {
+            let k = known_pcs.get(&key).cloned().unwrap_or_default();
+            views.push(View {
+                id: offline_id(&key),
+                number: n_online + i + 1,
+                hostname: k.hostname.clone(),
+                label: aliases.get(&key).cloned().unwrap_or(name),
+                user: k.user,
+                os: k.os,
+                ip: k.ip,
+                status: ClientStatus::default(),
+                help: None,
+                alert: None,
+                room: assignments.get(&key).cloned(),
+                frame_size: (0, 0),
+                online_secs: 0,
+                online: false,
+                last_seen: k.last_seen,
+                key,
+            });
+        }
+        views
     }
 
     /// Selected computers, or everyone in the current room tab when nothing is selected.
     fn targets(&self, all: &[View]) -> Vec<u64> {
         let sel: Vec<u64> = all
             .iter()
+            .filter(|v| v.online)
             .map(|v| v.id)
             .filter(|id| self.selected.contains(id))
             .collect();
         if sel.is_empty() {
             all.iter()
-                .filter(|v| self.in_tab(v))
+                .filter(|v| v.online && self.in_tab(v))
                 .map(|v| v.id)
                 .collect()
         } else {
             sel
         }
+    }
+
+    /// Removes computers from the list for good (they come back only if they connect again).
+    fn forget(&mut self, keys: &[String]) {
+        let mut c = self.cfg.write().unwrap();
+        for k in keys {
+            c.known.remove(k);
+            c.known_pcs.remove(k);
+            c.aliases.remove(k);
+            c.assignments.remove(k);
+        }
+        config::save(&c);
     }
 
     fn send(&self, ids: &[u64], cmd: Command, what: &str) {
@@ -461,6 +533,9 @@ impl ConsoleApp {
     }
 
     fn open_viewer(&mut self, id: u64, control: bool) {
+        if !self.hub.lock().unwrap().students.contains_key(&id) {
+            return; // offline: nothing to watch
+        }
         self.close_viewer();
         self.send(&[id], Command::SetStream(StreamConfig::LIVE), "");
         self.viewer = Some(Viewer {
@@ -629,6 +704,21 @@ impl ConsoleApp {
         if a {
             self.selected = all.iter().map(|v| v.id).collect();
         }
+        // Delete removes the selected offline computers from the list.
+        let typing = ctx.memory(|m| m.focused().is_some());
+        if !typing
+            && self.dialog.is_none()
+            && ctx.input_mut(|i| i.consume_key(M::NONE, Key::Delete))
+        {
+            let ids: Vec<u64> = all
+                .iter()
+                .filter(|v| !v.online && self.selected.contains(&v.id))
+                .map(|v| v.id)
+                .collect();
+            for id in ids {
+                self.apply(Action::Forget(id), all);
+            }
+        }
         if l {
             let t = self.targets(all);
             self.lock(&t);
@@ -701,7 +791,7 @@ impl eframe::App for ConsoleApp {
         {
             if let Some(first) = all.first() {
                 self.dev_priv_sent = true;
-                self.visible_order = all.iter().map(|v| v.id).collect();
+                self.visible_order = all.iter().filter(|v| v.online).map(|v| v.id).collect();
                 self.open_viewer(first.id, true);
             }
         }
@@ -769,4 +859,12 @@ impl eframe::App for ConsoleApp {
         }
         config::save(&self.cfg.read().unwrap());
     }
+}
+
+/// Stable id for a computer that is not connected (the hub only numbers connected ones).
+pub(super) fn offline_id(key: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    key.hash(&mut h);
+    h.finish() | (1 << 63)
 }

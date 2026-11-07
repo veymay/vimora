@@ -3,6 +3,19 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use vimora_core::DEFAULT_TCP_PORT;
 
+/// What the console remembers about a computer that has connected before.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct KnownPc {
+    pub label: String,
+    pub hostname: String,
+    pub user: String,
+    pub os: String,
+    pub ip: String,
+    /// Unix seconds of the last time it was connected.
+    pub last_seen: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct ServerConfig {
@@ -34,6 +47,9 @@ pub struct ServerConfig {
     pub aliases: BTreeMap<String, String>,
     /// Every computer that has ever connected (key -> last name), for the "N kompyuter" count.
     pub known: BTreeMap<String, String>,
+    /// Details of every computer seen before, so it stays in the list (offline) after it
+    /// disconnects until the teacher removes it.
+    pub known_pcs: BTreeMap<String, KnownPc>,
     /// Shadow mode: folders kept across restarts (one per line).
     pub persistent_folders: String,
     /// Shadow Defender password on the student PCs (empty = its default, no password).
@@ -89,6 +105,7 @@ impl Default for ServerConfig {
             assignments: BTreeMap::new(),
             aliases: BTreeMap::new(),
             known: BTreeMap::new(),
+            known_pcs: BTreeMap::new(),
             persistent_folders: String::new(),
             shadow_password: String::new(),
             lock_title: lock_title.into(),

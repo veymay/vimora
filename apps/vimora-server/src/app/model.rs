@@ -5,6 +5,7 @@ use super::*;
 use vimora_ui::{tf, tr};
 
 /// Snapshot of a student for one UI frame (so the hub lock isn't held while drawing).
+#[derive(Clone)]
 pub(super) struct View {
     pub(super) id: u64,
     pub(super) number: usize,
@@ -23,6 +24,10 @@ pub(super) struct View {
     pub(super) room: Option<String>,
     pub(super) frame_size: (u32, u32),
     pub(super) online_secs: u64,
+    /// Connected right now. Offline entries are computers seen before.
+    pub(super) online: bool,
+    /// Unix seconds of the last connection (offline entries).
+    pub(super) last_seen: u64,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -127,6 +132,8 @@ pub(super) enum Action {
     Rename(u64),
     /// Right click: open the context menu for this computer (anchor rect, pointer x).
     OpenMenu(u64, Rect, f32),
+    /// Remove an offline computer from the list.
+    Forget(u64),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

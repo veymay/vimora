@@ -224,7 +224,14 @@ impl ConsoleApp {
         }
     }
 
-    pub(super) fn dialogs(&mut self, ctx: &egui::Context, p: &Palette, all: &[View]) {
+    pub(super) fn dialogs(&mut self, ctx: &egui::Context, p: &Palette, all_views: &[View]) {
+        // Forms only deal with connected computers.
+        let connected: Vec<View> = if self.dialog.is_some() || self.closing.is_some() {
+            all_views.iter().filter(|v| v.online).cloned().collect()
+        } else {
+            vec![]
+        };
+        let all: &[View] = &connected;
         // 0 → 1 while opening, 1 → 0 while closing; eased below.
         let live = self.dialog.is_some();
         let t = ctx.animate_bool_with_time(egui::Id::new("overlay-anim"), live, OVERLAY_ANIM_SECS);

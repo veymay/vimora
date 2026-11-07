@@ -360,8 +360,8 @@ impl ConsoleApp {
     pub(super) fn statusbar(&mut self, ctx: &egui::Context, p: &Palette, all: &[View]) {
         let known = self.cfg.read().unwrap().known.len();
         let update = self.updater.available();
-        let online = all.len();
-        let total = known.max(online);
+        let online = all.iter().filter(|v| v.online).count();
+        let total = all.len().max(known).max(online);
         let h = STATUS_BTN_H;
         let btn = |icon: &'static str, label: &'static str, active: bool| Btn {
             icon,
