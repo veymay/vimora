@@ -5,8 +5,13 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Bumped whenever the wire format changes incompatibly.
+/// Wire family. Never bump it for additions: new enum variants are appended at the end and
+/// unknown messages are skipped by the receiver (see [`crate::net::read_msg`]), so builds of
+/// different ages keep working together. Peers refuse each other only below
+/// [`MIN_PROTOCOL_VERSION`].
 pub const PROTOCOL_VERSION: u32 = 10;
+/// Oldest wire family this build still talks to.
+pub const MIN_PROTOCOL_VERSION: u32 = 10;
 
 /// UDP port the teacher console broadcasts discovery beacons on.
 pub const DISCOVERY_PORT: u16 = 47800;
@@ -213,12 +218,6 @@ pub enum PrivCommand {
     SetNetPolicy(NetPolicy),
     /// Collect the installed applications (reported with `ClientMsg::Apps`).
     ListApps,
-    /// Password of the Shadow Defender installed on the student PC (Windows).
-    SetShadowPassword(String),
-    /// List what the Shadow overlay holds (reported with `ClientMsg::Changes`).
-    ListChanges,
-    /// Make these paths survive restarts (a "commit" in the Shadow overlay).
-    CommitPaths(Vec<String>),
     /// Allow / forbid updates per application id.
     SetAppUpdates(Vec<(String, bool)>),
     /// Folders kept across restarts in Shadow mode (replaces the list).
@@ -228,6 +227,14 @@ pub enum PrivCommand {
         name: String,
         restart: bool,
     },
+    // New variants go at the END only: the wire format is positional, so older and newer
+    // builds keep understanding each other.
+    /// Password of the Shadow Defender installed on the student PC (Windows).
+    SetShadowPassword(String),
+    /// List what the Shadow overlay holds (reported with `ClientMsg::Changes`).
+    ListChanges,
+    /// Make these paths survive restarts (a "commit" in the Shadow overlay).
+    CommitPaths(Vec<String>),
 }
 
 /// Valid computer name: 1–15 letters, digits or '-', not starting/ending with '-'.
@@ -421,11 +428,47 @@ pub enum ClientMsg {
     },
     /// Installed applications (answer to `PrivCommand::ListApps`).
     Apps(Vec<AppInfo>),
-    /// Changes held in the Shadow overlay (answer to `PrivCommand::ListChanges`).
-    Changes(Vec<ChangeInfo>),
     /// A student's reply in the message chat.
     Chat {
         text: String,
     },
     Pong,
+    // Append-only (see PrivCommand).
+    /// Changes held in the Shadow overlay (answer to `PrivCommand::ListChanges`).
+    Changes(Vec<ChangeInfo>),
+}
+
+#[cfg(test)]
+mod wire_tests {
+    use super::*;
+
+    fn tag<T: Serialize>(v: &T) -> u32 {
+        let b = bincode::serialize(v).unwrap();
+        u32::from_le_bytes(b[..4].try_into().unwrap())
+    }
+
+    /// The wire format is positional: these indices are what every released build uses.
+    /// New variants may only be appended.
+    #[test]
+    fn variant_indices_never_move() {
+        assert_eq!(tag(&PrivCommand::ListApps), 7);
+        assert_eq!(tag(&PrivCommand::SetAppUpdates(vec![])), 8);
+        assert_eq!(tag(&PrivCommand::SetPersistentFolders(vec![])), 9);
+        assert_eq!(
+            tag(&PrivCommand::RenameComputer {
+                name: String::new(),
+                restart: false
+            }),
+            10
+        );
+        assert_eq!(tag(&PrivCommand::SetShadowPassword(String::new())), 11);
+        assert_eq!(
+            tag(&ClientMsg::Chat {
+                text: String::new()
+            }),
+            7
+        );
+        assert_eq!(tag(&ClientMsg::Pong), 8);
+        assert_eq!(tag(&ClientMsg::Changes(vec![])), 9);
+    }
 }

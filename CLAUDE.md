@@ -28,3 +28,14 @@ screenshot and exits. Use `XDG_CONFIG_HOME=<dir>` to run with a throw-away confi
   with Inno Setup, adds its hash to the release's `SHA256SUMS` and uploads both (needs `gh`).
   Log: `dist\windows-release.log`.
 - Do not move or recreate existing tags; do not force push; ask before publishing releases.
+
+## Compatibility rules (old and new builds must keep working together)
+- The wire format (bincode) is positional. Never insert, reorder or remove enum variants or
+  struct fields in `vimora-core/src/protocol.rs` or in the IPC types of `service.rs`
+  (`IpcReq`, `IpcResp`, `PrivStatus`): only **append** at the end. A test
+  (`variant_indices_never_move`) pins the indices.
+- Do not bump `PROTOCOL_VERSION` for additions; peers refuse each other only below
+  `MIN_PROTOCOL_VERSION`. Receivers skip messages they cannot decode (`net::is_undecodable`).
+- Releases 0.3.1–0.3.3 shipped with shifted variants (wire-incompatible with 0.3.0 and later
+  builds); update all PCs to 0.3.4 or newer.
+- The agent is single-instance per user (`single.rs`): a new copy ends the previous one.

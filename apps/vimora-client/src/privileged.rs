@@ -27,8 +27,6 @@ pub struct PrivStatus {
     pub persistent_folders: Vec<String>,
     /// Last application list and its revision (bumped on every change).
     pub apps: Option<(u64, Vec<AppInfo>)>,
-    /// Shadow overlay content and its revision.
-    pub changes: Option<(u64, Vec<ChangeInfo>)>,
     /// Results of background jobs since the last status call: (ok, message).
     pub events: Vec<(bool, String)>,
 }
@@ -43,7 +41,7 @@ struct Inner {
     app_updates: Option<u32>,
     busy: Option<String>,
     apps: Option<(u64, Vec<AppInfo>)>,
-    changes: Option<(u64, Vec<ChangeInfo>)>,
+    changes: Option<Vec<ChangeInfo>>,
     events: Vec<(bool, String)>,
 }
 
@@ -72,16 +70,19 @@ impl Engine {
         i.freeze_checked = Some(Instant::now());
     }
 
-    /// Re-reads the overlay content into the status.
+    /// The overlay content found by the last `ListChanges` / `CommitPaths`.
+    pub fn changes(&self) -> Option<Vec<ChangeInfo>> {
+        self.inner.lock().unwrap().changes.clone()
+    }
+
+    /// Re-reads the overlay content.
     fn refresh_changes(&self) -> Result<String> {
         let list = self.shield.changes()?;
         let Some(list) = list else {
             bail!("bu tizimda overlay tarkibini ko'rib bo'lmaydi (Windows UWF) — yo'lni qo'lda kiriting");
         };
         let n = list.len();
-        let mut i = self.inner.lock().unwrap();
-        let rev = i.changes.as_ref().map_or(1, |(r, _)| r + 1);
-        i.changes = Some((rev, list));
+        self.inner.lock().unwrap().changes = Some(list);
         Ok(format!("{n} ta o'zgarish topildi"))
     }
 
@@ -324,7 +325,6 @@ impl Engine {
             queued: store.queue.len() as u32,
             persistent_folders: store.persistent,
             apps: i.apps.clone(),
-            changes: i.changes.clone(),
             events: std::mem::take(&mut i.events),
         }
     }

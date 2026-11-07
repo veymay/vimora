@@ -46,7 +46,7 @@ use vimora_core::{
     auth, capture, input,
     net::{read_msg, write_msg},
     ClientInfo, ClientMsg, ClientStatus, Command, FreezeState, NetPolicy, PowerAction, PrivCommand,
-    ServerMsg, StreamConfig, DISCOVERY_PORT, PROTOCOL_VERSION,
+    ServerMsg, StreamConfig, DISCOVERY_PORT, MIN_PROTOCOL_VERSION, PROTOCOL_VERSION,
 };
 
 #[derive(Default)]
@@ -193,7 +193,7 @@ async fn discover(pin: Option<vimora_core::auth::ConsoleKey>) -> String {
             let Some(b) = vimora_core::net::decode_beacon(&buf[..n]) else {
                 continue;
             };
-            if b.version != PROTOCOL_VERSION || pin.is_some_and(|k| k != b.console_key) {
+            if b.version < MIN_PROTOCOL_VERSION || pin.is_some_and(|k| k != b.console_key) {
                 continue;
             }
             info!(

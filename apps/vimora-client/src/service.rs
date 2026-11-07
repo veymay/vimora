@@ -40,6 +40,9 @@ pub enum IpcReq {
         sig: Vec<u8>,
     },
     Status,
+    // Append-only: an older service must keep understanding the requests it knows.
+    /// Shadow overlay content found by the last list / commit.
+    Changes,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,6 +51,7 @@ pub enum IpcResp {
     Verified(bool),
     Done { ok: bool, message: String },
     Status(PrivStatus),
+    Changes(Option<Vec<vimora_core::ChangeInfo>>),
 }
 
 /// The service's persistent state: the console this PC obeys.
@@ -326,6 +330,7 @@ async fn handle(
                 },
             }
         }
+        IpcReq::Changes => IpcResp::Changes(engine.changes()),
         IpcReq::Status => {
             let e = engine.clone();
             IpcResp::Status(
@@ -398,7 +403,7 @@ fn register() -> Result<()> {
             "/f",
         ],
     )?;
-    // Restart if it ever stops: re-run every 5 minutes as a watchdog (a second instance exits on bind).
+    // Restart if it ever stops: re-run every minute as a watchdog (a second instance exits on bind).
     let _ = crate::sh::run(
         "schtasks",
         &[
@@ -410,7 +415,7 @@ fn register() -> Result<()> {
             "/sc",
             "minute",
             "/mo",
-            "5",
+            "1",
             "/ru",
             "SYSTEM",
             "/rl",
@@ -418,6 +423,19 @@ fn register() -> Result<()> {
             "/f",
         ],
     );
+    // schtasks' defaults would stop the service on battery power (laptops!), never start it
+    // there, and kill it after 3 days. Lift all of that.
+    let (ok, out) = crate::sh::script(
+        "$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries \
+         -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -MultipleInstances IgnoreNew \
+         -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1); \
+         foreach ($n in 'Vimora Service','Vimora Service Watchdog') { \
+           Set-ScheduledTask -TaskName $n -Settings $s | Out-Null }",
+    )
+    .unwrap_or((false, String::new()));
+    if !ok {
+        tracing::warn!("task settings: {}", crate::sh::tail(&out, 2));
+    }
     crate::sh::run_ok("schtasks", &["/run", "/tn", "Vimora Service"])?;
     println!("Vimora Service (SYSTEM) ro'yxatga olindi va ishga tushdi");
     Ok(())

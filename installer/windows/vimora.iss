@@ -35,8 +35,14 @@ ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\..\dist
 OutputBaseFilename=vimora-{#AppVer}-windows-x64-setup
 SetupIconFile=vimora.ico
-WizardStyle=modern
-Compression=lzma2/max
+; Compact classic wizard: no welcome / folder / ready pages, Uzbek by default.
+WizardStyle=classic
+DisableDirPage=yes
+DisableReadyPage=yes
+DisableWelcomePage=yes
+ShowLanguageDialog=no
+LanguageDetectionMethod=none
+Compression=lzma2/ultra64
 SolidCompression=yes
 UninstallDisplayName=Vimora
 UninstallDisplayIcon={app}\vimora-server.exe
@@ -44,18 +50,41 @@ UninstallDisplayIcon={app}\vimora-server.exe
 CloseApplications=no
 
 [Languages]
-Name: "en"; MessagesFile: "compiler:Default.isl"
+; Uzbek uses the English file as its base; the visible texts are translated in [Messages].
+Name: "uz"; MessagesFile: "compiler:Default.isl"
 Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
 
+[Messages]
+uz.SetupWindowTitle=O'rnatish - %1
+uz.ButtonBack=< &Orqaga
+uz.ButtonNext=&Keyingi >
+uz.ButtonInstall=&O'rnatish
+uz.ButtonCancel=Bekor qilish
+uz.ButtonFinish=&Tayyor
+uz.ButtonOK=OK
+uz.ButtonYes=&Ha
+uz.ButtonNo=&Yo'q
+uz.WizardSelectComponents=Kompyuter turi
+uz.SelectComponentsDesc=Bu kompyuter qanday vazifada ishlaydi?
+uz.WizardInstalling=O'rnatilmoqda
+uz.InstallingLabel=[name] o'rnatilmoqda, iltimos kuting...
+uz.FinishedHeadingLabel=O'rnatish tugadi
+uz.FinishedLabel=[name] kompyuteringizga o'rnatildi.
+uz.FinishedLabelNoIcons=[name] kompyuteringizga o'rnatildi.
+uz.ClickFinish=Chiqish uchun "Tayyor" tugmasini bosing.
+uz.StatusExtractFiles=Fayllar ko'chirilmoqda...
+uz.StatusRunProgram=Yakunlanmoqda...
+uz.ConfirmUninstall=%1 va uning barcha qismlari butunlay o'chirilsinmi?
+
 [CustomMessages]
-en.TypeTeacher=Teacher computer — control console
-en.TypeStudent=Student computer — Vimora agent
-en.CompConsole=Vimora console (teacher)
-en.CompAgent=Vimora agent (student)
-en.Firewall=Configuring the firewall…
-en.Service=Installing the Vimora service…
-en.StartAgent=Start the agent now
-en.OpenConsole=Open the Vimora console
+uz.TypeTeacher=O'qituvchi kompyuteri — boshqaruv konsoli
+uz.TypeStudent=O'quvchi kompyuteri — Vimora agenti
+uz.CompConsole=Vimora konsoli (o'qituvchi)
+uz.CompAgent=Vimora agenti (o'quvchi)
+uz.Firewall=Xavfsizlik devori sozlanmoqda…
+uz.Service=Vimora xizmati o'rnatilmoqda…
+uz.StartAgent=Agentni hozir ishga tushirish
+uz.OpenConsole=Vimora konsolini ochish
 ru.TypeTeacher=Компьютер учителя — консоль управления
 ru.TypeStudent=Компьютер ученика — агент Vimora
 ru.CompConsole=Консоль Vimora (учитель)
@@ -66,12 +95,13 @@ ru.StartAgent=Запустить агент сейчас
 ru.OpenConsole=Открыть консоль Vimora
 
 [Types]
-Name: "teacher"; Description: "{cm:TypeTeacher}"
+; The first type is the default: student computers are the common case.
 Name: "student"; Description: "{cm:TypeStudent}"
+Name: "teacher"; Description: "{cm:TypeTeacher}"
 
 [Components]
-Name: "console"; Description: "{cm:CompConsole}"; Types: teacher; Flags: exclusive
 Name: "agent"; Description: "{cm:CompAgent}"; Types: student; Flags: exclusive
+Name: "console"; Description: "{cm:CompConsole}"; Types: teacher; Flags: exclusive
 
 [Files]
 Source: "{#BinDir}\vimora-server.exe"; DestDir: "{app}"; Components: console; Flags: ignoreversion
@@ -95,7 +125,7 @@ Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""V
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Vimora Agent"""; Components: agent; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Vimora Agent"" dir=in action=allow protocol=UDP localport=47800 program=""{app}\vimora-client.exe"""; \
   Components: agent; Flags: runhidden; StatusMsg: "{cm:Firewall}"
-; Privileged Vimora service (SYSTEM): pins the paired console, Shadow (UWF), updates, NetControl.
+; Privileged Vimora service (SYSTEM): pins the paired console, Shadow Defender control, updates, NetControl.
 Filename: "{app}\vimora-client.exe"; Parameters: "setup"; Components: agent; Flags: runhidden; StatusMsg: "{cm:Service}"
 ; Start now, in the user's (non-elevated) session. Not during a silent self-update: that runs as
 ; SYSTEM, and the running agents restart themselves when their file changes.

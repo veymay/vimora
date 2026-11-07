@@ -16,7 +16,7 @@ use vimora_core::{
     auth, capture,
     net::{read_msg, write_msg},
     Beacon, ClientInfo, ClientMsg, ClientStatus, ServerMsg, StreamConfig, DISCOVERY_PORT,
-    PROTOCOL_VERSION,
+    MIN_PROTOCOL_VERSION, PROTOCOL_VERSION,
 };
 #[allow(unused_imports)]
 use vimora_ui::{tf, tr};
@@ -320,7 +320,7 @@ async fn session(
     else {
         bail!("bad hello");
     };
-    if version != PROTOCOL_VERSION {
+    if version < MIN_PROTOCOL_VERSION {
         hub.lock().unwrap().log(
             Level::Warn,
             tf!(
@@ -411,7 +411,12 @@ async fn session(
     let result: Result<()> = async {
         loop {
             let msg: ClientMsg =
-                tokio::time::timeout(Duration::from_secs(20), read_msg(&mut rd)).await??;
+                match tokio::time::timeout(Duration::from_secs(20), read_msg(&mut rd)).await? {
+                    Ok(m) => m,
+                    // A newer agent's message this console doesn't know: skip it, stay connected.
+                    Err(e) if vimora_core::net::is_undecodable(&e) => continue,
+                    Err(e) => return Err(e),
+                };
             match msg {
                 ClientMsg::Frame {
                     width,

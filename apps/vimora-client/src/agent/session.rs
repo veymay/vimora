@@ -24,7 +24,7 @@ pub(super) async fn session(
     else {
         bail!("unexpected first message");
     };
-    if version != PROTOCOL_VERSION {
+    if version < MIN_PROTOCOL_VERSION {
         bail!("protocol mismatch: console v{version}, agent v{PROTOCOL_VERSION}");
     }
     let pinned = *ctx.pin.lock().unwrap();
@@ -137,9 +137,16 @@ pub(super) async fn session(
     // --- main read loop ----------------------------------------------------------------------
     let result: Result<()> = async {
         loop {
-            let msg: ServerMsg = tokio::time::timeout(Duration::from_secs(20), read_msg(&mut rd))
-                .await
-                .context("console timed out")??;
+            let msg: ServerMsg =
+                match tokio::time::timeout(Duration::from_secs(20), read_msg(&mut rd))
+                    .await
+                    .context("console timed out")?
+                {
+                    Ok(m) => m,
+                    // A newer console's message this agent doesn't know: skip it.
+                    Err(e) if vimora_core::net::is_undecodable(&e) => continue,
+                    Err(e) => return Err(e),
+                };
             match msg {
                 ServerMsg::Ping => {
                     let _ = tx.try_send(ClientMsg::Pong);
@@ -295,6 +302,16 @@ pub(super) async fn privileged(
                 .map_err(|err| anyhow::anyhow!("{err:#} (Vimora xizmati o'rnatilmagan: {e:#})"))
         }
     };
+    if res.is_ok() && matches!(cmd, PrivCommand::ListChanges | PrivCommand::CommitPaths(_)) {
+        // The overlay content changed: report it to the console.
+        let list = match service::call(IpcReq::Changes).await {
+            Ok(IpcResp::Changes(l)) => l,
+            _ => ctx.engine.changes(),
+        };
+        if let (Some(list), Some(tx)) = (list, ctx.uplink.lock().unwrap().as_ref()) {
+            let _ = tx.try_send(ClientMsg::Changes(list));
+        }
+    }
     if res.is_ok() {
         if let PrivCommand::SetNetPolicy(p) = cmd {
             // The keyword watcher runs here, in the user's session.

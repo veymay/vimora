@@ -120,7 +120,6 @@ pub(super) async fn net_enforce_task(engine: Arc<Engine>) {
 pub(super) async fn service_status_task(ctx: Ctx) {
     let mut last = ClientStatus::default();
     let mut last_apps_rev = 0u64;
-    let mut last_changes_rev = 0u64;
     let mut last_uplink: Option<mpsc::Sender<ClientMsg>> = None;
     loop {
         tokio::time::sleep(Duration::from_secs(3)).await;
@@ -159,19 +158,12 @@ pub(super) async fn service_status_task(ctx: Ctx) {
             if !last_uplink.as_ref().is_some_and(|l| l.same_channel(&tx)) {
                 last = ClientStatus::default();
                 last_apps_rev = 0;
-                last_changes_rev = 0;
                 last_uplink = Some(tx.clone());
             }
             if let Some((rev, list)) = st.apps {
                 if rev != last_apps_rev {
                     last_apps_rev = rev;
                     let _ = tx.send(ClientMsg::Apps(list)).await;
-                }
-            }
-            if let Some((rev, list)) = st.changes {
-                if rev != last_changes_rev {
-                    last_changes_rev = rev;
-                    let _ = tx.send(ClientMsg::Changes(list)).await;
                 }
             }
             for (ok, message) in st.events {

@@ -29,6 +29,23 @@ where
     Ok(())
 }
 
+/// A frame arrived intact but its content is not understood (a newer peer's message).
+/// The stream is still in sync, so receivers may skip it and carry on.
+#[derive(Debug)]
+pub struct Undecodable(pub String);
+
+impl std::fmt::Display for Undecodable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "message not understood: {}", self.0)
+    }
+}
+
+impl std::error::Error for Undecodable {}
+
+pub fn is_undecodable(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<Undecodable>().is_some()
+}
+
 pub async fn read_msg<R, T>(r: &mut R) -> Result<T>
 where
     R: AsyncRead + Unpin,
@@ -40,7 +57,7 @@ where
     }
     let mut buf = vec![0u8; len];
     r.read_exact(&mut buf).await?;
-    Ok(bincode::deserialize(&buf)?)
+    bincode::deserialize(&buf).map_err(|e| anyhow::Error::new(Undecodable(e.to_string())))
 }
 
 pub fn encode_beacon(b: &crate::protocol::Beacon) -> Result<Vec<u8>> {

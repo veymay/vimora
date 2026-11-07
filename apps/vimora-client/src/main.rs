@@ -19,6 +19,7 @@ mod privileged;
 mod service;
 mod sh;
 mod shield;
+mod single;
 mod system;
 mod updates;
 
@@ -92,6 +93,7 @@ fn main() -> anyhow::Result<()> {
         }
         Some(Cmd::Run) | None => {
             let cfg = config::load().merge_cli(cli.server, cli.name);
+            single::take_over();
             system::set_dpi_aware();
             let rt = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
