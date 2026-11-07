@@ -36,6 +36,8 @@ pub struct ServerConfig {
     pub known: BTreeMap<String, String>,
     /// Shadow mode: folders kept across restarts (one per line).
     pub persistent_folders: String,
+    /// Shadow Defender password on the student PCs (empty = its default, no password).
+    pub shadow_password: String,
     pub lock_title: String,
     pub lock_message: String,
     pub app_blocklist: String,
@@ -88,6 +90,7 @@ impl Default for ServerConfig {
             aliases: BTreeMap::new(),
             known: BTreeMap::new(),
             persistent_folders: String::new(),
+            shadow_password: String::new(),
             lock_title: lock_title.into(),
             lock_message: lock_message.into(),
             app_blocklist: "steam, discord, telegram".into(),

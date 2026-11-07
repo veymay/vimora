@@ -236,6 +236,10 @@ impl Engine {
                 i.apps = Some((rev, list));
                 Ok(format!("{n} ta dastur topildi"))
             })?,
+            PrivCommand::SetShadowPassword(pw) => {
+                self.shield.set_password(&pw)?;
+                String::new()
+            }
             PrivCommand::ListChanges => self.refresh_changes()?,
             PrivCommand::CommitPaths(paths) => {
                 let msg = self.shield.commit_paths(&paths)?;

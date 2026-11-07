@@ -2,9 +2,9 @@
 //! "like new" (the Shadow Defender / Deep Freeze model) — while everything the **teacher**
 //! changes is committed and survives.
 //!
-//! The filtering itself is done by the operating system's write filter:
-//! * **Windows** — Unified Write Filter ([`uwf`]): disk-backed overlay, thresholds, exclusions;
-//!   single files and registry values can be committed through the filter.
+//! The filtering itself is done by:
+//! * **Windows** — Shadow Defender, installed separately and driven through its `CmdTool.exe`
+//!   ([`sd`]): enter/exit Shadow Mode, commit files and folders.
 //! * **Ubuntu** — `overlayroot` ([`overlayroot`]): read-only root + RAM overlay; files are
 //!   committed by writing them to the real root.
 //!
@@ -20,7 +20,7 @@
 #[cfg_attr(windows, allow(dead_code))]
 mod overlayroot;
 #[cfg_attr(not(windows), allow(dead_code))]
-mod uwf;
+mod sd;
 
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -54,6 +54,10 @@ pub trait Backend: Send + Sync {
     /// What the overlay holds right now. `None` = this backend cannot list it.
     fn changes(&self) -> Option<Vec<ChangeInfo>> {
         None
+    }
+    /// Store the Shadow Defender password (Windows); other backends ignore it.
+    fn set_password(&self, _pw: &str) -> Result<()> {
+        Ok(())
     }
     /// Make a registry value survive restarts (Windows only).
     fn commit_registry(&self, _key: &str, _value: &str) -> Result<()> {
@@ -119,7 +123,7 @@ impl Default for Shield {
 impl Shield {
     pub fn new() -> Self {
         #[cfg(windows)]
-        let backend: Box<dyn Backend> = Box::new(uwf::Uwf);
+        let backend: Box<dyn Backend> = Box::new(sd::ShadowDefender);
         #[cfg(not(windows))]
         let backend: Box<dyn Backend> = Box::new(overlayroot::Overlayroot);
         let store = backend
@@ -276,6 +280,10 @@ impl Shield {
         Ok(msg)
     }
 
+    pub fn set_password(&self, pw: &str) -> Result<()> {
+        self.backend.set_password(pw)
+    }
+
     pub fn set_vimora_auto(&self, on: bool) {
         self.update(|s| s.vimora_manual = !on);
     }
@@ -388,22 +396,9 @@ impl Shield {
     }
 }
 
-/// Shared helper: a percentage of free space, clamped, in MB.
-#[cfg_attr(not(windows), allow(dead_code))]
-pub(crate) fn overlay_size_mb(free_mb: u64) -> u32 {
-    (free_mb * 40 / 100).clamp(2048, 32768) as u32
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn overlay_size() {
-        assert_eq!(overlay_size_mb(1000), 2048);
-        assert_eq!(overlay_size_mb(20_000), 8000);
-        assert_eq!(overlay_size_mb(1_000_000), 32768);
-    }
 
     #[test]
     fn store_roundtrip_and_defaults() {

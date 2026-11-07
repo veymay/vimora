@@ -637,20 +637,35 @@ impl ConsoleApp {
     fn shadow_requests(&mut self, targets: &[u64]) {
         let Some(Dialog::Freeze {
             restart,
+            request,
+            password,
+            ..
+        }) = &mut self.dialog
+        else {
+            return;
+        };
+        let pw_typed = password.clone();
+        let Some(r) = request.take() else {
+            return;
+        };
+        let restart = *restart;
+        if !matches!(
+            r,
+            ShadowRequest::SaveWindowsUpdate | ShadowRequest::SaveApps | ShadowRequest::ListApps
+        ) {
+            self.cfg.write().unwrap().shadow_password = pw_typed.clone();
+            self.send_priv(targets, PrivCommand::SetShadowPassword(pw_typed), "");
+        }
+        let Some(Dialog::Freeze {
             folders,
             wu,
             app_changes,
-            request,
             picked,
             ..
         }) = &mut self.dialog
         else {
             return;
         };
-        let Some(r) = request.take() else {
-            return;
-        };
-        let restart = *restart;
         match r {
             ShadowRequest::ListApps => self.send_priv(
                 targets,

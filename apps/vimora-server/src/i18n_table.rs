@@ -389,8 +389,10 @@ pub static ROWS: &[Row] = &[
     ("O'zgarishlar ro'yxati", "Changes list", "Список изменений"),
     ("Commit", "Commit", "Commit"),
     ("{n} ta kompyuterda Vimora xizmati ishlamayapti — Shadow uchun u kerak. O'quvchi dasturini qayta o'rnating.", "The Vimora service is not running on {n} computer(s) — Shadow needs it. Reinstall the student app.", "На {n} компьютерах не работает служба Vimora — она нужна для Shadow. Переустановите программу ученика."),
-    ("{n} ta kompyuterda Shadow qo'llanmaydi. Windows'da Enterprise yoki Education nashri kerak (Home va Pro'da yo'q); Ubuntu'da overlayroot o'rnatiladi.", "Shadow is not supported on {n} computer(s). Windows needs the Enterprise or Education edition (not Home or Pro); on Ubuntu overlayroot gets installed.", "Shadow не поддерживается на {n} компьютерах. Для Windows нужна редакция Enterprise или Education (не Home и не Pro); в Ubuntu устанавливается overlayroot."),
+    ("{n} ta kompyuterda Shadow qo'llanmaydi. Windows'da Shadow Defender dasturi o'rnatilgan bo'lishi kerak; Ubuntu'da overlayroot o'rnatiladi.", "Shadow is not supported on {n} computer(s). Windows needs Shadow Defender installed; on Ubuntu overlayroot gets installed.", "Shadow не поддерживается на {n} компьютерах. Для Windows нужно установить Shadow Defender; в Ubuntu устанавливается overlayroot."),
     ("yoqilgan", "on", "включён"),
+    ("Shadow Defender paroli", "Shadow Defender password", "Пароль Shadow Defender"),
+    ("Windows kompyuterlarda Shadow Defender dasturining paroli (u o'quvchi kompyuterlarida bir xil bo'lishi kerak). Parol qo'yilmagan bo'lsa, bo'sh qoldiring. Faqat administratorlar o'qiy oladigan faylda saqlanadi.", "The Shadow Defender password on Windows computers (it must be the same on every student PC). Leave empty if none is set. It is stored in a file only administrators can read.", "Пароль Shadow Defender на компьютерах Windows (он должен быть одинаковым на всех компьютерах учеников). Если пароля нет, оставьте пустым. Хранится в файле, доступном только администраторам."),
 ];
 
 #[cfg(test)]

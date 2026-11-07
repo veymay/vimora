@@ -115,6 +115,7 @@ pub(super) fn dialog_body(
             picked,
             change_filter,
             manual,
+            password,
         } => shadow_form(
             ui,
             p,
@@ -129,6 +130,7 @@ pub(super) fn dialog_body(
                 picked,
                 change_filter,
                 manual,
+                password,
             },
             cx,
         ),
@@ -400,6 +402,7 @@ pub(super) struct ShadowForm<'a> {
     pub(super) picked: &'a mut std::collections::BTreeSet<String>,
     pub(super) change_filter: &'a mut String,
     pub(super) manual: &'a mut String,
+    pub(super) password: &'a mut String,
 }
 
 /// Section title with a small "?" that explains it on hover.
@@ -620,7 +623,7 @@ fn protection_tab(ui: &mut egui::Ui, p: &Palette, f: ShadowForm<'_>, cx: &FormCt
                         RichText::new(with_icon(
                             icons::TRIANGLE_ALERT,
                             &tf!(
-                                "{n} ta kompyuterda Shadow qo'llanmaydi. Windows'da Enterprise yoki Education nashri kerak (Home va Pro'da yo'q); Ubuntu'da overlayroot o'rnatiladi.",
+                                "{n} ta kompyuterda Shadow qo'llanmaydi. Windows'da Shadow Defender dasturi o'rnatilgan bo'lishi kerak; Ubuntu'da overlayroot o'rnatiladi.",
                                 n = unsupported
                             ),
                         ))
@@ -707,6 +710,20 @@ fn advanced(ui: &mut egui::Ui, p: &Palette, f: ShadowForm<'_>, cx: &FormCtx<'_>)
     )
     .id_salt("shadow-advanced")
     .show(ui, |ui| {
+        titled(
+            ui,
+            p,
+            tr("Shadow Defender paroli"),
+            tr("Windows kompyuterlarda Shadow Defender dasturining paroli (u o'quvchi kompyuterlarida bir xil bo'lishi kerak). Parol qo'yilmagan bo'lsa, bo'sh qoldiring. Faqat administratorlar o'qiy oladigan faylda saqlanadi."),
+        );
+        ui_kit::input_frame(p).show(ui, |ui| {
+            ui.add(
+                ui_kit::text_field(f.password)
+                    .password(true)
+                    .frame(false)
+                    .desired_width(260.0),
+            );
+        });
         titled(
             ui,
             p,

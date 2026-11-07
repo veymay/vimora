@@ -442,6 +442,9 @@ async fn session(
                     h.repaint();
                 }
                 ClientMsg::CommandResult { ok, message } => {
+                    if message.is_empty() {
+                        continue;
+                    }
                     let label = info.label().to_string();
                     let mut h = hub.lock().unwrap();
                     h.log(

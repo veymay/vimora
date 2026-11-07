@@ -213,6 +213,8 @@ pub enum PrivCommand {
     SetNetPolicy(NetPolicy),
     /// Collect the installed applications (reported with `ClientMsg::Apps`).
     ListApps,
+    /// Password of the Shadow Defender installed on the student PC (Windows).
+    SetShadowPassword(String),
     /// List what the Shadow overlay holds (reported with `ClientMsg::Changes`).
     ListChanges,
     /// Make these paths survive restarts (a "commit" in the Shadow overlay).

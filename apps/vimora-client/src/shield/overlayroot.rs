@@ -9,7 +9,7 @@ use super::{Backend, Probe};
 use crate::sh;
 use anyhow::{bail, Result};
 use std::path::{Path, PathBuf};
-use vimora_core::{ChangeInfo, ChangeKind, FreezeState, ShieldUsage};
+use vimora_core::{ChangeInfo, FreezeState, ShieldUsage};
 
 pub struct Overlayroot;
 
@@ -166,8 +166,15 @@ pub fn is_noise(path: &str) -> bool {
 
 /// Walks the overlay's upper layer: files are additions/modifications, 0:0 char devices are
 /// deletions. Folders are reported only when they are new and empty.
+#[cfg(not(unix))]
+fn scan_upper(_upper: &Path) -> Vec<ChangeInfo> {
+    vec![]
+}
+
+#[cfg(unix)]
 fn scan_upper(upper: &Path) -> Vec<ChangeInfo> {
     use std::os::unix::fs::{FileTypeExt, MetadataExt};
+    use vimora_core::ChangeKind;
     let mut out = vec![];
     let mut stack = vec![upper.to_path_buf()];
     while let Some(dir) = stack.pop() {

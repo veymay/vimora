@@ -94,6 +94,8 @@ pub(super) enum Dialog {
         change_filter: String,
         /// A path typed by hand (platforms that cannot list the overlay).
         manual: String,
+        /// Shadow Defender password for the Windows student PCs.
+        password: String,
     },
     Updates {
         policy: UpdatePolicy,

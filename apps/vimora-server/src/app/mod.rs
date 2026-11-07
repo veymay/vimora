@@ -540,6 +540,7 @@ impl ConsoleApp {
             picked: BTreeSet::new(),
             change_filter: String::new(),
             manual: String::new(),
+            password: c.shadow_password.clone(),
         }
     }
 
