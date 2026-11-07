@@ -236,7 +236,15 @@ impl ConsoleApp {
             return;
         }
         let ease = 1.0 - (1.0 - t).powi(3); // ease-out cubic
-        let targets = self.targets(all);
+                                            // The Shadow drawer acts on the computers ticked in its own list.
+        let targets = match self.dialog.as_ref().or(self.closing.as_ref()) {
+            Some(Dialog::Freeze { chosen, .. }) => all
+                .iter()
+                .map(|v| v.id)
+                .filter(|id| chosen.contains(id))
+                .collect(),
+            _ => self.targets(all),
+        };
         let n = targets.len();
         let hub = self.hub.clone();
         let cfg = self.cfg.clone();
@@ -427,6 +435,7 @@ impl ConsoleApp {
                             if !matches!(
                                 dialog,
                                 Dialog::Settings(_)
+                                    | Dialog::Freeze { .. }
                                     | Dialog::Room { .. }
                                     | Dialog::Activity
                                     | Dialog::Rename { .. }

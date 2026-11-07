@@ -420,6 +420,7 @@ pub static ROWS: &[Row] = &[
     ("Sozlama", "Settings", "Настройки"),
     ("Windows kompyuterlardagi Shadow Defender paroli. Parol yo'q bo'lsa, bo'sh qoldiring.", "The Shadow Defender password on Windows computers. Leave empty if none.", "Пароль Shadow Defender на компьютерах Windows. Если его нет, оставьте пустым."),
     ("Bu papkalar qayta yuklanganda ham o'chmaydi. Har biri yangi qatorda.", "These folders survive restarts. One per line.", "Эти папки сохраняются после перезагрузки. Каждая с новой строки."),
+    ("Pastdan kompyuter belgilang", "Tick computers below", "Отметьте компьютеры ниже"),
 ];
 
 #[cfg(test)]

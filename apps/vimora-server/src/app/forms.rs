@@ -106,6 +106,7 @@ pub(super) fn dialog_body(
         Dialog::Activity => activity_body(ui, p, hub, all, clear_help),
         Dialog::Freeze {
             tab,
+            chosen,
             restart,
             folders,
             request,
@@ -116,6 +117,7 @@ pub(super) fn dialog_body(
             ui,
             p,
             ShadowForm {
+                chosen,
                 tab,
                 restart,
                 folders,
@@ -312,6 +314,116 @@ pub(super) fn section(ui: &mut egui::Ui, p: &Palette, title: &str) {
     ui.add_space(2.0);
 }
 
+/// Ticked list of every computer (name, state chip); "all" ticks or clears them all.
+fn pick_rows(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    all: &[View],
+    chosen: &mut std::collections::BTreeSet<u64>,
+    chip: impl Fn(&View) -> (String, Color32),
+) {
+    let all_on = !all.is_empty() && all.iter().all(|v| chosen.contains(&v.id));
+    egui::ScrollArea::vertical()
+        .id_salt("shadow-pcs")
+        .max_height(260.0)
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            Frame::none()
+                .stroke(Stroke::new(1.0_f32, p.line))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    let row = |ui: &mut egui::Ui,
+                               first: bool,
+                               on: bool,
+                               name: &str,
+                               bold: bool,
+                               chip: Option<(String, Color32)>|
+                     -> bool {
+                        let (rect, resp) = ui
+                            .allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
+                        if !first {
+                            ui.painter().hline(
+                                rect.x_range(),
+                                rect.top(),
+                                Stroke::new(1.0_f32, p.line),
+                            );
+                        }
+                        if resp.hovered() {
+                            ui.painter().rect_filled(rect, Rounding::ZERO, p.hover);
+                        }
+                        let bx = Rect::from_center_size(
+                            pos2(rect.left() + 20.0, rect.center().y),
+                            vec2(16.0, 16.0),
+                        );
+                        ui.painter().rect(
+                            bx,
+                            Rounding::ZERO,
+                            if on { p.accent } else { p.sunken },
+                            Stroke::new(1.0_f32, if on { p.accent } else { p.line_strong }),
+                        );
+                        if on {
+                            ui.painter().text(
+                                bx.center(),
+                                Align2::CENTER_CENTER,
+                                icons::CHECK,
+                                FontId::proportional(12.0),
+                                p.on_accent,
+                            );
+                        }
+                        let name = ui_kit::truncated(
+                            ui,
+                            name,
+                            FontId::new(
+                                13.5,
+                                if bold {
+                                    ui_kit::bold()
+                                } else {
+                                    ui_kit::medium()
+                                },
+                            ),
+                            p.text,
+                            rect.width() * 0.45,
+                        );
+                        ui.painter().galley(
+                            pos2(rect.left() + 40.0, rect.center().y - name.size().y / 2.0),
+                            name,
+                            p.text,
+                        );
+                        if let Some((text, col)) = chip {
+                            let g = ui_kit::caps(ui, &text, 9.5, ui_kit::mono(), col);
+                            let r = Rect::from_min_size(
+                                pos2(
+                                    rect.right() - 12.0 - g.size().x - 12.0,
+                                    rect.center().y - 10.0,
+                                ),
+                                vec2(g.size().x + 12.0, 20.0),
+                            );
+                            ui_kit::paint_chip(ui.painter(), r, g, col);
+                        }
+                        resp.clicked()
+                    };
+                    if row(ui, true, all_on, tr("Hammasi"), true, None) {
+                        if all_on {
+                            chosen.clear();
+                        } else {
+                            chosen.extend(all.iter().map(|v| v.id));
+                        }
+                    }
+                    for v in all {
+                        let on = chosen.contains(&v.id);
+                        if row(ui, false, on, &v.label, false, Some(chip(v))) {
+                            if on {
+                                chosen.remove(&v.id);
+                            } else {
+                                chosen.insert(v.id);
+                            }
+                        }
+                    }
+                });
+        });
+}
+
 /// One row per target PC: name on the left, a status chip on the right.
 pub(super) fn target_rows(
     ui: &mut egui::Ui,
@@ -364,6 +476,7 @@ fn note(ui: &mut egui::Ui, p: &Palette, text: &str) {
 
 /// The Shadow drawer: one page — the switch, the computers, and what to commit.
 pub(super) struct ShadowForm<'a> {
+    pub(super) chosen: &'a mut std::collections::BTreeSet<u64>,
     pub(super) tab: &'a mut ShadowTab,
     pub(super) restart: &'a mut bool,
     pub(super) folders: &'a mut String,
@@ -385,11 +498,7 @@ fn titled(ui: &mut egui::Ui, p: &Palette, title: &str, help: &str) {
 }
 
 pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>, cx: &FormCtx<'_>) {
-    let views: Vec<&View> = cx
-        .all
-        .iter()
-        .filter(|v| cx.targets.contains(&v.id))
-        .collect();
+    let views: Vec<&View> = cx.all.iter().filter(|v| f.chosen.contains(&v.id)).collect();
     let usable = views
         .iter()
         .filter(|v| {
@@ -482,7 +591,9 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
                             tr("Yoniqda qayta yuklanganda barcha o'zgarishlar o'chadi, kompyuter toza qaytadi. Konsoldan qilganingiz saqlanadi."),
                         );
                     });
-                    let (txt, col) = if usable == 0 {
+                    let (txt, col) = if views.is_empty() {
+                        (tr("Pastdan kompyuter belgilang"), p.faint)
+                    } else if usable == 0 {
                         (tr("Mavjud emas"), p.faint)
                     } else if pending {
                         (tr("Qayta yuklangach kuchga kiradi"), p.warning)
@@ -565,25 +676,19 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
             tr("Kompyuterlar"),
             tr("Har bir kompyuterda Shadow holati. Foiz — xotira to'lishi."),
         );
-        egui::ScrollArea::vertical()
-            .id_salt("shadow-pcs")
-            .max_height(220.0)
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                target_rows(ui, p, cx.all, cx.targets, |v| {
-                    if !v.status.service {
-                        return (tr("Xizmat yo'q").into(), p.danger);
-                    }
-                    if v.status.freeze == FreezeState::Unsupported {
-                        return (tr("Mavjud emas").into(), p.faint);
-                    }
-                    let mut t = freeze_label(v.status.freeze).to_string();
-                    if let Some(u) = v.status.shield_usage {
-                        t.push_str(&format!(" · {}%", u.percent()));
-                    }
-                    (t, freeze_color(p, v.status.freeze))
-                });
-            });
+        pick_rows(ui, p, cx.all, f.chosen, |v| {
+            if !v.status.service {
+                return (tr("Xizmat yo'q").into(), p.danger);
+            }
+            if v.status.freeze == FreezeState::Unsupported {
+                return (tr("Mavjud emas").into(), p.faint);
+            }
+            let mut t = freeze_label(v.status.freeze).to_string();
+            if let Some(u) = v.status.shield_usage {
+                t.push_str(&format!(" · {}%", u.percent()));
+            }
+            (t, freeze_color(p, v.status.freeze))
+        });
     }
 
     if *f.tab == ShadowTab::Commit {

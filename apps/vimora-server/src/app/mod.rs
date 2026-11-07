@@ -527,6 +527,7 @@ impl ConsoleApp {
         let c = self.cfg.read().unwrap();
         Dialog::Freeze {
             tab: ShadowTab::Protection,
+            chosen: self.selected.clone(),
             restart: false,
             folders: c.persistent_folders.clone(),
             request: None,

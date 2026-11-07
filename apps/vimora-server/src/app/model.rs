@@ -79,6 +79,8 @@ pub(super) enum Dialog {
     },
     Freeze {
         tab: ShadowTab,
+        /// Computers the drawer acts on (ticked in its list).
+        chosen: std::collections::BTreeSet<u64>,
         restart: bool,
         /// Persistent folders, one per line.
         folders: String,
