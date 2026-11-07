@@ -23,12 +23,17 @@ impl StatusBadge {
             Stroke::new(1.0_f32, self.stroke),
         );
         let mut x = r.left() + 9.0;
-        painter.rect_filled(
-            Rect::from_center_size(pos2(x, r.center().y), vec2(5.0, 5.0)),
-            Rounding::ZERO,
-            self.dot,
-        );
-        x += 8.0;
+        // The status dot belongs to the plain online badge only.
+        if self.icon.is_none() {
+            painter.rect_filled(
+                Rect::from_center_size(pos2(x, r.center().y), vec2(5.0, 5.0)),
+                Rounding::ZERO,
+                self.dot,
+            );
+            x += 8.0;
+        } else {
+            x -= 2.0;
+        }
         if let Some((ic, col)) = self.icon {
             painter.text(
                 pos2(x, r.center().y),
@@ -60,7 +65,12 @@ pub(super) fn status_badges(ui: &egui::Ui, p: &Palette, s: &ClientStatus) -> Vec
     let soft = |c: Color32| c.gamma_multiply(0.75);
     let make = |icon: Option<&'static str>, label: &str, col: Color32| {
         let text = ui_kit::caps(ui, label, 9.5, ui_kit::mono(), soft(col));
-        let width = 9.0 + 8.0 + if icon.is_some() { 15.0 } else { 0.0 } + text.size().x + 9.0;
+        let width = if icon.is_some() {
+            7.0 + 15.0
+        } else {
+            9.0 + 8.0
+        } + text.size().x
+            + 9.0;
         StatusBadge {
             width,
             dot: soft(p.success),
@@ -747,29 +757,28 @@ impl ConsoleApp {
         // ── Bottom info strip ──────────────────────────────────────────────
         let info_top = thumb.bottom() + 6.0;
 
-        // Name
+        // Line 1: name, with the online dot at its right end.
         let name = ui_kit::truncated(
             ui,
             &v.label,
             FontId::new(13.5, ui_kit::bold()),
             p.strong,
-            tw,
+            tw - 16.0,
         );
+        let name_h = name.size().y;
         painter.galley(pos2(rect.left() + pad, info_top), name, p.strong);
-
-        // Online status on the left, Shadow (a separate thing) on the right of the same line
-        let y = info_top + 22.0;
-        let online = online_badge(ui, p, &v.status);
-        let w = online.width;
-        online.paint(
-            &painter,
-            Rect::from_min_size(pos2(rect.left() + pad, y), vec2(w, 18.0)),
+        painter.circle_filled(
+            pos2(rect.right() - pad - 4.0, info_top + name_h / 2.0),
+            4.0,
+            p.success,
         );
+
+        // Line 2: Shadow, left aligned with room for its full text.
         if let Some(shadow) = shadow_badge(ui, p, &v.status) {
-            let w = shadow.width;
+            let w = shadow.width.min(tw);
             shadow.paint(
                 &painter,
-                Rect::from_min_size(pos2(rect.right() - pad - w, y), vec2(w, 18.0)),
+                Rect::from_min_size(pos2(rect.left() + pad, info_top + 22.0), vec2(w, 18.0)),
             );
         }
 
