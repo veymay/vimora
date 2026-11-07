@@ -393,6 +393,8 @@ pub static ROWS: &[Row] = &[
     ("yoqilgan", "on", "включён"),
     ("Shadow Defender paroli", "Shadow Defender password", "Пароль Shadow Defender"),
     ("Windows kompyuterlarda Shadow Defender dasturining paroli (u o'quvchi kompyuterlarida bir xil bo'lishi kerak). Parol qo'yilmagan bo'lsa, bo'sh qoldiring. Faqat administratorlar o'qiy oladigan faylda saqlanadi.", "The Shadow Defender password on Windows computers (it must be the same on every student PC). Leave empty if none is set. It is stored in a file only administrators can read.", "Пароль Shadow Defender на компьютерах Windows (он должен быть одинаковым на всех компьютерах учеников). Если пароля нет, оставьте пустым. Хранится в файле, доступном только администраторам."),
+    ("GitHub hozir so'rovni qabul qilmadi. Birozdan keyin qayta urinib ko'ring.", "GitHub is not accepting requests right now. Try again in a little while.", "GitHub сейчас не принимает запросы. Попробуйте чуть позже."),
+    ("Internet bilan aloqa yo'q yoki GitHub javob bermadi.", "No internet connection, or GitHub did not respond.", "Нет подключения к интернету или GitHub не отвечает."),
 ];
 
 #[cfg(test)]

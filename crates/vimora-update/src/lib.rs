@@ -84,8 +84,44 @@ fn agent() -> ureq::Agent {
         .build()
 }
 
-/// The newest published (non-draft, non-prerelease) release.
+/// The newest published release. The GitHub API is tried first; when it refuses (rate limit,
+/// 403/429) the plain `releases/latest` page is used, which has no such limit.
 pub fn latest() -> Result<Release> {
+    latest_api().or_else(|api_err| latest_page().map_err(|_| api_err))
+}
+
+/// Fallback: follow `https://github.com/<repo>/releases/latest` to the tag and derive the files.
+fn latest_page() -> Result<Release> {
+    let url = format!("https://github.com/{REPO}/releases/latest");
+    let resp = agent().get(&url).call()?;
+    let final_url = resp.get_url().to_string();
+    let tag = final_url
+        .rsplit_once("/releases/tag/")
+        .map(|x| x.1)
+        .filter(|t| !t.is_empty())
+        .context("so'nggi reliz topilmadi")?
+        .to_string();
+    let v = tag.trim_start_matches('v').to_string();
+    let base = format!("https://github.com/{REPO}/releases/download/{tag}");
+    let asset = |name: String| Asset {
+        url: format!("{base}/{name}"),
+        name,
+        size: 0,
+    };
+    Ok(Release {
+        page: final_url,
+        assets: vec![
+            asset(format!("vimora-{v}-windows-x64-setup.exe")),
+            asset(format!("vimora-teacher_{v}_amd64.deb")),
+            asset(format!("vimora-student_{v}_amd64.deb")),
+            asset("SHA256SUMS".to_string()),
+        ],
+        version: v,
+    })
+}
+
+/// The newest published (non-draft, non-prerelease) release, from the GitHub API.
+fn latest_api() -> Result<Release> {
     let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
     let body = agent()
         .get(&url)

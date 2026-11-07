@@ -672,7 +672,15 @@ fn updates(
                 Phase::Failed(e) => (
                     icons::TRIANGLE_ALERT,
                     p.warning,
-                    format!("{}: {e}", tr("Tekshirib bo'lmadi")),
+                    {
+                        // Plain words, not the raw network error.
+                        let why = if e.contains("403") || e.contains("429") {
+                            tr("GitHub hozir so'rovni qabul qilmadi. Birozdan keyin qayta urinib ko'ring.")
+                        } else {
+                            tr("Internet bilan aloqa yo'q yoki GitHub javob bermadi.")
+                        };
+                        format!("{}. {why}", tr("Tekshirib bo'lmadi"))
+                    },
                 ),
             };
             ui.label(RichText::new(ic).size(22.0).color(col));
