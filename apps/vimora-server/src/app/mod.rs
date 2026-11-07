@@ -190,21 +190,6 @@ impl ConsoleApp {
                 })
             }
             Ok("freeze") => app.dev_open = Some(app.shadow_dialog()),
-            Ok("shadow-changes") => {
-                let mut d = app.shadow_dialog();
-                if let Dialog::Freeze { tab, .. } = &mut d {
-                    *tab = ShadowTab::Changes;
-                }
-                app.dev_open = Some(d);
-            }
-            Ok("shadow-apps") => {
-                let mut d = app.shadow_dialog();
-                if let Dialog::Freeze { tab, request, .. } = &mut d {
-                    *tab = ShadowTab::Protection;
-                    *request = Some(ShadowRequest::ListApps);
-                }
-                app.dev_open = Some(d);
-            }
             Ok("updates") => {
                 let policy = app.cfg.read().unwrap().update_policy;
                 app.dev_open = Some(Dialog::Updates {
@@ -530,15 +515,10 @@ impl ConsoleApp {
     fn shadow_dialog(&self) -> Dialog {
         let c = self.cfg.read().unwrap();
         Dialog::Freeze {
-            tab: ShadowTab::Protection,
             restart: false,
             folders: c.persistent_folders.clone(),
-            wu: c.update_policy.os,
-            app_changes: BTreeMap::new(),
-            app_filter: String::new(),
             request: None,
             picked: BTreeSet::new(),
-            change_filter: String::new(),
             manual: String::new(),
             password: c.shadow_password.clone(),
         }

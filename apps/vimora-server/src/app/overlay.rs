@@ -316,7 +316,7 @@ impl ConsoleApp {
             Dialog::Room { rename: None, .. } => (tr("Yangi xona"), 440.0),
             Dialog::Room { .. } => (tr("Xona nomini o'zgartirish"), 440.0),
             Dialog::Activity => (tr("Faollik"), 440.0),
-            Dialog::Freeze { .. } => (tr("Shadow rejim"), 600.0),
+            Dialog::Freeze { .. } => (tr("Shadow rejim"), 520.0),
             Dialog::Rename { .. } => (tr("Nomini o'zgartirish"), 460.0),
             Dialog::Updates { .. } => (tr("Yangilanishlar"), 600.0),
         };
@@ -637,41 +637,29 @@ impl ConsoleApp {
     fn shadow_requests(&mut self, targets: &[u64]) {
         let Some(Dialog::Freeze {
             restart,
+            folders,
             request,
+            picked,
             password,
             ..
         }) = &mut self.dialog
         else {
             return;
         };
-        let pw_typed = password.clone();
         let Some(r) = request.take() else {
             return;
         };
         let restart = *restart;
-        if !matches!(
-            r,
-            ShadowRequest::SaveWindowsUpdate | ShadowRequest::SaveApps | ShadowRequest::ListApps
-        ) {
-            self.cfg.write().unwrap().shadow_password = pw_typed.clone();
-            self.send_priv(targets, PrivCommand::SetShadowPassword(pw_typed), "");
-        }
-        let Some(Dialog::Freeze {
-            folders,
-            wu,
-            app_changes,
-            picked,
-            ..
-        }) = &mut self.dialog
-        else {
-            return;
+        let pw = password.clone();
+        let folders = folders.clone();
+        let paths: Vec<String> = if r == ShadowRequest::Commit {
+            std::mem::take(picked).into_iter().collect()
+        } else {
+            vec![]
         };
+        self.cfg.write().unwrap().shadow_password = pw.clone();
+        self.send_priv(targets, PrivCommand::SetShadowPassword(pw), "");
         match r {
-            ShadowRequest::ListApps => self.send_priv(
-                targets,
-                PrivCommand::ListApps,
-                tr("Dasturlar ro'yxati so'raldi"),
-            ),
             ShadowRequest::Apply(action) => {
                 let what = match action {
                     FreezeAction::Freeze => tr("Shadow yoqish"),
@@ -688,41 +676,15 @@ impl ConsoleApp {
                 );
             }
             ShadowRequest::Commit => {
-                let paths: Vec<String> = std::mem::take(picked).into_iter().collect();
                 self.send_priv(targets, PrivCommand::CommitPaths(paths), tr("Commit"));
             }
             ShadowRequest::SaveFolders => {
-                let folders = folders.clone();
                 self.cfg.write().unwrap().persistent_folders = folders.clone();
                 self.send_priv(
                     targets,
                     PrivCommand::SetPersistentFolders(split_list(&folders)),
                     tr("Saqlanadigan papkalar"),
                 );
-            }
-            ShadowRequest::SaveWindowsUpdate => {
-                let wu = *wu;
-                let policy = {
-                    let mut c = self.cfg.write().unwrap();
-                    c.update_policy.os = wu;
-                    c.update_policy
-                };
-                self.send_priv(
-                    targets,
-                    PrivCommand::SetUpdatePolicy(policy),
-                    "Windows Update",
-                );
-            }
-            ShadowRequest::SaveApps => {
-                let changes: Vec<(String, bool)> =
-                    std::mem::take(app_changes).into_iter().collect();
-                if !changes.is_empty() {
-                    self.send_priv(
-                        targets,
-                        PrivCommand::SetAppUpdates(changes),
-                        tr("Dastur yangilanishlari"),
-                    );
-                }
             }
         }
     }

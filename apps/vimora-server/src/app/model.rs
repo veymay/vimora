@@ -78,20 +78,12 @@ pub(super) enum Dialog {
         restart: bool,
     },
     Freeze {
-        tab: ShadowTab,
         restart: bool,
         /// Persistent folders, one per line.
         folders: String,
-        /// Windows Update mode for the "Windows Update" tab.
-        wu: OsUpdateMode,
-        /// Pending per-app update switches (id → allowed).
-        app_changes: BTreeMap<String, bool>,
-        app_filter: String,
         request: Option<ShadowRequest>,
-        /// Paths ticked in the "O'zgarishlar" list (to commit).
+        /// Paths ticked for commit.
         picked: std::collections::BTreeSet<String>,
-        /// Search box of the changes list.
-        change_filter: String,
         /// A path typed by hand (platforms that cannot list the overlay).
         manual: String,
         /// Shadow Defender password for the Windows student PCs.
@@ -134,24 +126,15 @@ pub(super) enum Action {
     OpenMenu(u64, Rect, f32),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum ShadowTab {
-    Protection,
-    Changes,
-}
-
 /// Inline actions inside the Shadow drawer (they don't close it).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ShadowRequest {
-    ListApps,
     /// Turn Shadow on / off / run the update cycle on the targets.
     Apply(FreezeAction),
     ListChanges,
     /// Commit the ticked paths.
     Commit,
     SaveFolders,
-    SaveWindowsUpdate,
-    SaveApps,
 }
 
 /// Entries kept for actions that have no navbar button right now (program launch, file send).
