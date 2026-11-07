@@ -13,7 +13,7 @@ use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use vimora_core::{AppInfo, FreezeState, PowerAction, PrivCommand, ShieldUsage};
+use vimora_core::{AppInfo, ChangeInfo, FreezeState, PowerAction, PrivCommand, ShieldUsage};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct PrivStatus {
@@ -27,6 +27,8 @@ pub struct PrivStatus {
     pub persistent_folders: Vec<String>,
     /// Last application list and its revision (bumped on every change).
     pub apps: Option<(u64, Vec<AppInfo>)>,
+    /// Shadow overlay content and its revision.
+    pub changes: Option<(u64, Vec<ChangeInfo>)>,
     /// Results of background jobs since the last status call: (ok, message).
     pub events: Vec<(bool, String)>,
 }
@@ -41,6 +43,7 @@ struct Inner {
     app_updates: Option<u32>,
     busy: Option<String>,
     apps: Option<(u64, Vec<AppInfo>)>,
+    changes: Option<(u64, Vec<ChangeInfo>)>,
     events: Vec<(bool, String)>,
 }
 
@@ -67,6 +70,19 @@ impl Engine {
         i.shield_usage = p.usage;
         i.shield_note = p.note;
         i.freeze_checked = Some(Instant::now());
+    }
+
+    /// Re-reads the overlay content into the status.
+    fn refresh_changes(&self) -> Result<String> {
+        let list = self.shield.changes()?;
+        let Some(list) = list else {
+            bail!("bu tizimda overlay tarkibini ko'rib bo'lmaydi (Windows UWF) — yo'lni qo'lda kiriting");
+        };
+        let n = list.len();
+        let mut i = self.inner.lock().unwrap();
+        let rev = i.changes.as_ref().map_or(1, |(r, _)| r + 1);
+        i.changes = Some((rev, list));
+        Ok(format!("{n} ta o'zgarish topildi"))
     }
 
     /// Commits what an operation changed if the PC is protected right now.
@@ -220,6 +236,12 @@ impl Engine {
                 i.apps = Some((rev, list));
                 Ok(format!("{n} ta dastur topildi"))
             })?,
+            PrivCommand::ListChanges => self.refresh_changes()?,
+            PrivCommand::CommitPaths(paths) => {
+                let msg = self.shield.commit_paths(&paths)?;
+                let _ = self.refresh_changes();
+                msg
+            }
             PrivCommand::SetAppUpdates(changes) => {
                 self.shield.set_app_updates(&changes);
                 let touched = apps::apply(&changes)?;
@@ -298,6 +320,7 @@ impl Engine {
             queued: store.queue.len() as u32,
             persistent_folders: store.persistent,
             apps: i.apps.clone(),
+            changes: i.changes.clone(),
             events: std::mem::take(&mut i.events),
         }
     }

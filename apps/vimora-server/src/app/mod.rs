@@ -190,10 +190,17 @@ impl ConsoleApp {
                 })
             }
             Ok("freeze") => app.dev_open = Some(app.shadow_dialog()),
+            Ok("shadow-changes") => {
+                let mut d = app.shadow_dialog();
+                if let Dialog::Freeze { tab, .. } = &mut d {
+                    *tab = ShadowTab::Changes;
+                }
+                app.dev_open = Some(d);
+            }
             Ok("shadow-apps") => {
                 let mut d = app.shadow_dialog();
                 if let Dialog::Freeze { tab, request, .. } = &mut d {
-                    *tab = ShadowTab::Apps;
+                    *tab = ShadowTab::Protection;
                     *request = Some(ShadowRequest::ListApps);
                 }
                 app.dev_open = Some(d);
@@ -253,7 +260,36 @@ impl ConsoleApp {
             };
             if i % 5 == 1 {
                 status.freeze = FreezeState::Frozen;
+                status.shield_usage = Some(vimora_core::ShieldUsage {
+                    used_mb: 300 + 40 * i as u32,
+                    max_mb: 4096,
+                });
+            } else if i % 5 == 2 {
+                status.freeze = FreezeState::FreezePending;
+            } else if i % 5 == 3 {
+                status.freeze = FreezeState::Unsupported;
+                status.shield_note =
+                    Some("UWF yo'q: Windows 10/11 Enterprise yoki Education kerak".into());
+            } else {
+                status.freeze = FreezeState::Thawed;
             }
+            let demo_changes = (status.freeze == FreezeState::Frozen).then(|| {
+                use vimora_core::{ChangeInfo, ChangeKind::*};
+                [
+                    ("/home/student/Desktop/dars-3.odt", Added, 48_200),
+                    ("/home/student/Documents/hisobot.docx", Modified, 1_204_000),
+                    ("/etc/hosts", Modified, 312),
+                    ("/home/student/Pictures/eski-rasm.png", Deleted, 0),
+                    ("/opt/geogebra/settings.xml", Modified, 2_900),
+                ]
+                .into_iter()
+                .map(|(p, kind, size)| ChangeInfo {
+                    path: p.into(),
+                    kind,
+                    size,
+                })
+                .collect::<Vec<_>>()
+            });
             if i % 8 == 4 {
                 status.web_blocklist = 3;
             }
@@ -283,6 +319,7 @@ impl ConsoleApp {
                     client_nonce: vec![],
                     priv_counter: 0,
                     apps: None,
+                    changes: demo_changes,
                 },
             );
             if let (Some(r), true) = (rooms.first(), i % 2 == 0) {
@@ -494,13 +531,15 @@ impl ConsoleApp {
         let c = self.cfg.read().unwrap();
         Dialog::Freeze {
             tab: ShadowTab::Protection,
-            action: FreezeAction::Freeze,
-            restart: true,
+            restart: false,
             folders: c.persistent_folders.clone(),
             wu: c.update_policy.os,
             app_changes: BTreeMap::new(),
             app_filter: String::new(),
             request: None,
+            picked: BTreeSet::new(),
+            change_filter: String::new(),
+            manual: String::new(),
         }
     }
 
@@ -695,6 +734,7 @@ impl eframe::App for ConsoleApp {
         }
         self.context_menu(ctx, &p, &all);
         self.dialogs(ctx, &p, &all);
+        self.toasts(ctx, &p);
         self.autosave();
         self.dev_screenshot(ctx);
         // Dev aid: VIMORA_DEV_PRIV=check sends a signed CheckUpdates to everyone once, 4 s after start.

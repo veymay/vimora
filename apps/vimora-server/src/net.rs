@@ -38,6 +38,8 @@ pub struct Student {
     pub priv_counter: u64,
     /// Last reported installed applications.
     pub apps: Option<Vec<vimora_core::AppInfo>>,
+    /// Shadow overlay content as last reported.
+    pub changes: Option<Vec<vimora_core::ChangeInfo>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -45,6 +47,13 @@ pub enum Level {
     Info,
     Ok,
     Warn,
+}
+
+/// A short result message shown over the console (command outcomes).
+pub struct Toast {
+    pub ok: bool,
+    pub text: String,
+    pub at: Instant,
 }
 
 pub struct LogEntry {
@@ -70,6 +79,7 @@ pub struct Hub {
     pub identity: Arc<auth::Identity>,
     pub students: BTreeMap<u64, Student>,
     pub log: VecDeque<LogEntry>,
+    pub toasts: VecDeque<Toast>,
     pub chat: VecDeque<ChatMsg>,
     /// Computers that received a message in the current chat (they get `ChatEnd`).
     pub chat_members: std::collections::BTreeSet<u64>,
@@ -85,12 +95,25 @@ impl Hub {
             identity: Arc::new(identity),
             students: BTreeMap::new(),
             log: VecDeque::new(),
+            toasts: VecDeque::new(),
             chat: VecDeque::new(),
             chat_members: Default::default(),
             unread: 0,
             ctx: None,
             next_id: 0,
         }
+    }
+
+    pub fn toast(&mut self, ok: bool, text: impl Into<String>) {
+        self.toasts.push_back(Toast {
+            ok,
+            text: text.into(),
+            at: Instant::now(),
+        });
+        while self.toasts.len() > 5 {
+            self.toasts.pop_front();
+        }
+        self.repaint();
     }
 
     pub fn log(&mut self, level: Level, text: impl Into<String>) {
@@ -341,6 +364,7 @@ async fn session(
                 client_nonce: client_nonce.clone(),
                 priv_counter: 0,
                 apps: None,
+                changes: None,
             },
         );
         h.log(
@@ -419,10 +443,12 @@ async fn session(
                 }
                 ClientMsg::CommandResult { ok, message } => {
                     let label = info.label().to_string();
-                    hub.lock().unwrap().log(
+                    let mut h = hub.lock().unwrap();
+                    h.log(
                         if ok { Level::Info } else { Level::Warn },
                         format!("{label}: {message}"),
                     );
+                    h.toast(ok, format!("{label}: {message}"));
                 }
                 ClientMsg::HelpRequest { text } => {
                     let mut h = hub.lock().unwrap();
@@ -449,6 +475,13 @@ async fn session(
                     let mut h = hub.lock().unwrap();
                     if let Some(s) = h.students.get_mut(&id) {
                         s.apps = Some(list);
+                    }
+                    h.repaint();
+                }
+                ClientMsg::Changes(list) => {
+                    let mut h = hub.lock().unwrap();
+                    if let Some(s) = h.students.get_mut(&id) {
+                        s.changes = Some(list);
                     }
                     h.repaint();
                 }

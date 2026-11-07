@@ -9,7 +9,7 @@ use super::{Backend, Probe};
 use crate::sh;
 use anyhow::{bail, Result};
 use std::path::{Path, PathBuf};
-use vimora_core::{FreezeState, ShieldUsage};
+use vimora_core::{ChangeInfo, ChangeKind, FreezeState, ShieldUsage};
 
 pub struct Overlayroot;
 
@@ -128,6 +128,90 @@ fn write_real(path: &str, contents: &str) -> Result<()> {
     Ok(())
 }
 
+/// Copies a file or a whole folder onto the real root.
+fn copy_tree(src: &Path, dst: &Path) -> Result<()> {
+    let meta = std::fs::symlink_metadata(src)?;
+    if meta.is_dir() {
+        std::fs::create_dir_all(dst)?;
+        for e in std::fs::read_dir(src)? {
+            let e = e?;
+            copy_tree(&e.path(), &dst.join(e.file_name()))?;
+        }
+    } else if meta.is_file() {
+        if let Some(d) = dst.parent() {
+            std::fs::create_dir_all(d)?;
+        }
+        std::fs::copy(src, dst)?;
+    }
+    Ok(())
+}
+
+/// Noise nobody wants to review: logs, caches, runtime state.
+pub fn is_noise(path: &str) -> bool {
+    [
+        "/var/log",
+        "/var/cache",
+        "/var/lib/vimora",
+        "/tmp",
+        "/run",
+        "/proc",
+        "/sys",
+        "/dev",
+    ]
+    .iter()
+    .any(|p| path == *p || path.starts_with(&format!("{p}/")))
+        || path.contains("/.cache/")
+        || path.ends_with("/.cache")
+}
+
+/// Walks the overlay's upper layer: files are additions/modifications, 0:0 char devices are
+/// deletions. Folders are reported only when they are new and empty.
+fn scan_upper(upper: &Path) -> Vec<ChangeInfo> {
+    use std::os::unix::fs::{FileTypeExt, MetadataExt};
+    let mut out = vec![];
+    let mut stack = vec![upper.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for e in rd.flatten() {
+            let path = e.path();
+            let Ok(meta) = std::fs::symlink_metadata(&path) else {
+                continue;
+            };
+            let live = format!("/{}", path.strip_prefix(upper).unwrap_or(&path).display());
+            if is_noise(&live) {
+                continue;
+            }
+            if meta.file_type().is_char_device() && meta.rdev() == 0 {
+                out.push(ChangeInfo {
+                    path: live,
+                    kind: ChangeKind::Deleted,
+                    size: 0,
+                });
+            } else if meta.is_dir() {
+                stack.push(path);
+            } else {
+                let existed = Path::new(LOWER).join(live.trim_start_matches('/')).exists();
+                out.push(ChangeInfo {
+                    path: live,
+                    kind: if existed {
+                        ChangeKind::Modified
+                    } else {
+                        ChangeKind::Added
+                    },
+                    size: meta.len(),
+                });
+            }
+        }
+        if out.len() > 3000 {
+            break;
+        }
+    }
+    out.sort_by(|a, b| a.path.cmp(&b.path));
+    out
+}
+
 fn installed() -> bool {
     real(CONF).exists() || Path::new("/usr/sbin/overlayroot-chroot").exists()
 }
@@ -193,6 +277,30 @@ impl Backend for Overlayroot {
             std::fs::copy(path, &dst)?;
             Ok(())
         })
+    }
+
+    fn commit_path(&self, path: &Path) -> Result<()> {
+        let live = path.exists();
+        let dst = real(&path.to_string_lossy());
+        with_lower_rw(|| {
+            if !live {
+                // Deleted in the overlay: delete on the real root too.
+                if dst.is_dir() {
+                    std::fs::remove_dir_all(&dst)?;
+                } else if dst.exists() {
+                    std::fs::remove_file(&dst)?;
+                }
+                return Ok(());
+            }
+            copy_tree(path, &dst)
+        })
+    }
+
+    fn changes(&self) -> Option<Vec<ChangeInfo>> {
+        if !frozen_now() {
+            return None;
+        }
+        Some(scan_upper(&Path::new(UPPER).join("overlay")))
     }
 
     fn set_persistent(&self, new: &[String], _old: &[String]) -> Result<String> {
@@ -276,6 +384,14 @@ mod tests {
         assert!(!conf_enabled("overlayroot=\"\"\n"));
         assert!(!conf_enabled("#overlayroot=\"tmpfs\"\n"));
         assert!(!conf_enabled("overlayroot=disabled\n"));
+    }
+
+    #[test]
+    fn noise_filter() {
+        assert!(is_noise("/var/log/syslog"));
+        assert!(is_noise("/home/u/.cache/x"));
+        assert!(!is_noise("/home/u/Desktop/a.txt"));
+        assert!(!is_noise("/var/logger"));
     }
 
     #[test]

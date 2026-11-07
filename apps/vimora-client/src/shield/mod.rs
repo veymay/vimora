@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use vimora_core::{FreezeAction, FreezeState, ShieldUsage};
+use vimora_core::{ChangeInfo, FreezeAction, FreezeState, ShieldUsage};
 
 /// What a backend can observe right now.
 #[derive(Debug, Clone, Default)]
@@ -47,6 +47,14 @@ pub trait Backend: Send + Sync {
     fn disable(&self) -> Result<String>;
     /// Make the current content of `path` survive restarts (only called while protected).
     fn commit_file(&self, path: &Path) -> Result<()>;
+    /// Make `path` (file, folder or a deletion) survive restarts. Defaults to a file commit.
+    fn commit_path(&self, path: &Path) -> Result<()> {
+        self.commit_file(path)
+    }
+    /// What the overlay holds right now. `None` = this backend cannot list it.
+    fn changes(&self) -> Option<Vec<ChangeInfo>> {
+        None
+    }
     /// Make a registry value survive restarts (Windows only).
     fn commit_registry(&self, _key: &str, _value: &str) -> Result<()> {
         Ok(())
@@ -220,6 +228,40 @@ impl Shield {
                 tracing::warn!("commit {k} {v}: {e:#}");
             }
         }
+    }
+
+    /// The overlay's content (Linux). `None` when the platform cannot list it.
+    pub fn changes(&self) -> Result<Option<Vec<ChangeInfo>>> {
+        if !self.protected_now() {
+            bail!("Shadow hozir ishlamayapti — o'zgarishlar allaqachon doim saqlanmoqda");
+        }
+        Ok(self.backend.changes())
+    }
+
+    /// Commits the chosen paths. Returns a summary message.
+    pub fn commit_paths(&self, paths: &[String]) -> Result<String> {
+        if !self.protected_now() {
+            bail!("Shadow hozir ishlamayapti — commit kerak emas, o'zgarishlar saqlanmoqda");
+        }
+        let (mut ok, mut failed) = (0, vec![]);
+        for p in paths {
+            match self.backend.commit_path(Path::new(p)) {
+                Ok(()) => ok += 1,
+                Err(e) => failed.push(format!("{p}: {e:#}")),
+            }
+        }
+        if ok == 0 && !failed.is_empty() {
+            bail!("commit bajarilmadi — {}", failed[0]);
+        }
+        Ok(if failed.is_empty() {
+            format!("Commit: {ok} ta o'zgarish Shadow ichiga qo'shildi")
+        } else {
+            format!(
+                "Commit: {ok} ta saqlandi, {} ta xato — {}",
+                failed.len(),
+                failed[0]
+            )
+        })
     }
 
     pub fn set_persistent(&self, folders: Vec<String>) -> Result<String> {

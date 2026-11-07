@@ -79,7 +79,6 @@ pub(super) enum Dialog {
     },
     Freeze {
         tab: ShadowTab,
-        action: FreezeAction,
         restart: bool,
         /// Persistent folders, one per line.
         folders: String,
@@ -89,6 +88,12 @@ pub(super) enum Dialog {
         app_changes: BTreeMap<String, bool>,
         app_filter: String,
         request: Option<ShadowRequest>,
+        /// Paths ticked in the "O'zgarishlar" list (to commit).
+        picked: std::collections::BTreeSet<String>,
+        /// Search box of the changes list.
+        change_filter: String,
+        /// A path typed by hand (platforms that cannot list the overlay).
+        manual: String,
     },
     Updates {
         policy: UpdatePolicy,
@@ -130,15 +135,21 @@ pub(super) enum Action {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ShadowTab {
     Protection,
-    Folders,
-    Apps,
-    WindowsUpdate,
+    Changes,
 }
 
 /// Inline actions inside the Shadow drawer (they don't close it).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ShadowRequest {
     ListApps,
+    /// Turn Shadow on / off / run the update cycle on the targets.
+    Apply(FreezeAction),
+    ListChanges,
+    /// Commit the ticked paths.
+    Commit,
+    SaveFolders,
+    SaveWindowsUpdate,
+    SaveApps,
 }
 
 /// Entries kept for actions that have no navbar button right now (program launch, file send).
@@ -195,7 +206,7 @@ pub(super) fn freeze_label(f: FreezeState) -> &'static str {
         FreezeState::Unknown => tr("noma'lum"),
         FreezeState::Unsupported => tr("qo'llanmaydi"),
         FreezeState::Thawed => tr("o'chiq"),
-        FreezeState::Frozen => "yoqilgan",
+        FreezeState::Frozen => tr("yoqilgan"),
         FreezeState::FreezePending => tr("qayta yuklanganda yoqiladi"),
         FreezeState::ThawPending => tr("qayta yuklanganda o'chadi"),
         FreezeState::Maintenance => tr("xizmat rejimi"),

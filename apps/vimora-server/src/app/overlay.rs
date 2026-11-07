@@ -148,6 +148,82 @@ impl ConsoleApp {
         }
     }
 
+    /// Result messages (command outcomes) stacked at the bottom right, above the status bar.
+    pub(super) fn toasts(&mut self, ctx: &egui::Context, p: &Palette) {
+        let now = Instant::now();
+        let items: Vec<(bool, String, Duration)> = {
+            let mut h = self.hub.lock().unwrap();
+            h.toasts.retain(|t| {
+                now.duration_since(t.at) < Duration::from_secs(if t.ok { 6 } else { 12 })
+            });
+            h.toasts
+                .iter()
+                .map(|t| (t.ok, t.text.clone(), now.duration_since(t.at)))
+                .collect()
+        };
+        if items.is_empty() {
+            return;
+        }
+        ctx.request_repaint_after(Duration::from_millis(500));
+        let screen = ctx.screen_rect();
+        let w = 380.0_f32.min(screen.width() - 24.0);
+        let mut dismiss: Option<usize> = None;
+        let mut y = screen.bottom() - super::navbar::STATUS_H - 12.0;
+        for (i, (ok, text, age)) in items.iter().enumerate().rev() {
+            let col = if *ok { p.accent } else { p.danger };
+            let fade = (age.as_secs_f32() / 0.18).min(1.0);
+            let r = egui::Area::new(egui::Id::new(("toast", i)))
+                .order(egui::Order::Tooltip)
+                .pivot(Align2::RIGHT_BOTTOM)
+                .fixed_pos(pos2(screen.right() - 12.0, y))
+                .show(ctx, |ui| {
+                    ui.set_opacity(fade);
+                    Frame::none()
+                        .fill(p.card)
+                        .stroke(Stroke::new(1.0_f32, p.line_strong))
+                        .shadow(egui::epaint::Shadow {
+                            offset: vec2(0.0, 6.0),
+                            blur: 20.0,
+                            spread: 0.0,
+                            color: Color32::from_black_alpha(if p.dark { 110 } else { 35 }),
+                        })
+                        .show(ui, |ui| {
+                            ui.set_width(w);
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 0.0;
+                                let (bar, _) =
+                                    ui.allocate_exact_size(vec2(4.0, 44.0), Sense::hover());
+                                ui.painter().rect_filled(bar, Rounding::ZERO, col);
+                                ui.add_space(12.0);
+                                ui.label(
+                                    RichText::new(if *ok {
+                                        icons::CIRCLE_CHECK
+                                    } else {
+                                        icons::TRIANGLE_ALERT
+                                    })
+                                    .size(16.0)
+                                    .color(col),
+                                );
+                                ui.add_space(10.0);
+                                ui.add_sized(
+                                    vec2(w - 58.0, 44.0),
+                                    egui::Label::new(RichText::new(text).size(13.0).color(p.text))
+                                        .wrap(),
+                                );
+                            });
+                        });
+                })
+                .response;
+            y = r.rect.top() - 8.0;
+            if r.interact(Sense::click()).clicked() {
+                dismiss = Some(i);
+            }
+        }
+        if let Some(i) = dismiss {
+            self.hub.lock().unwrap().toasts.remove(i);
+        }
+    }
+
     pub(super) fn dialogs(&mut self, ctx: &egui::Context, p: &Palette, all: &[View]) {
         // 0 → 1 while opening, 1 → 0 while closing; eased below.
         let live = self.dialog.is_some();
@@ -246,17 +322,19 @@ impl ConsoleApp {
         };
 
         // Drawers slide in from the right; modals fade in at the centre.
-        let margin = 12.0;
+        // Drawers hang flush on the right edge of the window (above the status bar); modals drop
+        // from the top edge right under the navbar and tabs. Nothing floats free.
+        let chrome_h = super::navbar::NAVBAR_H + super::navbar::TOOLBAR_H;
+        let status_h = super::navbar::STATUS_H;
         let area = if drawer {
-            // Slides in from the right edge.
-            let x = screen.right() - margin - width + (1.0 - ease) * (width + margin * 2.0);
+            let x = screen.right() - width + (1.0 - ease) * (width + 24.0);
             egui::Area::new(egui::Id::new("drawer"))
                 .order(egui::Order::Foreground)
-                .fixed_pos(pos2(x, screen.top() + margin))
+                .fixed_pos(pos2(x, screen.top()))
         } else {
             egui::Area::new(egui::Id::new("modal"))
                 .order(egui::Order::Foreground)
-                .anchor(Align2::CENTER_CENTER, [0.0, (1.0 - ease) * 18.0])
+                .anchor(Align2::CENTER_TOP, [0.0, chrome_h - (1.0 - ease) * 24.0])
         };
 
         let mut confirm = false;
@@ -318,16 +396,25 @@ impl ConsoleApp {
                 // Body
                 let has_footer = !matches!(
                     dialog,
-                    Dialog::Activity | Dialog::Message { .. } | Dialog::Settings(_)
+                    Dialog::Activity
+                        | Dialog::Message { .. }
+                        | Dialog::Settings(_)
+                        | Dialog::Freeze { .. }
                 );
                 let body_max = if drawer {
                     screen.height()
-                        - margin * 2.0
+                        - status_h
                         - HEADER_H
                         - 2.0
                         - if has_footer { FOOTER_H } else { 0.0 }
                 } else {
-                    screen.height() * 0.7
+                    (screen.height()
+                        - chrome_h
+                        - status_h
+                        - HEADER_H
+                        - 24.0
+                        - if has_footer { FOOTER_H } else { 0.0 })
+                    .max(160.0)
                 };
                 let body = |ui: &mut egui::Ui,
                             dialog: &mut Dialog,
@@ -447,15 +534,7 @@ impl ConsoleApp {
                                         Dialog::Settings(_)
                                         | Dialog::Room { .. }
                                         | Dialog::Activity => (icons::CHECK, tr("Saqlash")),
-                                        Dialog::Freeze {
-                                            tab: ShadowTab::Folders | ShadowTab::WindowsUpdate,
-                                            ..
-                                        } => (icons::CHECK, tr("Saqlash")),
-                                        Dialog::Freeze {
-                                            tab: ShadowTab::Apps,
-                                            ..
-                                        } => (icons::CHECK, tr("Qo'llash")),
-                                        Dialog::Freeze { .. } => (icons::SNOWFLAKE, tr("Qo'llash")),
+                                        Dialog::Freeze { .. } => (icons::CHECK, tr("Saqlash")),
                                         Dialog::Rename { .. } => (icons::CHECK, tr("Saqlash")),
                                         Dialog::Updates { .. } => {
                                             (icons::CHECK, tr("Siyosatni saqlash"))
@@ -509,15 +588,7 @@ impl ConsoleApp {
                 h.chat(true, who, body);
             }
         }
-        if let Some(Dialog::Freeze { request, .. }) = &mut self.dialog {
-            if let Some(ShadowRequest::ListApps) = request.take() {
-                self.send_priv(
-                    &targets,
-                    PrivCommand::ListApps,
-                    tr("Dasturlar ro'yxati so'raldi"),
-                );
-            }
-        }
+        self.shadow_requests(&targets);
         if let Some(Dialog::Updates {
             os,
             apps,
@@ -559,6 +630,85 @@ impl ConsoleApp {
             let d = self.dialog.take().unwrap();
             self.closing = Some(d.clone());
             self.run_dialog(d, &targets, clear);
+        }
+    }
+
+    /// Inline actions of the Shadow drawer: they run at once and the drawer stays open.
+    fn shadow_requests(&mut self, targets: &[u64]) {
+        let Some(Dialog::Freeze {
+            restart,
+            folders,
+            wu,
+            app_changes,
+            request,
+            picked,
+            ..
+        }) = &mut self.dialog
+        else {
+            return;
+        };
+        let Some(r) = request.take() else {
+            return;
+        };
+        let restart = *restart;
+        match r {
+            ShadowRequest::ListApps => self.send_priv(
+                targets,
+                PrivCommand::ListApps,
+                tr("Dasturlar ro'yxati so'raldi"),
+            ),
+            ShadowRequest::Apply(action) => {
+                let what = match action {
+                    FreezeAction::Freeze => tr("Shadow yoqish"),
+                    FreezeAction::Thaw => tr("Shadow o'chirish"),
+                    FreezeAction::Maintenance => tr("Yangilab, qayta yoqish"),
+                };
+                self.send_priv(targets, PrivCommand::Freeze { action, restart }, what);
+            }
+            ShadowRequest::ListChanges => {
+                self.send_priv(
+                    targets,
+                    PrivCommand::ListChanges,
+                    tr("O'zgarishlar ro'yxati"),
+                );
+            }
+            ShadowRequest::Commit => {
+                let paths: Vec<String> = std::mem::take(picked).into_iter().collect();
+                self.send_priv(targets, PrivCommand::CommitPaths(paths), tr("Commit"));
+            }
+            ShadowRequest::SaveFolders => {
+                let folders = folders.clone();
+                self.cfg.write().unwrap().persistent_folders = folders.clone();
+                self.send_priv(
+                    targets,
+                    PrivCommand::SetPersistentFolders(split_list(&folders)),
+                    tr("Saqlanadigan papkalar"),
+                );
+            }
+            ShadowRequest::SaveWindowsUpdate => {
+                let wu = *wu;
+                let policy = {
+                    let mut c = self.cfg.write().unwrap();
+                    c.update_policy.os = wu;
+                    c.update_policy
+                };
+                self.send_priv(
+                    targets,
+                    PrivCommand::SetUpdatePolicy(policy),
+                    "Windows Update",
+                );
+            }
+            ShadowRequest::SaveApps => {
+                let changes: Vec<(String, bool)> =
+                    std::mem::take(app_changes).into_iter().collect();
+                if !changes.is_empty() {
+                    self.send_priv(
+                        targets,
+                        PrivCommand::SetAppUpdates(changes),
+                        tr("Dastur yangilanishlari"),
+                    );
+                }
+            }
         }
     }
 
@@ -678,50 +828,7 @@ impl ConsoleApp {
                 return;
             }
             Dialog::Activity => return,
-            Dialog::Freeze {
-                tab,
-                action,
-                restart,
-                folders,
-                wu,
-                app_changes,
-                ..
-            } => match tab {
-                ShadowTab::Protection => {
-                    let what = match action {
-                        FreezeAction::Freeze => tr("Shadow yoqish"),
-                        FreezeAction::Thaw => tr("Shadow o'chirish"),
-                        FreezeAction::Maintenance => tr("Xizmat rejimi (commit sikli)"),
-                    };
-                    self.send_priv(t, PrivCommand::Freeze { action, restart }, what);
-                }
-                ShadowTab::Folders => {
-                    self.cfg.write().unwrap().persistent_folders = folders.clone();
-                    self.send_priv(
-                        t,
-                        PrivCommand::SetPersistentFolders(split_list(&folders)),
-                        tr("Saqlanadigan papkalar"),
-                    );
-                }
-                ShadowTab::Apps => {
-                    if !app_changes.is_empty() {
-                        let changes: Vec<(String, bool)> = app_changes.into_iter().collect();
-                        self.send_priv(
-                            t,
-                            PrivCommand::SetAppUpdates(changes),
-                            tr("Dastur yangilanishlari"),
-                        );
-                    }
-                }
-                ShadowTab::WindowsUpdate => {
-                    let policy = {
-                        let mut c = self.cfg.write().unwrap();
-                        c.update_policy.os = wu;
-                        c.update_policy
-                    };
-                    self.send_priv(t, PrivCommand::SetUpdatePolicy(policy), "Windows Update");
-                }
-            },
+            Dialog::Freeze { .. } => return,
             Dialog::Rename {
                 id,
                 key,

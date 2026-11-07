@@ -649,7 +649,7 @@ pub fn logo(painter: &egui::Painter, rect: Rect) {
     );
 }
 
-/// Small "i" that explains a setting on hover (long descriptions stay out of the layout).
+/// Small "?" that explains a setting; the tooltip appears at once, with an arrow.
 pub fn info(ui: &mut Ui, text: &str) -> Response {
     let p = palette(ui.ctx());
     let (rect, resp) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
@@ -661,14 +661,11 @@ pub fn info(ui: &mut Ui, text: &str) -> Response {
     ui.painter().text(
         rect.center(),
         Align2::CENTER_CENTER,
-        icons::INFO,
+        icons::CIRCLE_HELP,
         FontId::proportional(14.0),
         col,
     );
-    resp.on_hover_ui(|ui| {
-        ui.set_max_width(320.0);
-        ui.label(RichText::new(text).size(12.5));
-    })
+    resp.tip(text)
 }
 
 /// On/off switch (square, like the rest of the kit). Returns true when toggled.

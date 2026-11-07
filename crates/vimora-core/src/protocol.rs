@@ -119,6 +119,22 @@ impl ShieldUsage {
     }
 }
 
+/// What happened to a path since the PC booted under Shadow protection.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ChangeKind {
+    Added,
+    Modified,
+    Deleted,
+}
+
+/// One change held in the Shadow overlay (lost on restart unless the teacher commits it).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ChangeInfo {
+    pub path: String,
+    pub kind: ChangeKind,
+    pub size: u64,
+}
+
 /// Disk-freeze ("Deep Freeze"/Shadow Defender style) state.
 /// Windows: Unified Write Filter (UWF). Ubuntu: overlayroot.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -197,6 +213,10 @@ pub enum PrivCommand {
     SetNetPolicy(NetPolicy),
     /// Collect the installed applications (reported with `ClientMsg::Apps`).
     ListApps,
+    /// List what the Shadow overlay holds (reported with `ClientMsg::Changes`).
+    ListChanges,
+    /// Make these paths survive restarts (a "commit" in the Shadow overlay).
+    CommitPaths(Vec<String>),
     /// Allow / forbid updates per application id.
     SetAppUpdates(Vec<(String, bool)>),
     /// Folders kept across restarts in Shadow mode (replaces the list).
@@ -399,6 +419,8 @@ pub enum ClientMsg {
     },
     /// Installed applications (answer to `PrivCommand::ListApps`).
     Apps(Vec<AppInfo>),
+    /// Changes held in the Shadow overlay (answer to `PrivCommand::ListChanges`).
+    Changes(Vec<ChangeInfo>),
     /// A student's reply in the message chat.
     Chat {
         text: String,
