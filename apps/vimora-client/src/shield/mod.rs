@@ -100,6 +100,8 @@ pub struct Store {
     pub cycle: bool,
     /// The teacher turned off Vimora's automatic self-update.
     pub vimora_manual: bool,
+    /// Paths to commit as soon as Shadow is active (an update installed under protection).
+    pub pending_commit: Vec<String>,
 }
 
 const STORE: &str = "shield.json";
@@ -282,6 +284,32 @@ impl Shield {
 
     pub fn set_password(&self, pw: &str) -> Result<()> {
         self.backend.set_password(pw)
+    }
+
+    /// Remembers paths to commit once Shadow protects the PC (e.g. the new Vimora files after a
+    /// self-update installed while protected).
+    pub fn queue_commit(&self, paths: Vec<String>) {
+        self.update(|s| {
+            for p in paths {
+                if !s.pending_commit.contains(&p) {
+                    s.pending_commit.push(p);
+                }
+            }
+        });
+    }
+
+    /// Commits the queued paths if Shadow is active now. Returns events for the teacher.
+    pub fn flush_commits(&self) -> Vec<(bool, String)> {
+        let pending = self.store().pending_commit;
+        if pending.is_empty() || !self.protected_now() {
+            return vec![];
+        }
+        let res = self.commit_paths(&pending);
+        self.update(|s| s.pending_commit.clear());
+        match res {
+            Ok(m) => vec![(true, m)],
+            Err(e) => vec![(false, format!("{e:#}"))],
+        }
     }
 
     pub fn set_vimora_auto(&self, on: bool) {

@@ -15,6 +15,7 @@ mod config;
 mod netcontrol;
 mod overlay;
 mod popup;
+mod power;
 mod privileged;
 mod service;
 mod sh;

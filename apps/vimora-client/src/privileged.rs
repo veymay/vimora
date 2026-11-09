@@ -98,6 +98,7 @@ impl Engine {
         for (ok, msg) in self.shield.reconcile() {
             self.push(ok, msg);
         }
+        self.flush_commits();
         self.refresh_freeze();
     }
 
@@ -109,7 +110,7 @@ impl Engine {
         match self.update_vimora() {
             Ok(m) if m.contains("o'rnatilmoqda") => self.push(true, m),
             Ok(_) => {}
-            Err(e) => tracing::info!("self-update skipped: {e:#}"),
+            Err(e) => tracing::warn!("self-update skipped: {e:#}"),
         }
     }
 
@@ -124,10 +125,21 @@ impl Engine {
             ));
         }
         if self.shield.protected_now() {
-            bail!(
-                "Shadow yoqilgan: Vimora {} ni o'rnatish uchun avval Shadow'ni o'chiring",
-                rel.version
-            );
+            if !cfg!(windows) {
+                bail!(
+                    "Shadow yoqilgan: Vimora {} ni o'rnatish uchun avval Shadow'ni o'chiring",
+                    rel.version
+                );
+            }
+            // Shadow Defender would throw the new files away at the next restart (the PC would
+            // fall back to the old version every time): the new service commits them once the
+            // installer is done.
+            if let Some(dir) = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.to_string_lossy().into_owned()))
+            {
+                self.shield.queue_commit(vec![dir]);
+            }
         }
         let path = vimora_update::download(&rel, Role::Student, &update_dir(), &|_, _| {})?;
         vimora_update::install_student(&path)?;
@@ -353,6 +365,14 @@ impl Engine {
             }
         });
         for (ok, m) in events {
+            self.push(ok, m);
+        }
+        self.flush_commits();
+    }
+
+    /// Commits files an update left in the Shadow overlay (see `update_vimora`).
+    pub fn flush_commits(&self) {
+        for (ok, m) in self.shield.flush_commits() {
             self.push(ok, m);
         }
     }

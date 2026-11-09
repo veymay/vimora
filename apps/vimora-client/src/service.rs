@@ -194,6 +194,7 @@ async fn serve(pairing: Pairing) -> Result<()> {
     let listener = TcpListener::bind(("127.0.0.1", port())).await?;
     info!("Vimora service listening on 127.0.0.1:{}", port());
     cleanup_old_binaries();
+    crate::power::keep_awake();
     let engine = Engine::new();
     {
         let e = engine.clone();
@@ -214,13 +215,14 @@ async fn serve(pairing: Pairing) -> Result<()> {
         });
     }
     {
-        // Self-update from GitHub: shortly after start, then every 6 hours.
+        // Self-update from GitHub: a minute after start, then every 30 minutes (a PC that
+        // was asleep or offline catches up as soon as it can).
         let e = engine.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(180));
+            std::thread::sleep(Duration::from_secs(60));
             loop {
                 e.auto_update();
-                std::thread::sleep(Duration::from_secs(6 * 3600));
+                std::thread::sleep(Duration::from_secs(30 * 60));
             }
         });
     }
@@ -435,6 +437,24 @@ fn register() -> Result<()> {
     .unwrap_or((false, String::new()));
     if !ok {
         tracing::warn!("task settings: {}", crate::sh::tail(&out, 2));
+    }
+    // The agent itself: started by the scheduler the moment any user logs on (earlier than the
+    // Run key, which waits for the desktop), restarted if it dies. The Run key stays as a second
+    // way in; two copies starting together settle it between themselves (`single.rs`).
+    let agent_exe = exe.replace('\'', "''");
+    let (ok, out) = crate::sh::script(&format!(
+        "$a = New-ScheduledTaskAction -Execute '{agent_exe}'; \
+         $t = New-ScheduledTaskTrigger -AtLogOn; \
+         $p = New-ScheduledTaskPrincipal -GroupId 'BUILTIN\\Users' -RunLevel Limited; \
+         $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries \
+           -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -MultipleInstances IgnoreNew \
+           -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1); \
+         Register-ScheduledTask -TaskName 'Vimora Agent' -Action $a -Trigger $t -Principal $p \
+           -Settings $s -Force | Out-Null"
+    ))
+    .unwrap_or((false, String::new()));
+    if !ok {
+        tracing::warn!("agent logon task: {}", crate::sh::tail(&out, 2));
     }
     crate::sh::run_ok("schtasks", &["/run", "/tn", "Vimora Service"])?;
     println!("Vimora Service (SYSTEM) ro'yxatga olindi va ishga tushdi");

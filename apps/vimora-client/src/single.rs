@@ -75,4 +75,14 @@ pub fn take_over() {
         }
     }
     let _ = std::fs::write(&path, me.to_string());
+    // Two copies started in the same instant (logon task + Run key) both get here: the one
+    // whose number is not in the file after a moment steps aside.
+    std::thread::sleep(std::time::Duration::from_millis(700));
+    let current = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok());
+    if current.is_some_and(|c| c != me) {
+        tracing::info!("another agent started at the same time — this copy exits");
+        std::process::exit(0);
+    }
 }

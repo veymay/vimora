@@ -142,6 +142,7 @@ Filename: "{sys}\schtasks.exe"; Parameters: "/end /tn ""Vimora Service"""; Flags
 Filename: "{sys}\schtasks.exe"; Parameters: "/delete /tn ""Vimora Service"" /f"; Flags: runhidden; RunOnceId: "DelSvc"
 Filename: "{sys}\schtasks.exe"; Parameters: "/delete /tn ""Vimora Service Watchdog"" /f"; Flags: runhidden; RunOnceId: "DelWatchdog"
 Filename: "{sys}\schtasks.exe"; Parameters: "/delete /tn ""Vimora Update"" /f"; Flags: runhidden; RunOnceId: "DelUpdate"
+Filename: "{sys}\schtasks.exe"; Parameters: "/delete /tn ""Vimora Agent"" /f"; Flags: runhidden; RunOnceId: "DelAgent"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{commonappdata}\Vimora"
