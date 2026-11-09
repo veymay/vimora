@@ -110,6 +110,33 @@ struct Ctx {
     chat: SharedChat,
 }
 
+/// Seconds since the epoch of the agent's last sign of life (watched by `main`'s watchdog).
+pub static HEARTBEAT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Runs a background task and starts it again if it ever panics or returns: no helper may
+/// silently disappear and leave the agent half-working.
+fn keep_alive<F, Fut>(name: &'static str, make: F)
+where
+    F: Fn() -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    tokio::spawn(async move {
+        loop {
+            if let Err(e) = tokio::spawn(make()).await {
+                warn!("background task '{name}' failed ({e}); restarting it");
+            }
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    });
+}
+
 pub async fn run(cfg: Config) -> Result<()> {
     info!("Vimora agent starting");
     let state: Shared = Arc::default();
@@ -123,42 +150,95 @@ pub async fn run(cfg: Config) -> Result<()> {
     };
     let (ov_tx, ov_rx) = mpsc::channel(16);
     tokio::spawn(overlay_task(state.clone(), ov_rx));
-    tokio::spawn(blocker_task(state.clone()));
-    tokio::spawn(restart_on_update());
-    tokio::spawn(net_enforce_task(ctx.engine.clone()));
-    tokio::spawn(service_status_task(ctx.clone()));
+    {
+        let s = state.clone();
+        keep_alive("blocker", move || blocker_task(s.clone()));
+    }
+    keep_alive("update-restart", restart_on_update);
+    {
+        let e = ctx.engine.clone();
+        keep_alive("net-enforce", move || net_enforce_task(e.clone()));
+    }
+    {
+        let c = ctx.clone();
+        keep_alive("service-status", move || service_status_task(c.clone()));
+    }
     {
         let ctx = ctx.clone();
         std::thread::Builder::new()
             .name("keyword-watch".into())
             .spawn(move || keyword_watch(ctx))?;
     }
-    tokio::spawn(auto_unlock_task(
-        state.clone(),
-        ov_tx.clone(),
-        cfg.unlock_after_disconnect_secs,
-    ));
+    {
+        let (s, tx, secs) = (
+            state.clone(),
+            ov_tx.clone(),
+            cfg.unlock_after_disconnect_secs,
+        );
+        keep_alive("auto-unlock", move || {
+            auto_unlock_task(s.clone(), tx.clone(), secs)
+        });
+    }
+    // Proof of life for the watchdog thread in `main`.
+    tokio::spawn(async {
+        loop {
+            HEARTBEAT.store(now_secs(), Ordering::Relaxed);
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    });
 
+    let mut failures = 0u32;
     loop {
         let pin = refresh_pin(&ctx).await;
-        let addr = match &cfg.server {
-            Some(s) => s.clone(),
-            None => discover(pin).await,
-        };
-        info!("connecting to console {addr}");
-        match session(&cfg, &addr, &ctx, &ov_tx).await {
-            Ok(()) => info!("console closed the connection"),
-            Err(e) => warn!("session ended: {e:#}"),
+        // Where to connect: a fixed address from the config, else the console that worked last
+        // time (tried first), else whatever announces itself on the network.
+        let mut targets: Vec<String> = vec![];
+        match &cfg.server {
+            Some(s) => targets.push(s.clone()),
+            None => {
+                if let Some(last) = crate::config::last_console() {
+                    targets.push(last);
+                }
+                if let Ok(found) = tokio::time::timeout(
+                    Duration::from_secs(if targets.is_empty() { 3600 } else { 6 }),
+                    discover(pin),
+                )
+                .await
+                {
+                    if !targets.contains(&found) {
+                        targets.insert(0, found);
+                    }
+                }
+            }
         }
-        *ctx.uplink.lock().unwrap() = None;
-        {
-            let mut s = state.lock().unwrap();
-            s.connected = false;
-            s.disconnected_at = Some(Instant::now());
-            s.show = false;
+        let mut connected = false;
+        for addr in targets {
+            info!("connecting to console {addr}");
+            // The session runs as its own task, so even a panic in it only ends that session.
+            let (c, a, x, o) = (cfg.clone(), addr.clone(), ctx.clone(), ov_tx.clone());
+            let started = Instant::now();
+            match tokio::spawn(async move { session(&c, &a, &x, &o).await }).await {
+                Ok(Ok(())) => info!("console closed the connection"),
+                Ok(Err(e)) => warn!("session ended: {e:#}"),
+                Err(e) => warn!("session crashed: {e}"),
+            }
+            connected |= started.elapsed() > Duration::from_secs(10);
+            *ctx.uplink.lock().unwrap() = None;
+            {
+                let mut s = state.lock().unwrap();
+                s.connected = false;
+                s.disconnected_at = Some(Instant::now());
+                s.show = false;
+            }
+            let _ = ov_tx.send(OverlayReq::Sync).await;
+            if connected {
+                break;
+            }
         }
-        let _ = ov_tx.send(OverlayReq::Sync).await;
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        // Retry quickly after a real session (the console may just have restarted), a little
+        // slower when nothing could be reached.
+        failures = if connected { 0 } else { (failures + 1).min(5) };
+        tokio::time::sleep(Duration::from_secs(2 + failures as u64)).await;
     }
 }
 

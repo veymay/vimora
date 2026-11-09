@@ -65,6 +65,28 @@ pub fn forget_pin() -> std::io::Result<()> {
     }
 }
 
+/// The console address that worked last time: tried first on the next start, so the agent
+/// reconnects even if LAN broadcasts are blocked or slow.
+pub fn last_console() -> Option<String> {
+    dirs::config_dir()
+        .map(|d| d.join("vimora").join("last-console"))
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+pub fn save_last_console(addr: &str) {
+    if let Some(p) = dirs::config_dir().map(|d| d.join("vimora").join("last-console")) {
+        if last_console().as_deref() == Some(addr) {
+            return;
+        }
+        if let Some(d) = p.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        let _ = std::fs::write(p, addr);
+    }
+}
+
 /// System-wide location first (set by the administrator), then the per-user one.
 fn candidates() -> Vec<PathBuf> {
     let mut v = Vec::new();

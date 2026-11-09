@@ -81,6 +81,7 @@ pub(super) async fn session(
     }
     *ctx.session.lock().unwrap() = (client_nonce.clone(), 0);
     info!("authenticated with console {addr}");
+    crate::config::save_last_console(addr);
     {
         let mut s = state.lock().unwrap();
         s.connected = true;
@@ -92,8 +93,10 @@ pub(super) async fn session(
     *ctx.uplink.lock().unwrap() = Some(tx.clone());
     let writer = tokio::spawn(async move {
         while let Some(m) = rx.recv().await {
-            if write_msg(&mut wr, &m).await.is_err() {
-                break;
+            // A console that stops reading must not freeze the agent: give up and reconnect.
+            match tokio::time::timeout(Duration::from_secs(20), write_msg(&mut wr, &m)).await {
+                Ok(Ok(())) => {}
+                _ => break,
             }
         }
     });

@@ -96,10 +96,49 @@ fn main() -> anyhow::Result<()> {
             let cfg = config::load().merge_cli(cli.server, cli.name);
             single::take_over();
             system::set_dpi_aware();
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()?;
-            rt.block_on(agent::run(cfg))
+            std::panic::set_hook(Box::new(|info| tracing::error!("panic: {info}")));
+            watchdog();
+            // The agent must never stay down: a panic or an error restarts it in-process.
+            loop {
+                let c = cfg.clone();
+                let res = std::panic::catch_unwind(move || -> anyhow::Result<()> {
+                    let rt = tokio::runtime::Builder::new_multi_thread()
+                        .enable_all()
+                        .build()?;
+                    rt.block_on(agent::run(c))
+                });
+                match res {
+                    Ok(Ok(())) => tracing::warn!("agent returned; restarting"),
+                    Ok(Err(e)) => tracing::error!("agent failed: {e:#}; restarting"),
+                    Err(_) => tracing::error!("agent panicked; restarting"),
+                }
+                std::thread::sleep(std::time::Duration::from_secs(3));
+            }
         }
     }
+}
+
+/// If the agent shows no sign of life for two minutes (a frozen runtime, a hung call), start a
+/// fresh copy of the program and leave. The new copy ends this one anyway (`single.rs`).
+fn watchdog() {
+    agent::HEARTBEAT.store(agent::now_secs(), std::sync::atomic::Ordering::Relaxed);
+    let _ = std::thread::Builder::new()
+        .name("watchdog".into())
+        .spawn(|| loop {
+            std::thread::sleep(std::time::Duration::from_secs(20));
+            let last = agent::HEARTBEAT.load(std::sync::atomic::Ordering::Relaxed);
+            // After a sleep/resume the clock jumps; only a stall that persists counts.
+            if agent::now_secs().saturating_sub(last) > 120 {
+                tracing::error!("agent stalled — restarting");
+                std::thread::sleep(std::time::Duration::from_secs(10));
+                let last = agent::HEARTBEAT.load(std::sync::atomic::Ordering::Relaxed);
+                if agent::now_secs().saturating_sub(last) > 120 {
+                    let args: Vec<String> = std::env::args().skip(1).collect();
+                    if let Ok(exe) = std::env::current_exe() {
+                        let _ = std::process::Command::new(exe).args(args).spawn();
+                    }
+                    std::process::exit(1);
+                }
+            }
+        });
 }
