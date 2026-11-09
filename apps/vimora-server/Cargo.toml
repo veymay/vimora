@@ -28,6 +28,11 @@ hostname.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
 
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+# Wayland screen capture for presenting: the desktop portal hands out a PipeWire stream.
+ashpd = "0.11"
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
 
@@ -44,7 +49,7 @@ section = "education"
 priority = "optional"
 revision = ""
 depends = "$auto, libgl1, libxkbcommon0, libx11-6, libxcursor1, libxrandr2, libxi6"
-recommends = "pkexec | policykit-1"
+recommends = "pkexec | policykit-1, gstreamer1.0-tools, gstreamer1.0-pipewire, gstreamer1.0-plugins-good, gstreamer1.0-plugins-base"
 maintainer-scripts = "../../installer/linux/deb/teacher/"
 assets = [
     ["target/release/vimora-server", "opt/vimora/bin/", "755"],

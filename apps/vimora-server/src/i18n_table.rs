@@ -484,9 +484,11 @@ pub static ROWS: &[Row] = &[
     ("Bu Vimora zaxira fayli emas.", "This is not a Vimora backup file.", "Это не файл резервной копии Vimora."),
     ("{n} ta qator qo'shildi", "{n} lines added", "Добавлено строк: {n}"),
     ("Zaxira saqlandi: {path}", "Backup saved: {path}", "Копия сохранена: {path}"),
-    ("Namoyish Wayland'da ishlamaydi. Kirish ekranida \"Ubuntu on Xorg\" ni tanlang.", "Presenting does not work on Wayland. Choose \"Ubuntu on Xorg\" on the login screen.", "Показ не работает в Wayland. На экране входа выберите «Ubuntu on Xorg»."),
     ("Namoyish to'xtadi: ekranni olib bo'lmadi.", "Presentation stopped: cannot capture the screen.", "Показ остановлен: не удалось захватить экран."),
     ("tekshirilmagan", "not checked", "не проверено"),
+    ("Namoyish bekor qilindi: ekranni ulashishga ruxsat berilmadi.", "Presentation cancelled: screen sharing was not allowed.", "Показ отменён: доступ к экрану не разрешён."),
+    ("Namoyish uchun GStreamer kerak: sudo apt install gstreamer1.0-tools gstreamer1.0-pipewire", "Presenting needs GStreamer: sudo apt install gstreamer1.0-tools gstreamer1.0-pipewire", "Для показа нужен GStreamer: sudo apt install gstreamer1.0-tools gstreamer1.0-pipewire"),
+    ("Namoyish boshlanmadi: tizim ekranni ulashishga javob bermadi.", "Presentation did not start: the system did not answer the screen-sharing request.", "Показ не начался: система не ответила на запрос доступа к экрану."),
 ];
 
 #[cfg(test)]

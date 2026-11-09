@@ -584,27 +584,102 @@ async fn session(
 /// Captures the teacher's screen and streams it to the current show targets.
 fn show_loop(hub: SharedHub, show: Arc<Show>) {
     let mut cap: Option<capture::Capturer> = None;
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut cast: Option<crate::wayland_cast::Cast> = None;
     let mut last = Vec::new();
+    #[allow(unused_mut, unused_variables)]
+    let mut last_dims = (0u32, 0u32);
     let mut last_sent = Instant::now();
+    // Tells the teacher why presenting stopped, in plain words, and stops it.
+    let fail = |e: &anyhow::Error| {
+        let s = format!("{e:#}");
+        let msg = if s.contains("CAST_DENIED") {
+            tr("Namoyish bekor qilindi: ekranni ulashishga ruxsat berilmadi.")
+        } else if s.contains("NO_GSTREAMER") {
+            tr("Namoyish uchun GStreamer kerak: sudo apt install gstreamer1.0-tools gstreamer1.0-pipewire")
+        } else if s.contains("PORTAL") || s.contains("CAST_TIMEOUT") || s.contains("WAYLAND") {
+            tr("Namoyish boshlanmadi: tizim ekranni ulashishga javob bermadi.")
+        } else {
+            tr("Namoyish to'xtadi: ekranni olib bo'lmadi.")
+        };
+        tracing::warn!("show capture failed: {s}");
+        let mut h = hub.lock().unwrap();
+        h.log(Level::Warn, msg);
+        h.toast(false, msg);
+        drop(h);
+        show.active.store(false, Ordering::Relaxed);
+    };
+    let send = |width: u32, height: u32, jpeg: Vec<u8>| {
+        let targets = show.targets.lock().unwrap().clone();
+        hub.lock().unwrap().send(
+            &targets,
+            &ServerMsg::ShowFrame {
+                width,
+                height,
+                jpeg,
+            },
+        );
+    };
     loop {
         if !show.active.load(Ordering::Relaxed) {
+            // Not presenting: let go of the screen (ends the portal session on Wayland).
+            cap = None;
+            #[cfg(all(unix, not(target_os = "macos")))]
+            {
+                cast = None;
+            }
             std::thread::sleep(Duration::from_millis(100));
             continue;
         }
+        let t0 = Instant::now();
+
+        // Wayland: frames come from the desktop portal (see `wayland_cast`).
+        #[cfg(all(unix, not(target_os = "macos")))]
+        if crate::wayland_cast::is_wayland() {
+            if cast.is_none() {
+                match crate::wayland_cast::Cast::start() {
+                    Ok(c) => {
+                        cast = Some(c);
+                        last.clear();
+                    }
+                    Err(e) => {
+                        fail(&e);
+                        continue;
+                    }
+                }
+            }
+            match cast.as_ref().unwrap().latest() {
+                Ok(Some(f)) => {
+                    last_sent = Instant::now();
+                    last = f.jpeg.clone();
+                    last_dims = (f.width, f.height);
+                    send(f.width, f.height, f.jpeg);
+                }
+                // A still screen produces no new frames: repeat the last one for late joiners.
+                Ok(None) => {
+                    if !last.is_empty() && last_sent.elapsed() > Duration::from_secs(1) {
+                        last_sent = Instant::now();
+                        send(last_dims.0, last_dims.1, last.clone());
+                    }
+                }
+                Err(e) => {
+                    cast = None;
+                    fail(&e);
+                }
+            }
+            std::thread::sleep(Duration::from_millis(60).saturating_sub(t0.elapsed()));
+            continue;
+        }
+
         if cap.is_none() {
             match capture::Capturer::new() {
                 Ok(c) => cap = Some(c),
                 Err(e) => {
-                    hub.lock().unwrap().log(
-                        Level::Warn,
-                        tf!("Ekranni olish imkonsiz: {e}", e = format!("{:#}", e)),
-                    );
-                    show.active.store(false, Ordering::Relaxed);
+                    fail(&e);
                     continue;
                 }
             }
         }
-        let t0 = Instant::now();
         let frame = cap
             .as_mut()
             .unwrap()
@@ -615,32 +690,12 @@ fn show_loop(hub: SharedHub, show: Arc<Show>) {
                 if jpeg != last || last_sent.elapsed() > Duration::from_secs(1) {
                     last_sent = Instant::now();
                     last = jpeg.clone();
-                    let targets = show.targets.lock().unwrap().clone();
-                    hub.lock().unwrap().send(
-                        &targets,
-                        &ServerMsg::ShowFrame {
-                            width,
-                            height,
-                            jpeg,
-                        },
-                    );
+                    send(width, height, jpeg);
                 }
             }
             Err(e) => {
                 // Stop presenting instead of leaving students on a black screen.
-                let wayland = format!("{e:#}").contains("WAYLAND");
-                let msg = if wayland {
-                    tr("Namoyish Wayland'da ishlamaydi. Kirish ekranida \"Ubuntu on Xorg\" ni tanlang.")
-                        .to_string()
-                } else {
-                    tr("Namoyish to'xtadi: ekranni olib bo'lmadi.").to_string()
-                };
-                tracing::warn!("show capture failed: {e:#}");
-                let mut h = hub.lock().unwrap();
-                h.log(Level::Warn, msg.clone());
-                h.toast(false, msg);
-                drop(h);
-                show.active.store(false, Ordering::Relaxed);
+                fail(&e);
                 cap = None;
             }
         }

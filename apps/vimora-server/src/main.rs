@@ -8,6 +8,8 @@ mod i18n_table;
 mod net;
 mod sound;
 mod update;
+#[cfg(all(unix, not(target_os = "macos")))]
+mod wayland_cast;
 
 use std::sync::{Arc, Mutex, RwLock};
 

@@ -4141,6 +4141,7 @@ name = "vimora-server"
 version = "0.3.7"
 dependencies = [
  "anyhow",
+ "ashpd",
  "bincode",
  "chrono",
  "dirs",
@@ -4148,6 +4149,7 @@ dependencies = [
  "egui",
  "hostname",
  "image",
+ "libc",
  "rfd",
  "serde",
  "serde_json",
