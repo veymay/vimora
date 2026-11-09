@@ -27,6 +27,11 @@ screenshot and exits. Use `XDG_CONFIG_HOME=<dir>` to run with a throw-away confi
   `windows-release.bat` (double click): it builds, creates `dist\vimora-<ver>-windows-x64-setup.exe`
   with Inno Setup, adds its hash to the release's `SHA256SUMS` and uploads both (needs `gh`).
   Log: `dist\windows-release.log`.
+- Windows installer can also be built on Linux, with no Windows PC and no Actions:
+  `sudo apt install mingw-w64 nsis`, then `installer/windows/build-from-linux.sh` (cross-compiles
+  with the `x86_64-pc-windows-gnu` target and builds `installer/windows/vimora.nsi` with NSIS).
+  It takes the same silent switches the self-updater passes (`/VERYSILENT /TYPE=student ...`).
+  From 0.3.7 on, Windows releases are made this way; the Inno Setup script is the fallback.
 - Do not move or recreate existing tags; do not force push; ask before publishing releases.
 
 ## Compatibility rules (old and new builds must keep working together)
