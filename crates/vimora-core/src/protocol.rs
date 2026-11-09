@@ -371,6 +371,15 @@ pub enum Command {
     /// The teacher closed the chat: the student's chat panel closes and stays closed until
     /// the next message.
     ChatEnd,
+    // Append-only (see PrivCommand).
+    /// Code that opens the lock screen on the student PC without the console (internet lost).
+    /// Only a salted hash travels; `digits` = code length (the lock screen draws that many
+    /// cells). An empty `hash` removes the code.
+    UnlockCode {
+        salt: Vec<u8>,
+        hash: Vec<u8>,
+        digits: u8,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -470,5 +479,15 @@ mod wire_tests {
         );
         assert_eq!(tag(&ClientMsg::Pong), 8);
         assert_eq!(tag(&ClientMsg::Changes(vec![])), 9);
+        // Command: ChatEnd was the last one before the unlock code was added.
+        assert_eq!(
+            tag(&Command::UnlockCode {
+                salt: vec![],
+                hash: vec![],
+                digits: 0
+            }),
+            tag(&Command::ChatEnd) + 1
+        );
+        assert_eq!(tag(&Command::ChatEnd), 13);
     }
 }

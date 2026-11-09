@@ -4,6 +4,7 @@ pub mod auth;
 pub mod capture;
 pub mod input;
 pub mod net;
+pub mod pin;
 pub mod protocol;
 
 pub use protocol::*;

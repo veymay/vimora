@@ -438,6 +438,12 @@ pub static ROWS: &[Row] = &[
     ("Yoqish signali → {n} ta kompyuter", "Power-on signal → {n} computers", "Сигнал включения → {n} компьютеров"),
     ("Sayt manzili yoki qidiruv: youtube.com", "Site address or search: youtube.com", "Адрес сайта или поиск: youtube.com"),
     ("Oxirgi saytlar", "Recent sites", "Недавние сайты"),
+    ("Bo'sh qoldirsangiz, qulf ekranida sarlavha ko'rinmaydi.", "If left empty, no title is shown on the lock screen.", "Если оставить пустым, заголовок на экране блокировки не показывается."),
+    ("Qulflanganda o'quvchi ekranining o'rtasida chiqadi. Bo'sh qoldirsangiz ko'rinmaydi. O'zgarish keyingi qulflashda ko'rinadi.", "Shown in the middle of the student's screen when locked. Left empty, nothing is shown. Changes apply the next time you lock.", "Показывается в центре экрана ученика при блокировке. Если пусто, ничего не показывается. Изменения применяются при следующей блокировке."),
+    ("Ochish kodi", "Unlock code", "Код разблокировки"),
+    ("4–8 raqam. Internet uzilib qolsa, o'quvchi ekrandagi qulfni shu kod bilan ochadi. Bo'sh qoldirsangiz kod so'ralmaydi. Keyingi qulflashdan boshlab kuchga kiradi.", "4–8 digits. If the network is lost, the student opens the lock screen with this code. Empty means no code. Applies from the next lock.", "4–8 цифр. Если сеть пропала, ученик открывает блокировку этим кодом. Пусто — код не запрашивается. Действует со следующей блокировки."),
+    ("masalan 4821", "e.g. 4821", "например 4821"),
+    ("Kod kamida 4 raqamdan iborat bo'lishi kerak.", "The code needs at least 4 digits.", "Код должен содержать не менее 4 цифр."),
 ];
 
 #[cfg(test)]

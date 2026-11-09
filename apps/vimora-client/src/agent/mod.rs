@@ -52,6 +52,8 @@ use vimora_core::{
 #[derive(Default)]
 struct State {
     lock: Option<(String, String)>,
+    /// Offline unlock code of the current lock: (salt, hash, digits).
+    unlock: Option<(Vec<u8>, Vec<u8>, u8)>,
     show: bool,
     apps: Vec<String>,
     net: NetPolicy,
@@ -148,6 +150,7 @@ pub async fn run(cfg: Config) -> Result<()> {
         uplink: Arc::default(),
         chat: Arc::default(),
     };
+    restore_lock(&state);
     let (ov_tx, ov_rx) = mpsc::channel(16);
     tokio::spawn(overlay_task(state.clone(), ov_rx));
     {
@@ -313,4 +316,61 @@ async fn restart_on_update() {
             _ => {}
         }
     }
+}
+
+// --- the lock survives an agent restart --------------------------------------------------------
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedLock {
+    title: String,
+    message: String,
+    code: Option<(Vec<u8>, Vec<u8>, u8)>,
+    /// Unix seconds when it was saved.
+    at: u64,
+}
+
+fn lock_file() -> Option<std::path::PathBuf> {
+    dirs::config_dir().map(|d| d.join("vimora").join("lock-state.json"))
+}
+
+/// Writes (or removes) the lock record: if the agent restarts while the screen is locked, the
+/// lock comes straight back instead of quietly disappearing.
+fn save_lock(state: &Shared) {
+    let Some(path) = lock_file() else { return };
+    let s = state.lock().unwrap();
+    match &s.lock {
+        Some((title, message)) => {
+            let rec = SavedLock {
+                title: title.clone(),
+                message: message.clone(),
+                code: s.unlock.clone(),
+                at: now_secs(),
+            };
+            if let Some(d) = path.parent() {
+                let _ = std::fs::create_dir_all(d);
+            }
+            if let Ok(j) = serde_json::to_string(&rec) {
+                let _ = std::fs::write(&path, j);
+            }
+        }
+        None => {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}
+
+/// Brings back a lock saved before a restart (not older than 12 hours).
+fn restore_lock(state: &Shared) {
+    let Some(rec) = lock_file()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|j| serde_json::from_str::<SavedLock>(&j).ok())
+        .filter(|r| now_secs().saturating_sub(r.at) < 12 * 3600)
+    else {
+        return;
+    };
+    let mut s = state.lock().unwrap();
+    info!("restoring the lock screen after a restart");
+    s.lock = Some((rec.title, rec.message));
+    s.unlock = rec.code;
+    s.disconnected_at = Some(Instant::now());
 }

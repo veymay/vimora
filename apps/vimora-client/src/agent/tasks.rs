@@ -91,11 +91,16 @@ pub(super) async fn auto_unlock_task(state: Shared, ov_tx: mpsc::Sender<OverlayR
         tokio::time::sleep(Duration::from_secs(5)).await;
         let unlock = {
             let mut s = state.lock().unwrap();
+            // With an unlock code the lock stays until the code (or the console) opens it:
+            // pulling the network cable must not unlock the PC.
             let expired = !s.connected
+                && s.unlock.is_none()
                 && s.disconnected_at
                     .is_some_and(|t| t.elapsed() > Duration::from_secs(secs));
             if expired && s.lock.is_some() {
                 s.lock = None;
+                drop(s);
+                save_lock(&state);
                 true
             } else {
                 false

@@ -511,11 +511,25 @@ impl ConsoleApp {
         }
     }
 
+    /// (salt, hash, digits) of the teacher's unlock code; empty hash = no code.
+    fn unlock_code(&self) -> (Vec<u8>, Vec<u8>, u8) {
+        let pin = self.cfg.read().unwrap().unlock_pin.clone();
+        if !vimora_core::pin::valid(&pin) {
+            return (vec![], vec![], 0);
+        }
+        let salt = vimora_core::auth::nonce();
+        let hash = vimora_core::pin::hash(&salt, &pin);
+        (salt, hash, pin.len() as u8)
+    }
+
     fn lock(&self, ids: &[u64]) {
         let (title, message) = {
             let c = self.cfg.read().unwrap();
             (c.lock_title.clone(), c.lock_message.clone())
         };
+        // The offline unlock code goes first, so the lock screen already knows it.
+        let (salt, hash, digits) = self.unlock_code();
+        self.send(ids, Command::UnlockCode { salt, hash, digits }, "");
         self.send(ids, Command::Lock { title, message }, tr("Qulflash"));
     }
 

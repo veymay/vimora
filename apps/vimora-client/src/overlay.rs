@@ -12,9 +12,20 @@ use vimora_ui::{icons, ThemeMode};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OverlayCmd {
-    Lock { title: String, message: String },
+    Lock {
+        title: String,
+        message: String,
+    },
     Show,
-    Frame { jpeg: Vec<u8> },
+    Frame {
+        jpeg: Vec<u8>,
+    },
+    /// Offline unlock code (salted hash + length); an empty hash means "no code".
+    Code {
+        salt: Vec<u8>,
+        hash: Vec<u8>,
+        digits: u8,
+    },
 }
 
 #[derive(Clone)]
@@ -24,6 +35,7 @@ enum Mode {
 }
 
 struct Shared {
+    code: Option<(Vec<u8>, Vec<u8>, u8)>,
     mode: Mode,
     frame: Option<egui::ColorImage>,
     frame_dirty: bool,
@@ -31,8 +43,9 @@ struct Shared {
 
 pub fn run() -> anyhow::Result<()> {
     let shared = Arc::new(Mutex::new(Shared {
+        code: None,
         mode: Mode::Lock {
-            title: "Ekran qulflangan".into(),
+            title: String::new(),
             message: String::new(),
         },
         frame: None,
@@ -59,11 +72,41 @@ pub fn run() -> anyhow::Result<()> {
         Box::new(move |cc| {
             vimora_ui::install_fonts(&cc.egui_ctx);
             vimora_ui::apply_theme(&cc.egui_ctx, ThemeMode::Dark);
-            spawn_stdin_reader(s2.clone(), cc.egui_ctx.clone());
+            // Dev aid: VIMORA_OVERLAY_DEMO=<code> shows a sample lock screen without the agent;
+            // VIMORA_OVERLAY_TYPE=<digits> pretends they were typed; VIMORA_OVERLAY_SCREENSHOT=<file>.
+            let demo = std::env::var("VIMORA_OVERLAY_DEMO").ok();
+            let mut entered = String::new();
+            let mut typed_at = None;
+            if let Some(code) = &demo {
+                let salt = vec![1u8, 2, 3];
+                let mut sh = s2.lock().unwrap();
+                sh.code = Some((
+                    salt.clone(),
+                    vimora_core::pin::hash(&salt, code),
+                    code.len() as u8,
+                ));
+                sh.mode = Mode::Lock {
+                    title: "Diqqat! Ekran qulflangan".into(),
+                    message: "Iltimos, o'qituvchini tinglang.".into(),
+                };
+                if let Ok(t) = std::env::var("VIMORA_OVERLAY_TYPE") {
+                    entered = t;
+                    typed_at = Some(Instant::now());
+                }
+            } else {
+                spawn_stdin_reader(s2.clone(), cc.egui_ctx.clone());
+            }
             Ok(Box::new(OverlayApp {
                 shared: s2,
                 texture: None,
                 last_focus: Instant::now(),
+                started: Instant::now(),
+                entered,
+                wrong_at: None,
+                failures: 0,
+                blocked_until: None,
+                unlocked_at: None,
+                typed_at,
             }))
         }),
     )
@@ -93,6 +136,9 @@ fn spawn_stdin_reader(shared: Arc<Mutex<Shared>>, ctx: egui::Context) {
             match cmd {
                 OverlayCmd::Lock { title, message } => s.mode = Mode::Lock { title, message },
                 OverlayCmd::Show => s.mode = Mode::Show,
+                OverlayCmd::Code { salt, hash, digits } => {
+                    s.code = (!hash.is_empty()).then_some((salt, hash, digits.clamp(4, 8)))
+                }
                 OverlayCmd::Frame { jpeg } => {
                     drop(s);
                     if let Ok(f) = vimora_core::capture::decode_jpeg(&jpeg) {
@@ -117,6 +163,101 @@ struct OverlayApp {
     shared: Arc<Mutex<Shared>>,
     texture: Option<egui::TextureHandle>,
     last_focus: Instant,
+    started: Instant,
+    /// Digits typed so far.
+    entered: String,
+    /// When the last wrong code was entered (drives the shake).
+    wrong_at: Option<Instant>,
+    failures: u32,
+    /// Too many wrong codes: no input until then.
+    blocked_until: Option<Instant>,
+    /// The right code was entered.
+    unlocked_at: Option<Instant>,
+    /// Last key press (the cells light up while someone is typing).
+    typed_at: Option<Instant>,
+}
+
+impl OverlayApp {
+    /// Digits the student typed since the last frame: from the hook on Windows (the hook eats
+    /// every key before any window sees it), from the window's own events elsewhere.
+    fn typed_chars(&self, ctx: &egui::Context) -> Vec<char> {
+        #[cfg(windows)]
+        {
+            let _ = ctx;
+            input_block::take_keys()
+        }
+        #[cfg(not(windows))]
+        {
+            let mut out = vec![];
+            ctx.input(|i| {
+                for e in &i.events {
+                    match e {
+                        egui::Event::Text(t) => out.extend(t.chars().filter(char::is_ascii_digit)),
+                        egui::Event::Key {
+                            key: egui::Key::Backspace,
+                            pressed: true,
+                            ..
+                        } => out.push('\u{8}'),
+                        egui::Event::Key {
+                            key: egui::Key::Escape,
+                            pressed: true,
+                            ..
+                        } => out.push('\u{1b}'),
+                        _ => {}
+                    }
+                }
+            });
+            out
+        }
+    }
+
+    /// Feeds typed keys into the code box and checks the code once it is complete.
+    fn handle_code_input(&mut self, ctx: &egui::Context) {
+        let code = self.shared.lock().unwrap().code.clone();
+        let chars = self.typed_chars(ctx);
+        let Some((salt, hash, digits)) = code else {
+            return;
+        };
+        if self.unlocked_at.is_some() {
+            return;
+        }
+        if self.blocked_until.is_some_and(|t| Instant::now() < t) {
+            return;
+        }
+        self.blocked_until = None;
+        for c in chars {
+            self.typed_at = Some(Instant::now());
+            match c {
+                '\u{8}' => {
+                    self.entered.pop();
+                }
+                '\u{1b}' => self.entered.clear(),
+                d if d.is_ascii_digit() && self.entered.len() < digits as usize => {
+                    self.entered.push(d)
+                }
+                _ => {}
+            }
+            if self.entered.len() == digits as usize {
+                if vimora_core::pin::verify(&salt, &hash, &self.entered) {
+                    self.unlocked_at = Some(Instant::now());
+                    // The agent reads this line and lifts the lock.
+                    use std::io::Write;
+                    let mut out = std::io::stdout().lock();
+                    let _ = writeln!(out, "UNLOCK");
+                    let _ = out.flush();
+                } else {
+                    self.failures += 1;
+                    self.wrong_at = Some(Instant::now());
+                    if self.failures.is_multiple_of(5) {
+                        let secs = (30 * (self.failures as u64 / 5)).min(300);
+                        self.blocked_until = Some(Instant::now() + Duration::from_secs(secs));
+                    }
+                }
+                self.entered.clear();
+                break;
+            }
+        }
+    }
 }
 
 impl eframe::App for OverlayApp {
@@ -132,6 +273,8 @@ impl eframe::App for OverlayApp {
         }
         ctx.request_repaint_after(Duration::from_millis(500));
 
+        overlay_dev_screenshot(ctx);
+        self.handle_code_input(ctx);
         let mode = {
             let mut s = self.shared.lock().unwrap();
             if s.frame_dirty {
@@ -152,11 +295,33 @@ impl eframe::App for OverlayApp {
         let p = vimora_ui::DARK;
         match mode {
             Mode::Lock { title, message } => {
+                let now = Instant::now();
+                let view = LockView {
+                    digits: self.shared.lock().unwrap().code.as_ref().map(|c| c.2),
+                    filled: self.entered.len(),
+                    wrong_age: self
+                        .wrong_at
+                        .map(|t| now.duration_since(t).as_secs_f32())
+                        .filter(|a| *a < 1.6),
+                    blocked_secs: self
+                        .blocked_until
+                        .and_then(|t| t.checked_duration_since(now))
+                        .map(|d| d.as_secs() + 1),
+                    unlocked: self.unlocked_at.is_some(),
+                    typing: self
+                        .typed_at
+                        .is_some_and(|t| now.duration_since(t) < Duration::from_secs(6)),
+                    time: self.started.elapsed().as_secs_f32(),
+                };
+                let animated = view.digits.is_some();
                 egui::CentralPanel::default()
                     .frame(egui::Frame::none().fill(p.bg))
                     .show(ctx, |ui| {
-                        lock_screen(ui, &title, &message);
+                        lock_screen(ui, &title, &message, &view);
                     });
+                if animated {
+                    ctx.request_repaint_after(Duration::from_millis(33));
+                }
             }
             Mode::Show => {
                 egui::CentralPanel::default()
@@ -194,72 +359,240 @@ impl eframe::App for OverlayApp {
     }
 }
 
-fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str) {
+/// Everything the lock screen draws besides the texts.
+struct LockView {
+    /// Length of the unlock code (None = no code set, nothing to type).
+    digits: Option<u8>,
+    filled: usize,
+    /// Seconds since a wrong code (shake / red flash).
+    wrong_age: Option<f32>,
+    /// Too many wrong codes: seconds left.
+    blocked_secs: Option<u64>,
+    unlocked: bool,
+    /// Someone is typing right now.
+    typing: bool,
+    /// Seconds since the overlay started (animations).
+    time: f32,
+}
+
+fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
+    use egui::{pos2, vec2, Align2, Color32, FontId, Rect, Rounding, Stroke};
     let p = vimora_ui::DARK;
     let rect = ui.max_rect();
-    // Square accent tile with soft square halos (the design has no rounded shapes).
-    let c = rect.center() - egui::vec2(0.0, 90.0);
-    for (r, a) in [(220.0, 10u8), (150.0, 16), (100.0, 26)] {
-        ui.painter().rect_filled(
-            egui::Rect::from_center_size(c, egui::vec2(r * 2.0, r * 2.0)),
-            egui::Rounding::ZERO,
-            p.accent.gamma_multiply(a as f32 / 255.0),
+    let painter = ui.painter();
+    let fade = (v.time / 0.6).clamp(0.0, 1.0); // gentle fade-in
+
+    // Soft square halos behind the tile, breathing slowly (the design has no rounded shapes).
+    let c = pos2(rect.center().x, rect.center().y - 70.0);
+    let breathe = 0.5 + 0.5 * (v.time * 1.1).sin();
+    for (r, a) in [(300.0, 7.0), (210.0, 12.0), (140.0, 20.0), (92.0, 32.0)] {
+        let r = r + breathe * 8.0;
+        painter.rect_filled(
+            Rect::from_center_size(c, vec2(r * 2.0, r * 2.0)),
+            Rounding::ZERO,
+            p.accent.gamma_multiply(a / 255.0 * fade),
         );
     }
-    ui.painter().rect_filled(
-        egui::Rect::from_center_size(c, egui::vec2(128.0, 128.0)),
-        egui::Rounding::ZERO,
-        p.accent,
+    // Fine corner brackets: a quiet "locked" frame around the screen.
+    let m = 28.0;
+    let len = 46.0;
+    let line = Stroke::new(2.0_f32, p.accent.gamma_multiply(0.55 * fade));
+    for (corner, dx, dy) in [
+        (rect.left_top(), 1.0, 1.0),
+        (rect.right_top(), -1.0, 1.0),
+        (rect.left_bottom(), 1.0, -1.0),
+        (rect.right_bottom(), -1.0, -1.0),
+    ] {
+        let o = corner + vec2(dx * m, dy * m);
+        painter.line_segment([o, o + vec2(dx * len, 0.0)], line);
+        painter.line_segment([o, o + vec2(0.0, dy * len)], line);
+    }
+
+    // Brand (top left) and clock (top right).
+    let logo = Rect::from_min_size(rect.left_top() + vec2(48.0, 44.0), vec2(30.0, 30.0));
+    vimora_ui::logo(painter, logo);
+    painter.text(
+        pos2(logo.right() + 12.0, logo.center().y),
+        Align2::LEFT_CENTER,
+        "VIMORA",
+        FontId::new(15.0, vimora_ui::mono_bold()),
+        p.muted.gamma_multiply(fade),
     );
-    ui.painter().text(
+    let now = chrono::Local::now();
+    painter.text(
+        pos2(rect.right() - 48.0, logo.center().y - 6.0),
+        Align2::RIGHT_CENTER,
+        now.format("%H:%M").to_string(),
+        FontId::new(30.0, vimora_ui::mono_bold()),
+        p.text.gamma_multiply(fade),
+    );
+    painter.text(
+        pos2(rect.right() - 48.0, logo.center().y + 18.0),
+        Align2::RIGHT_CENTER,
+        now.format("%d.%m.%Y").to_string(),
+        FontId::new(12.0, vimora_ui::mono()),
+        p.faint.gamma_multiply(fade),
+    );
+
+    // The tile.
+    painter.rect_filled(
+        Rect::from_center_size(c, vec2(112.0, 112.0)),
+        Rounding::ZERO,
+        if v.unlocked { p.success } else { p.accent },
+    );
+    painter.text(
         c,
-        egui::Align2::CENTER_CENTER,
-        icons::LOCK,
-        egui::FontId::proportional(56.0),
-        egui::Color32::WHITE,
-    );
-
-    let mut y = c.y + 110.0;
-    let title_galley = ui.painter().layout(
-        if title.is_empty() {
-            "Ekran qulflangan".into()
+        Align2::CENTER_CENTER,
+        if v.unlocked {
+            icons::LOCK_OPEN
         } else {
-            title.to_string()
+            icons::LOCK
         },
-        egui::FontId::proportional(40.0),
-        p.text,
-        rect.width() * 0.8,
-    );
-    ui.painter().galley(
-        egui::pos2(rect.center().x - title_galley.size().x / 2.0, y),
-        title_galley.clone(),
-        p.text,
-    );
-    y += title_galley.size().y + 16.0;
-
-    let msg = if message.is_empty() {
-        "Iltimos, o'qituvchini tinglang."
-    } else {
-        message
-    };
-    let msg_galley = ui.painter().layout(
-        msg.to_string(),
-        egui::FontId::proportional(22.0),
-        p.muted,
-        rect.width() * 0.7,
-    );
-    ui.painter().galley(
-        egui::pos2(rect.center().x - msg_galley.size().x / 2.0, y),
-        msg_galley,
-        p.muted,
+        FontId::proportional(50.0),
+        p.on_accent,
     );
 
-    ui.painter().text(
-        egui::pos2(rect.center().x, rect.bottom() - 40.0),
-        egui::Align2::CENTER_CENTER,
+    // Texts: shown only when the teacher wrote them.
+    let mut y = c.y + 92.0;
+    if !title.trim().is_empty() {
+        let g = painter.layout(
+            title.to_string(),
+            FontId::proportional(38.0),
+            p.text.gamma_multiply(fade),
+            rect.width() * 0.8,
+        );
+        painter.galley(
+            pos2(rect.center().x - g.size().x / 2.0, y),
+            g.clone(),
+            p.text,
+        );
+        y += g.size().y + 14.0;
+    }
+    if !message.trim().is_empty() {
+        let g = painter.layout(
+            message.to_string(),
+            FontId::proportional(21.0),
+            p.muted.gamma_multiply(fade),
+            rect.width() * 0.65,
+        );
+        painter.galley(
+            pos2(rect.center().x - g.size().x / 2.0, y),
+            g.clone(),
+            p.muted,
+        );
+        y += g.size().y + 14.0;
+    }
+
+    // The code boxes: like a phone's PIN screen.
+    if let Some(n) = v.digits {
+        y += 26.0;
+        let cell = vec2(46.0, 58.0);
+        let gap = 12.0;
+        let total = n as f32 * cell.x + (n as f32 - 1.0) * gap;
+        let shake = v
+            .wrong_age
+            .filter(|a| *a < 0.5)
+            .map(|a| (a * 46.0).sin() * 14.0 * (1.0 - a / 0.5))
+            .unwrap_or(0.0);
+        let x0 = rect.center().x - total / 2.0 + shake;
+        let wrong = v.wrong_age.is_some_and(|a| a < 1.2);
+        let edge = if v.unlocked {
+            p.success
+        } else if wrong || v.blocked_secs.is_some() {
+            p.danger
+        } else if v.typing {
+            p.accent
+        } else {
+            p.line_strong
+        };
+        let idle = if v.typing || v.unlocked || wrong {
+            1.0
+        } else {
+            0.55
+        };
+        for i in 0..n as usize {
+            let r = Rect::from_min_size(pos2(x0 + i as f32 * (cell.x + gap), y), cell);
+            let filled = i < v.filled || v.unlocked;
+            painter.rect_filled(
+                r,
+                Rounding::ZERO,
+                if filled {
+                    p.sunken
+                } else {
+                    p.card.gamma_multiply(0.7)
+                }
+                .gamma_multiply(idle),
+            );
+            painter.rect_stroke(
+                r,
+                Rounding::ZERO,
+                Stroke::new(
+                    if i == v.filled && v.typing && !v.unlocked {
+                        2.0_f32
+                    } else {
+                        1.0_f32
+                    },
+                    edge.gamma_multiply(idle),
+                ),
+            );
+            if filled {
+                painter.rect_filled(
+                    Rect::from_center_size(r.center(), vec2(13.0, 13.0)),
+                    Rounding::ZERO,
+                    if v.unlocked {
+                        p.success
+                    } else if wrong {
+                        p.danger
+                    } else {
+                        p.accent
+                    },
+                );
+            } else if i == v.filled && v.typing && !v.unlocked && (v.time * 2.2).sin() > 0.0 {
+                // Blinking caret in the active cell.
+                painter.line_segment(
+                    [r.center() - vec2(9.0, -14.0), r.center() + vec2(9.0, 14.0)],
+                    Stroke::new(2.0_f32, p.accent),
+                );
+            }
+        }
+        let status = if v.unlocked {
+            Some(("Ochildi", p.success))
+        } else if let Some(s) = v.blocked_secs {
+            return_blocked(painter, rect.center().x, y + cell.y + 26.0, s, p.danger);
+            None
+        } else if wrong {
+            Some(("Kod noto'g'ri", p.danger))
+        } else {
+            Some(("Ochish kodini kiriting", p.faint))
+        };
+        if let Some((t, col)) = status {
+            painter.text(
+                pos2(rect.center().x, y + cell.y + 26.0),
+                Align2::CENTER_CENTER,
+                t,
+                FontId::new(13.0, vimora_ui::mono()),
+                col.gamma_multiply(if col == p.faint { idle } else { 1.0 }),
+            );
+        }
+    }
+
+    painter.text(
+        pos2(rect.center().x, rect.bottom() - 40.0),
+        Align2::CENTER_CENTER,
         format!("{}  Vimora", icons::GRADUATION_CAP),
-        egui::FontId::proportional(16.0),
-        p.muted,
+        FontId::proportional(15.0),
+        p.faint.gamma_multiply(fade),
+    );
+    let _ = Color32::WHITE;
+}
+
+fn return_blocked(painter: &egui::Painter, x: f32, y: f32, secs: u64, col: egui::Color32) {
+    painter.text(
+        egui::pos2(x, y),
+        egui::Align2::CENTER_CENTER,
+        format!("Juda ko'p urinish. {secs} soniyadan keyin qayta urining"),
+        egui::FontId::new(13.0, vimora_ui::mono()),
+        col,
     );
 }
 
@@ -278,11 +611,42 @@ mod input_block {
     use windows_sys::Win32::System::Threading::GetCurrentProcessId;
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
+    /// Keys the lock screen's code box may use, collected by the keyboard hook.
+    static KEYS: std::sync::Mutex<Vec<char>> = std::sync::Mutex::new(Vec::new());
+
+    /// Drains the typed digits / Backspace (`\u{8}`) / Escape (`\u{1b}`).
+    pub fn take_keys() -> Vec<char> {
+        std::mem::take(&mut *KEYS.lock().unwrap())
+    }
+
     unsafe extern "system" fn swallow(code: i32, w: WPARAM, l: LPARAM) -> LRESULT {
         if code >= 0 {
             return 1;
         }
         CallNextHookEx(null_mut(), code, w, l)
+    }
+
+    /// Keyboard: eat everything, but remember digits for the unlock code.
+    unsafe extern "system" fn keyboard(code: i32, w: WPARAM, l: LPARAM) -> LRESULT {
+        if code >= 0 && (w as u32 == WM_KEYDOWN || w as u32 == WM_SYSKEYDOWN) {
+            let vk = (*(l as *const KBDLLHOOKSTRUCT)).vkCode;
+            let c = match vk {
+                0x30..=0x39 => Some((b'0' + (vk - 0x30) as u8) as char),
+                0x60..=0x69 => Some((b'0' + (vk - 0x60) as u8) as char), // numpad
+                0x08 => Some('\u{8}'),
+                0x1B => Some('\u{1b}'),
+                _ => None,
+            };
+            if let Some(c) = c {
+                if let Ok(mut k) = KEYS.lock() {
+                    if k.len() < 64 {
+                        k.push(c);
+                    }
+                }
+            }
+            return 1;
+        }
+        swallow(code, w, l)
     }
 
     unsafe extern "system" fn raise(hwnd: HWND, _: LPARAM) -> BOOL {
@@ -305,7 +669,7 @@ mod input_block {
     pub fn install() {
         std::thread::spawn(|| unsafe {
             let module = GetModuleHandleW(null());
-            SetWindowsHookExW(WH_KEYBOARD_LL, Some(swallow), module, 0);
+            SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard), module, 0);
             SetWindowsHookExW(WH_MOUSE_LL, Some(swallow), module, 0);
             let mut msg: MSG = std::mem::zeroed();
             while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
@@ -320,4 +684,36 @@ mod input_block {
             }
         });
     }
+}
+
+fn overlay_dev_screenshot(ctx: &egui::Context) {
+    let Ok(path) = std::env::var("VIMORA_OVERLAY_SCREENSHOT") else {
+        return;
+    };
+    if (2.0..2.05).contains(&ctx.input(|i| i.time)) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+    }
+    let shot = ctx.input(|i| {
+        i.events.iter().find_map(|e| match e {
+            egui::Event::Screenshot { image, .. } => Some(image.clone()),
+            _ => None,
+        })
+    });
+    if let Some(img) = shot {
+        let rgb: Vec<u8> = img
+            .pixels
+            .iter()
+            .flat_map(|c| [c.r(), c.g(), c.b()])
+            .collect();
+        if let Ok(f) = std::fs::File::create(path) {
+            let _ = image::codecs::jpeg::JpegEncoder::new_with_quality(f, 90).encode(
+                &rgb,
+                img.size[0] as u32,
+                img.size[1] as u32,
+                image::ExtendedColorType::Rgb8,
+            );
+        }
+        std::process::exit(0);
+    }
+    ctx.request_repaint();
 }

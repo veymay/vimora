@@ -207,11 +207,24 @@ pub(super) async fn handle_command(
     match cmd {
         Command::Lock { title, message } => {
             state.lock().unwrap().lock = Some((title, message));
+            save_lock(state);
             sync().await;
             None
         }
         Command::Unlock => {
-            state.lock().unwrap().lock = None;
+            {
+                let mut s = state.lock().unwrap();
+                s.lock = None;
+                s.unlock = None;
+            }
+            save_lock(state);
+            sync().await;
+            None
+        }
+        Command::UnlockCode { salt, hash, digits } => {
+            state.lock().unwrap().unlock =
+                (!hash.is_empty()).then_some((salt, hash, digits.clamp(4, 8)));
+            save_lock(state);
             sync().await;
             None
         }

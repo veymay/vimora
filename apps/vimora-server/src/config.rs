@@ -60,6 +60,8 @@ pub struct ServerConfig {
     pub shadow_password: String,
     pub lock_title: String,
     pub lock_message: String,
+    /// 4–8 digit code that opens the lock screen on a student PC without the console.
+    pub unlock_pin: String,
     pub app_blocklist: String,
     pub web_blocklist: String,
     pub keyword_blocklist: String,
@@ -115,6 +117,7 @@ impl Default for ServerConfig {
             shadow_password: String::new(),
             lock_title: lock_title.into(),
             lock_message: lock_message.into(),
+            unlock_pin: String::new(),
             app_blocklist: "steam, discord, telegram".into(),
             web_blocklist: "tiktok.com\ninstagram.com".into(),
             keyword_blocklist: "kazino\ncasino\n1xbet".into(),

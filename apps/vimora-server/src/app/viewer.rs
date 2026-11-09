@@ -292,7 +292,11 @@ impl ConsoleApp {
             }
         }
         if let Some(c) = act.lock {
-            self.send(&[id], c, "");
+            if matches!(c, Command::Lock { .. }) {
+                self.lock(&[id]); // also sends the unlock code
+            } else {
+                self.send(&[id], c, "");
+            }
         }
         if act.message {
             self.selected = [id].into();

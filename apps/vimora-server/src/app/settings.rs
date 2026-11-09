@@ -508,13 +508,21 @@ fn appearance(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
 
 fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
     heading(ui, p, tr("Qulf ekrani"));
-    row(ui, p, tr("Sarlavha"), None, |ui| {
-        ui.add(ui_kit::text_field(&mut c.lock_title).desired_width(300.0));
-    });
+    row(
+        ui,
+        p,
+        tr("Sarlavha"),
+        Some(tr(
+            "Bo'sh qoldirsangiz, qulf ekranida sarlavha ko'rinmaydi.",
+        )),
+        |ui| {
+            ui.add(ui_kit::text_field(&mut c.lock_title).desired_width(300.0));
+        },
+    );
     ui.add_space(12.0);
     ui.horizontal(|ui| {
         ui.label(RichText::new(tr("Matn")).size(13.5).color(p.text));
-        ui_kit::info(ui, tr("Qulflanganda o'quvchi ekranining o'rtasida chiqadi. O'zgarish keyingi qulflashda ko'rinadi."));
+        ui_kit::info(ui, tr("Qulflanganda o'quvchi ekranining o'rtasida chiqadi. Bo'sh qoldirsangiz ko'rinmaydi. O'zgarish keyingi qulflashda ko'rinadi."));
     });
     ui.add_space(6.0);
     ui.add(
@@ -522,6 +530,32 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
             .desired_rows(3)
             .desired_width(f32::INFINITY),
     );
+    ui.add_space(12.0);
+    row(
+        ui,
+        p,
+        tr("Ochish kodi"),
+        Some(tr("4–8 raqam. Internet uzilib qolsa, o'quvchi ekrandagi qulfni shu kod bilan ochadi. Bo'sh qoldirsangiz kod so'ralmaydi. Keyingi qulflashdan boshlab kuchga kiradi.")),
+        |ui| {
+            let r = ui.add(
+                ui_kit::text_field(&mut c.unlock_pin)
+                    .password(true)
+                    .hint_text(tr("masalan 4821"))
+                    .desired_width(160.0),
+            );
+            if r.changed() {
+                c.unlock_pin.retain(|ch| ch.is_ascii_digit());
+                c.unlock_pin.truncate(8);
+            }
+        },
+    );
+    if !c.unlock_pin.is_empty() && !vimora_core::pin::valid(&c.unlock_pin) {
+        ui.label(
+            RichText::new(tr("Kod kamida 4 raqamdan iborat bo'lishi kerak."))
+                .size(12.0)
+                .color(p.warning),
+        );
+    }
     // Preview of what students see.
     heading(ui, p, tr("Ko'rinishi"));
     let w = ui.available_width();
