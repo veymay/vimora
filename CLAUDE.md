@@ -22,16 +22,20 @@ screenshot and exits. Use `XDG_CONFIG_HOME=<dir>` to run with a throw-away confi
 ## CI / release
 - CI needs: `cargo fmt --all --check`, `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`.
 - Releases come from tag `v<version>` (version in root `Cargo.toml`) via `.github/workflows/release.yml`.
-- GitHub Actions has been blocked by a billing issue. v0.3.0 was published by hand: the Linux
-  `.deb` files were built locally. The Windows installer is built on a Windows PC with
-  `windows-release.bat` (double click): it builds, creates `dist\vimora-<ver>-windows-x64-setup.exe`
-  with Inno Setup, adds its hash to the release's `SHA256SUMS` and uploads both (needs `gh`).
-  Log: `dist\windows-release.log`.
-- Windows installer can also be built on Linux, with no Windows PC and no Actions:
-  `sudo apt install mingw-w64 nsis`, then `installer/windows/build-from-linux.sh` (cross-compiles
-  with the `x86_64-pc-windows-gnu` target and builds `installer/windows/vimora.nsi` with NSIS).
-  It takes the same silent switches the self-updater passes (`/VERYSILENT /TYPE=student ...`).
-  From 0.3.7 on, Windows releases are made this way; the Inno Setup script is the fallback.
+- GitHub Actions has been blocked by a billing issue, so releases are built locally.
+- Build system (two entry points, output in `dist/` with `SHA256SUMS`, log `dist/build.log`):
+  - Ubuntu: `./build.sh [all|linux|windows]`. Linux binaries are built with `cargo zigbuild` for
+    glibc 2.35 (so the `.deb`s install on Ubuntu 22.04+; a plain local build would require this
+    machine's glibc), packaged with `cargo deb`. Windows is cross-compiled (`x86_64-pc-windows-gnu`,
+    static CRT) and packed with NSIS (`installer/windows/vimora.nsi`). Missing tools are installed
+    on first run (`apt`: zig, mingw-w64, nsis; `cargo install`: cargo-zigbuild, cargo-deb).
+  - Windows: `build.bat` (double click) → `installer/windows/build.ps1` (MSVC + NSIS, installs
+    missing tools with winget). `build.bat upload` / `windows-release.bat` also upload the `.exe`
+    to the existing `v<ver>` release and update its `SHA256SUMS` (needs `gh`).
+  - The NSIS installer takes the silent switches the self-updater passes
+    (`/VERYSILENT /TYPE=student ...`). The Inno Setup script `vimora.iss` is only a fallback.
+- Release 0.3.8's `.deb` files were built before this and require glibc 2.44 (do not install on
+  Ubuntu 22.04/24.04); rebuild with `./build.sh linux` before publishing.
 - Do not move or recreate existing tags; do not force push; ask before publishing releases.
 
 ## Compatibility rules (old and new builds must keep working together)

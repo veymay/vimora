@@ -87,14 +87,16 @@ Til (**O'zbekcha, English, Русский**), mavzu (qorong'i / yorug' / tizim),
 
 ### O'zingiz yig'ish
 
-```powershell
-powershell -ExecutionPolicy Bypass -File installer\windows\build.ps1     # Windows → dist\*.exe
-```
+**Ubuntu** (hammasi bitta buyruq: o'qituvchi va o'quvchi `.deb`, Windows `.exe`):
 
 ```bash
-cargo install cargo-deb
-cargo build --release && cargo deb -p vimora-server --no-build && cargo deb -p vimora-client --no-build
+./build.sh            # yoki: ./build.sh linux  /  ./build.sh windows
 ```
+
+**Windows:** `build.bat` ustiga ikki marta bosing (faqat Windows `.exe`).
+
+Natija `dist/` papkasida, yonida `SHA256SUMS`. Kerakli vositalar birinchi marta o'zi
+o'rnatiladi. Ubuntu paketlari Ubuntu 22.04 va undan yangilarida ishlaydi.
 
 ---
 
