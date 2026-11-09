@@ -81,6 +81,11 @@ pub(super) fn activity_body(
 /// Body of every modal / drawer.
 /// Read-only context the forms need besides the dialog itself.
 pub(super) struct FormCtx<'a> {
+    /// Offline computers the power window would wake, and how many have a known address.
+    pub(super) offline: usize,
+    pub(super) offline_with_mac: usize,
+    /// Sites opened recently.
+    pub(super) recent: &'a [String],
     pub(super) hub: &'a SharedHub,
     pub(super) all: &'a [View],
     pub(super) targets: &'a [u64],
@@ -163,9 +168,33 @@ pub(super) fn dialog_body(
             });
             ui.add_space(10.0);
             if *web {
-                let r = wide(ui, url, "https://example.com");
+                let r = wide(ui, url, tr("Sayt manzili yoki qidiruv: youtube.com"));
+                if ui.memory(|m| m.focused().is_none()) {
+                    r.request_focus();
+                }
                 if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                     *confirm = true;
+                }
+                if let Some(u) = crate::app::overlay::normalize_url(url) {
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new(with_icon(icons::GLOBE, &u))
+                            .size(12.0)
+                            .color(p.faint),
+                    );
+                }
+                if !cx.recent.is_empty() {
+                    ui.add_space(8.0);
+                    ui_kit::hud(ui, tr("Oxirgi saytlar"), p.muted);
+                    ui.add_space(2.0);
+                    for r in cx.recent {
+                        let short = r
+                            .trim_start_matches("https://")
+                            .trim_start_matches("http://");
+                        if ui_kit::button(ui, Some(icons::GLOBE), short, Kind::Outline).clicked() {
+                            *url = r.clone();
+                        }
+                    }
                 }
             } else {
                 wide(
@@ -208,24 +237,62 @@ pub(super) fn dialog_body(
         Dialog::Power(a) => {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                for (act, ic, label) in [
-                    (PowerAction::Shutdown, icons::POWER, tr("O'chirish")),
-                    (PowerAction::Restart, icons::ROTATE_CCW, tr("Qayta yoqish")),
-                    (PowerAction::Logoff, icons::LOG_OUT, tr("Seansdan chiqish")),
+                for (act, ic, label, col) in [
+                    (PowerChoice::Wake, icons::POWER, tr("Yoqish"), p.accent),
+                    (
+                        PowerChoice::Shutdown,
+                        icons::POWER_OFF,
+                        tr("O'chirish"),
+                        p.danger,
+                    ),
+                    (
+                        PowerChoice::Restart,
+                        icons::ROTATE_CCW,
+                        tr("Qayta yuklash"),
+                        p.danger,
+                    ),
+                    (
+                        PowerChoice::Logoff,
+                        icons::LOG_OUT,
+                        tr("Seansdan chiqish"),
+                        p.danger,
+                    ),
                 ] {
-                    if power_tile(ui, p, ic, label, *a == act).clicked() {
+                    if power_tile(ui, p, ic, label, *a == act, 4.0, col).clicked() {
                         *a = act;
                     }
                 }
             });
-            ui.add_space(8.0);
-            ui.label(
-                RichText::new(with_icon(
-                    icons::TRIANGLE_ALERT,
-                    tr("Saqlanmagan ishlar yo'qolishi mumkin!"),
-                ))
-                .color(p.warning),
-            );
+            ui.add_space(10.0);
+            if *a == PowerChoice::Wake {
+                let (off, with_mac) = (cx.offline, cx.offline_with_mac);
+                ui.label(
+                    RichText::new(if off == 0 {
+                        tr("Oflayn kompyuter yo'q.").to_string()
+                    } else {
+                        tf!(
+                            "{n} ta oflayn kompyuterga yoqish signali yuboriladi ({m} tasining manzili ma'lum).",
+                            n = off,
+                            m = with_mac
+                        )
+                    })
+                    .color(p.text),
+                );
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new(tr("Kompyuterda BIOS'da Wake-on-LAN yoqilgan va tarmoq simi ulangan bo'lishi kerak."))
+                        .size(12.0)
+                        .color(p.faint),
+                );
+            } else {
+                ui.label(
+                    RichText::new(with_icon(
+                        icons::TRIANGLE_ALERT,
+                        tr("Saqlanmagan ishlar yo'qolishi mumkin!"),
+                    ))
+                    .color(p.warning),
+                );
+            }
         }
         Dialog::Settings(_) => {}
         Dialog::Room { name, .. } => {
@@ -258,8 +325,10 @@ pub(super) fn power_tile(
     icon: &str,
     label: &str,
     selected: bool,
+    cols: f32,
+    accent: Color32,
 ) -> egui::Response {
-    tile(ui, p, icon, label, selected, p.danger)
+    tile(ui, p, icon, label, selected, accent, cols)
 }
 
 pub(super) fn tile(
@@ -269,10 +338,11 @@ pub(super) fn tile(
     label: &str,
     selected: bool,
     accent: Color32,
+    cols: f32,
 ) -> egui::Response {
-    // Width from the whole row (not what is left), so all three tiles match.
-    let w = (ui.max_rect().width() - 16.0) / 3.0;
-    let (rect, resp) = ui.allocate_exact_size(vec2(w.max(120.0), 84.0), Sense::click());
+    // Width from the whole row (not what is left), so all tiles match.
+    let w = (ui.max_rect().width() - 8.0 * (cols - 1.0)) / cols;
+    let (rect, resp) = ui.allocate_exact_size(vec2(w.max(100.0), 84.0), Sense::click());
     let fill = if selected {
         p.sunken
     } else if resp.hovered() {

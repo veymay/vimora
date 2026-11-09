@@ -30,6 +30,16 @@ pub(super) struct View {
     pub(super) last_seen: u64,
 }
 
+/// What the power window can do: the three remote actions, or switching computers on.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum PowerChoice {
+    Shutdown,
+    Restart,
+    Logoff,
+    /// Wake-on-LAN for offline computers.
+    Wake,
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub(super) enum RoomTab {
     All,
@@ -65,7 +75,7 @@ pub(super) enum Dialog {
         keywords: String,
         safe: bool,
     },
-    Power(PowerAction),
+    Power(PowerChoice),
     Settings(SettingsTab),
     /// Create a room (`rename: None`) or rename one.
     Room {

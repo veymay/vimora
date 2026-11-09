@@ -426,6 +426,18 @@ pub static ROWS: &[Row] = &[
     ("Ro'yxatdan o'chirish", "Remove from list", "Удалить из списка"),
     ("{n} kun oldin", "{n} days ago", "{n} дн. назад"),
     ("{v} oldin", "{v} ago", "{v} назад"),
+    ("Yoqish", "Power on", "Включить"),
+    ("Qayta yuklash", "Restart", "Перезагрузить"),
+    ("Oflayn kompyuter yo'q.", "No offline computers.", "Нет компьютеров не в сети."),
+    ("{n} ta oflayn kompyuterga yoqish signali yuboriladi ({m} tasining manzili ma'lum).", "A power-on signal is sent to {n} offline computer(s) ({m} with a known address).", "Сигнал включения отправится на {n} компьютеров не в сети (адрес известен у {m})."),
+    ("Kompyuterda BIOS'da Wake-on-LAN yoqilgan va tarmoq simi ulangan bo'lishi kerak.", "Wake-on-LAN must be enabled in the BIOS and the network cable plugged in.", "В BIOS должен быть включён Wake-on-LAN, а сетевой кабель подключён."),
+    ("Yoqish uchun manzil yo'q: kompyuter yangi agent bilan bir marta ulangan bo'lishi kerak.", "No address to wake: the computer must have connected once with the new agent.", "Нет адреса для включения: компьютер должен хотя бы раз подключиться с новым агентом."),
+    ("Yoqish signalini yuborib bo'lmadi (tarmoq?).", "Could not send the power-on signal (network?).", "Не удалось отправить сигнал включения (сеть?)."),
+    ("{n} ta kompyuterga yoqish signali yuborildi, {m} tasining manzili noma'lum.", "Power-on signal sent to {n} computer(s); {m} have no known address.", "Сигнал включения отправлен на {n} компьютеров; у {m} адрес неизвестен."),
+    ("{n} ta kompyuterga yoqish signali yuborildi.", "Power-on signal sent to {n} computer(s).", "Сигнал включения отправлен на {n} компьютеров."),
+    ("Yoqish signali → {n} ta kompyuter", "Power-on signal → {n} computers", "Сигнал включения → {n} компьютеров"),
+    ("Sayt manzili yoki qidiruv: youtube.com", "Site address or search: youtube.com", "Адрес сайта или поиск: youtube.com"),
+    ("Oxirgi saytlar", "Recent sites", "Недавние сайты"),
 ];
 
 #[cfg(test)]

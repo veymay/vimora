@@ -159,12 +159,19 @@ impl ChatApp {
 
     /// Keeps the window glued to the right screen edge, `width` wide.
     fn place(&mut self, ctx: &egui::Context) {
+        // Full height of the usable screen: the right edge, top to bottom, without covering the
+        // taskbar (Windows reports the work area; elsewhere the whole monitor is used).
         let monitor = ctx
             .input(|i| i.viewport().monitor_size)
             .unwrap_or(egui::vec2(1920.0, 1080.0));
-        let h = (monitor.y * 0.8).min(760.0).round();
-        let x = (monitor.x - self.width).round();
-        let y = ((monitor.y - h) / 2.0).round();
+        let ppp = ctx.pixels_per_point().max(0.5);
+        let (left, top, right, bottom) = work_area()
+            .map(|(l, t, r, b)| (l / ppp, t / ppp, r / ppp, b / ppp))
+            .unwrap_or((0.0, 0.0, monitor.x, monitor.y));
+        let h = (bottom - top).round();
+        let x = (right - self.width).round();
+        let y = top.round();
+        let _ = left;
         let geo = (x, y, self.width.round());
         if self.last_geometry != Some(geo) {
             let first = self.last_geometry.is_none();
@@ -177,6 +184,32 @@ impl ChatApp {
             }
         }
     }
+}
+
+/// The part of the primary screen not taken by the taskbar, in physical pixels
+/// (left, top, right, bottom). Windows only.
+#[cfg(windows)]
+fn work_area() -> Option<(f32, f32, f32, f32)> {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETWORKAREA};
+    let mut r = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    let ok = unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut r as *mut RECT as *mut _, 0) };
+    (ok != 0 && r.right > r.left && r.bottom > r.top).then_some((
+        r.left as f32,
+        r.top as f32,
+        r.right as f32,
+        r.bottom as f32,
+    ))
+}
+
+#[cfg(not(windows))]
+fn work_area() -> Option<(f32, f32, f32, f32)> {
+    None
 }
 
 /// HH:MM local time for chat stamps.

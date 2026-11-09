@@ -263,27 +263,61 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str) {
     );
 }
 
-/// Windows: swallow all physical keyboard and mouse input while the overlay is alive.
+/// Windows: swallow all physical keyboard and mouse input while the overlay is alive, and keep
+/// the overlay above everything (the taskbar / Start menu must not climb over the lock screen).
 /// (Ctrl+Alt+Del is handled by the OS and can never be blocked.)
+///
+/// The hooks live on their own thread with its own message loop: a low-level hook whose thread
+/// does not answer within the system timeout is silently dropped by Windows, which is exactly
+/// how keys such as Ctrl+Shift+Esc used to slip through while the overlay was busy drawing.
 #[cfg(windows)]
 mod input_block {
-    use std::ptr::null;
-    use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+    use std::ptr::{null, null_mut};
+    use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::System::Threading::GetCurrentProcessId;
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
     unsafe extern "system" fn swallow(code: i32, w: WPARAM, l: LPARAM) -> LRESULT {
         if code >= 0 {
             return 1;
         }
-        CallNextHookEx(std::ptr::null_mut(), code, w, l)
+        CallNextHookEx(null_mut(), code, w, l)
+    }
+
+    unsafe extern "system" fn raise(hwnd: HWND, _: LPARAM) -> BOOL {
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        if pid == GetCurrentProcessId() && IsWindowVisible(hwnd) != 0 {
+            SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            );
+        }
+        1
     }
 
     pub fn install() {
-        unsafe {
+        std::thread::spawn(|| unsafe {
             let module = GetModuleHandleW(null());
             SetWindowsHookExW(WH_KEYBOARD_LL, Some(swallow), module, 0);
             SetWindowsHookExW(WH_MOUSE_LL, Some(swallow), module, 0);
-        }
+            let mut msg: MSG = std::mem::zeroed();
+            while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        });
+        std::thread::spawn(|| loop {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            unsafe {
+                EnumWindows(Some(raise), 0);
+            }
+        });
     }
 }

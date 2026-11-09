@@ -7,7 +7,7 @@ mod forms;
 mod grid;
 mod model;
 mod navbar;
-mod overlay;
+pub(super) mod overlay;
 mod rooms;
 mod selection;
 mod settings;
@@ -182,7 +182,7 @@ impl ConsoleApp {
                 };
                 app.dev_open = Some(Dialog::Settings(tab));
             }
-            Ok("power") => app.dev_open = Some(Dialog::Power(PowerAction::Shutdown)),
+            Ok("power") => app.dev_open = Some(Dialog::Power(PowerChoice::Shutdown)),
             Ok("room") => {
                 app.dev_open = Some(Dialog::Room {
                     name: String::new(),
@@ -244,6 +244,7 @@ impl ConsoleApp {
                         user: "Ali".into(),
                         os: "windows".into(),
                         ip: format!("192.168.1.{}", 40 + i),
+                        mac: format!("aabbccdd00{:02x}", 10 + i),
                         last_seen: crate::net::unix_now() - 3600 * (i as u64 + 1) * 5,
                     },
                 );
@@ -661,7 +662,7 @@ impl ConsoleApp {
                 let list = self.cfg.read().unwrap().app_blocklist.clone();
                 self.open_dialog(Dialog::Apps(list));
             }
-            Menu::Power => self.open_dialog(Dialog::Power(PowerAction::Shutdown)),
+            Menu::Power => self.open_dialog(Dialog::Power(PowerChoice::Shutdown)),
             Menu::Freeze => self.open_dialog(self.shadow_dialog()),
             Menu::Updates => {
                 let policy = self.cfg.read().unwrap().update_policy;

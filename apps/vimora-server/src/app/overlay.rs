@@ -253,6 +253,37 @@ impl ConsoleApp {
             _ => self.targets(all),
         };
         let n = targets.len();
+        // Power window "Yoqish": the offline computers it would wake (selected ones, else the
+        // offline ones of the current tab), and how many of them have a known address.
+        let wake_keys: Vec<String> = if matches!(
+            self.dialog.as_ref().or(self.closing.as_ref()),
+            Some(Dialog::Power(PowerChoice::Wake))
+        ) {
+            let sel: Vec<&View> = all_views
+                .iter()
+                .filter(|v| !v.online && self.selected.contains(&v.id))
+                .collect();
+            let list: Vec<&View> = if sel.is_empty() {
+                all_views
+                    .iter()
+                    .filter(|v| !v.online && self.in_tab(v))
+                    .collect()
+            } else {
+                sel
+            };
+            list.iter().map(|v| v.key.clone()).collect()
+        } else {
+            vec![]
+        };
+        let offline = wake_keys.len();
+        let offline_with_mac = {
+            let c = self.cfg.read().unwrap();
+            wake_keys
+                .iter()
+                .filter(|k| wake_mac(&c, k).is_some())
+                .count()
+        };
+        let recent: Vec<String> = self.cfg.read().unwrap().recent_urls.clone();
         let hub = self.hub.clone();
         let cfg = self.cfg.clone();
         let screen = ctx.screen_rect();
@@ -337,7 +368,7 @@ impl ConsoleApp {
         };
 
         // Drawers slide in from the right; modals fade in at the centre.
-        // Drawers hang flush on the right edge of the window (above the status bar); modals drop
+        // Drawers hang flush on the right edge of the window, full height; modals drop
         // from the top edge right under the navbar and tabs. Nothing floats free.
         let chrome_h = super::navbar::NAVBAR_H + super::navbar::TOOLBAR_H;
         let status_h = super::navbar::STATUS_H;
@@ -417,11 +448,8 @@ impl ConsoleApp {
                         | Dialog::Freeze { .. }
                 );
                 let body_max = if drawer {
-                    screen.height()
-                        - status_h
-                        - HEADER_H
-                        - 2.0
-                        - if has_footer { FOOTER_H } else { 0.0 }
+                    // Full window height: the drawer hangs on the right edge, top to bottom.
+                    screen.height() - HEADER_H - 2.0 - if has_footer { FOOTER_H } else { 0.0 }
                 } else {
                     (screen.height()
                         - chrome_h
@@ -449,7 +477,13 @@ impl ConsoleApp {
                             ) {
                                 ui.horizontal(|ui| {
                                     ui.label(RichText::new(icons::USERS).color(p.faint));
-                                    ui_kit::hud(ui, &tf!("{n} ta kompyuterga", n = n), p.muted);
+                                    let shown =
+                                        if matches!(dialog, Dialog::Power(PowerChoice::Wake)) {
+                                            offline
+                                        } else {
+                                            n
+                                        };
+                                    ui_kit::hud(ui, &tf!("{n} ta kompyuterga", n = shown), p.muted);
                                 });
                                 ui.add_space(4.0);
                             }
@@ -460,6 +494,9 @@ impl ConsoleApp {
                                 confirm,
                                 clear_help,
                                 &FormCtx {
+                                    offline,
+                                    offline_with_mac,
+                                    recent: &recent,
                                     hub: &hub,
                                     all,
                                     targets: &targets,
@@ -486,6 +523,9 @@ impl ConsoleApp {
                             text,
                             send,
                             &FormCtx {
+                                offline,
+                                offline_with_mac,
+                                recent: &recent,
                                 hub: &hub,
                                 all,
                                 targets: &targets,
@@ -642,11 +682,52 @@ impl ConsoleApp {
         }
         if cancel {
             self.close_dialog();
+        } else if confirm && matches!(self.dialog, Some(Dialog::Power(PowerChoice::Wake))) {
+            self.wake(&wake_keys);
+            self.close_dialog();
         } else if confirm || clear {
             let d = self.dialog.take().unwrap();
             self.closing = Some(d.clone());
             self.run_dialog(d, &targets, clear);
         }
+    }
+
+    /// Wake-on-LAN for the given (offline) computers.
+    fn wake(&mut self, keys: &[String]) {
+        let macs: Vec<[u8; 6]> = {
+            let c = self.cfg.read().unwrap();
+            keys.iter().filter_map(|k| wake_mac(&c, k)).collect()
+        };
+        let mut h = self.hub.lock().unwrap();
+        if macs.is_empty() {
+            h.toast(
+                false,
+                tr("Yoqish uchun manzil yo'q: kompyuter yangi agent bilan bir marta ulangan bo'lishi kerak."),
+            );
+            return;
+        }
+        let sent = macs
+            .iter()
+            .filter(|m| crate::net::wake_on_lan(**m).is_ok())
+            .count();
+        h.log(
+            crate::net::Level::Info,
+            tf!("Yoqish signali → {n} ta kompyuter", n = sent),
+        );
+        h.toast(
+            sent > 0,
+            if sent == 0 {
+                tr("Yoqish signalini yuborib bo'lmadi (tarmoq?).").to_string()
+            } else if sent < keys.len() {
+                tf!(
+                    "{n} ta kompyuterga yoqish signali yuborildi, {m} tasining manzili noma'lum.",
+                    n = sent,
+                    m = keys.len() - sent
+                )
+            } else {
+                tf!("{n} ta kompyuterga yoqish signali yuborildi.", n = sent)
+            },
+        );
     }
 
     /// Inline actions of the Shadow drawer: they run at once and the drawer stays open.
@@ -720,7 +801,17 @@ impl ConsoleApp {
                 }
             }
             Dialog::Launch { web: true, url, .. } => {
-                self.send(t, Command::OpenUrl(url.trim().into()), tr("Sayt ochish"))
+                let Some(url) = normalize_url(&url) else {
+                    return;
+                };
+                {
+                    let mut c = self.cfg.write().unwrap();
+                    c.recent_urls.retain(|u| *u != url);
+                    c.recent_urls.insert(0, url.clone());
+                    c.recent_urls.truncate(8);
+                    crate::config::save(&c);
+                }
+                self.send(t, Command::OpenUrl(url), tr("Sayt ochish"))
             }
             Dialog::Launch { program, args, .. } => {
                 let args = args.split_whitespace().map(String::from).collect();
@@ -809,12 +900,13 @@ impl ConsoleApp {
                 self.send_priv(t, PrivCommand::SetNetPolicy(policy), &what);
             }
             Dialog::Power(a) => {
-                let what = match a {
-                    PowerAction::Shutdown => tr("O'chirish"),
-                    PowerAction::Restart => tr("Qayta yoqish"),
-                    PowerAction::Logoff => tr("Seansdan chiqarish"),
+                let (act, what) = match a {
+                    PowerChoice::Shutdown => (PowerAction::Shutdown, tr("O'chirish")),
+                    PowerChoice::Restart => (PowerAction::Restart, tr("Qayta yuklash")),
+                    PowerChoice::Logoff => (PowerAction::Logoff, tr("Seansdan chiqarish")),
+                    PowerChoice::Wake => return, // handled before (offline computers)
                 };
-                self.send_priv(t, PrivCommand::Power(a), what);
+                self.send_priv(t, PrivCommand::Power(act), what);
             }
             Dialog::Room { name, rename } => {
                 self.save_room(name, rename);
@@ -926,5 +1018,66 @@ impl ConsoleApp {
                 tr("Vimora yangilanishi"),
             );
         }
+    }
+}
+
+/// The address to wake a computer at: what it reported when it last connected, else the
+/// hardware id the console already uses as its key.
+fn wake_mac(c: &crate::config::ServerConfig, key: &str) -> Option<[u8; 6]> {
+    c.known_pcs
+        .get(key)
+        .and_then(|k| crate::net::parse_mac(&k.mac))
+        .or_else(|| crate::net::parse_mac(key.split('/').next().unwrap_or("")))
+}
+
+/// What the teacher typed → a URL the students' browsers can open: adds `https://`, and turns
+/// plain words into a web search. `None` for an empty box.
+pub(super) fn normalize_url(input: &str) -> Option<String> {
+    let t = input.trim().trim_matches('"').trim();
+    if t.is_empty() {
+        return None;
+    }
+    let lower = t.to_lowercase();
+    if lower.contains("://") || lower.starts_with("mailto:") {
+        return Some(t.to_string());
+    }
+    let looks_like_site = !t.contains(' ')
+        && (t.contains('.') || lower.starts_with("localhost"))
+        && !t.ends_with('.');
+    if looks_like_site {
+        return Some(format!("https://{t}"));
+    }
+    let q: String = t
+        .chars()
+        .map(|c| match c {
+            ' ' => "+".to_string(),
+            c if c.is_ascii_alphanumeric() || "-_.~".contains(c) => c.to_string(),
+            c => c
+                .to_string()
+                .bytes()
+                .map(|b| format!("%{b:02X}"))
+                .collect::<String>(),
+        })
+        .collect();
+    Some(format!("https://www.google.com/search?q={q}"))
+}
+
+#[cfg(test)]
+mod url_tests {
+    use super::normalize_url;
+
+    #[test]
+    fn urls() {
+        assert_eq!(normalize_url("  "), None);
+        assert_eq!(normalize_url("youtube.com").unwrap(), "https://youtube.com");
+        assert_eq!(normalize_url("http://a.uz/x").unwrap(), "http://a.uz/x");
+        assert_eq!(
+            normalize_url("o'zbek tili").unwrap(),
+            "https://www.google.com/search?q=o%27zbek+tili"
+        );
+        assert_eq!(
+            normalize_url("localhost:8080").unwrap(),
+            "https://localhost:8080"
+        );
     }
 }

@@ -12,6 +12,8 @@ pub struct KnownPc {
     pub user: String,
     pub os: String,
     pub ip: String,
+    /// Hardware address (12 hex digits) for Wake-on-LAN.
+    pub mac: String,
     /// Unix seconds of the last time it was connected.
     pub last_seen: u64,
 }
@@ -50,6 +52,8 @@ pub struct ServerConfig {
     /// Details of every computer seen before, so it stays in the list (offline) after it
     /// disconnects until the teacher removes it.
     pub known_pcs: BTreeMap<String, KnownPc>,
+    /// Sites opened recently (newest first), offered again in the "Sayt" window.
+    pub recent_urls: Vec<String>,
     /// Shadow mode: folders kept across restarts (one per line).
     pub persistent_folders: String,
     /// Shadow Defender password on the student PCs (empty = its default, no password).
@@ -106,6 +110,7 @@ impl Default for ServerConfig {
             aliases: BTreeMap::new(),
             known: BTreeMap::new(),
             known_pcs: BTreeMap::new(),
+            recent_urls: vec![],
             persistent_folders: String::new(),
             shadow_password: String::new(),
             lock_title: lock_title.into(),

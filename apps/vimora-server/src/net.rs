@@ -395,13 +395,18 @@ async fn session(
             user: info.username.clone(),
             os: info.os.clone(),
             ip: addr.ip().to_string(),
+            mac: info.machine_id.clone(),
             last_seen: unix_now(),
         };
         let a = c.known.insert(info.key(), info.label().to_string());
         let b = c.known_pcs.insert(info.key(), entry.clone());
         if a.is_none()
-            || b.as_ref()
-                .is_none_or(|o| o.label != entry.label || o.ip != entry.ip || o.user != entry.user)
+            || b.as_ref().is_none_or(|o| {
+                o.label != entry.label
+                    || o.ip != entry.ip
+                    || o.user != entry.user
+                    || o.mac != entry.mac
+            })
         {
             crate::config::save(&c);
         }
@@ -594,5 +599,61 @@ fn show_loop(hub: SharedHub, show: Arc<Show>) {
             }
         }
         std::thread::sleep(Duration::from_millis(100).saturating_sub(t0.elapsed()));
+    }
+}
+
+/// "aabbccddeeff" (or with `:` / `-`) → six bytes.
+pub fn parse_mac(s: &str) -> Option<[u8; 6]> {
+    let hex: String = s.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+    if hex.len() != 12 || hex == "000000000000" {
+        return None;
+    }
+    let mut out = [0u8; 6];
+    for (i, b) in out.iter_mut().enumerate() {
+        *b = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+    }
+    Some(out)
+}
+
+/// Wake-on-LAN "magic packet": 6 × 0xFF, then the address 16 times.
+pub fn magic_packet(mac: [u8; 6]) -> Vec<u8> {
+    let mut p = vec![0xFFu8; 6];
+    for _ in 0..16 {
+        p.extend_from_slice(&mac);
+    }
+    p
+}
+
+/// Sends the magic packet to the LAN broadcast address (UDP ports 9 and 7).
+pub fn wake_on_lan(mac: [u8; 6]) -> std::io::Result<()> {
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0")?;
+    sock.set_broadcast(true)?;
+    let packet = magic_packet(mac);
+    let mut last = Ok(());
+    for port in [9u16, 7] {
+        if let Err(e) = sock.send_to(&packet, ("255.255.255.255", port)) {
+            last = Err(e);
+        }
+    }
+    last
+}
+
+#[cfg(test)]
+mod wol_tests {
+    use super::*;
+
+    #[test]
+    fn mac_and_packet() {
+        assert_eq!(
+            parse_mac("aa:bb:cc:dd:ee:ff"),
+            Some([0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff])
+        );
+        assert_eq!(parse_mac("AA-BB-CC-DD-EE-FF"), parse_mac("aabbccddeeff"));
+        assert_eq!(parse_mac("000000000000"), None);
+        assert_eq!(parse_mac("abc"), None);
+        let p = magic_packet([1, 2, 3, 4, 5, 6]);
+        assert_eq!(p.len(), 102);
+        assert_eq!(&p[..6], &[0xFF; 6]);
+        assert_eq!(&p[96..], &[1, 2, 3, 4, 5, 6]);
     }
 }
