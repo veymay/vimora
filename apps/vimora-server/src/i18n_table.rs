@@ -444,6 +444,12 @@ pub static ROWS: &[Row] = &[
     ("4–8 raqam. Internet uzilib qolsa, o'quvchi ekrandagi qulfni shu kod bilan ochadi. Bo'sh qoldirsangiz kod so'ralmaydi. Keyingi qulflashdan boshlab kuchga kiradi.", "4–8 digits. If the network is lost, the student opens the lock screen with this code. Empty means no code. Applies from the next lock.", "4–8 цифр. Если сеть пропала, ученик открывает блокировку этим кодом. Пусто — код не запрашивается. Действует со следующей блокировки."),
     ("masalan 4821", "e.g. 4821", "например 4821"),
     ("Kod kamida 4 raqamdan iborat bo'lishi kerak.", "The code needs at least 4 digits.", "Код должен содержать не менее 4 цифр."),
+    ("youtube.com yoki qidiruv so'zi", "youtube.com or a search phrase", "youtube.com или поисковый запрос"),
+    ("Saqlangan", "Saved", "Сохранено"),
+    ("Saralangan saytlarga qo'shish / olib tashlash", "Add to / remove from favourites", "Добавить в избранное / убрать"),
+    ("Saralangan saytlar", "Favourite sites", "Избранные сайты"),
+    ("Hali yo'q. Sayt manzilini yozib \"Saqlash\" ni bosing.", "None yet. Type a site and press \"Save\".", "Пока нет. Введите адрес сайта и нажмите «Сохранить»."),
+    ("Olib tashlash", "Remove", "Убрать"),
 ];
 
 #[cfg(test)]

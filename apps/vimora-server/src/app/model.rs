@@ -66,6 +66,8 @@ pub(super) enum Dialog {
         url: String,
         program: String,
         args: String,
+        /// Favourite sites (a working copy; saved to the config when it changes).
+        bookmarks: Vec<String>,
     },
     File(String),
     Apps(String),

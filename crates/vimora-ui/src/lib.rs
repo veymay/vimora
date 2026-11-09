@@ -515,6 +515,17 @@ pub fn icon_cell(ui: &mut Ui, icon: &str, height: f32, active: bool) -> Response
 
 /// Selectable mono tab (filter cells).
 pub fn tab(ui: &mut Ui, label: &str, count: Option<usize>, selected: bool) -> Response {
+    tab_icon(ui, None, label, count, selected)
+}
+
+/// [`tab`] with an optional icon before the label.
+pub fn tab_icon(
+    ui: &mut Ui,
+    icon: Option<&str>,
+    label: &str,
+    count: Option<usize>,
+    selected: bool,
+) -> Response {
     let p = palette(ui.ctx());
     let ink = if selected { p.strong } else { p.muted };
     let g = caps(ui, label, HUD, mono_bold(), ink);
@@ -528,8 +539,11 @@ pub fn tab(ui: &mut Ui, label: &str, count: Option<usize>, selected: bool) -> Re
         )
     });
     let extra = cg.as_ref().map_or(0.0, |c| c.size().x + 8.0);
-    let (rect, resp) =
-        ui.allocate_exact_size(vec2(g.size().x + extra + 24.0, CONTROL_H), Sense::click());
+    let icon_w = if icon.is_some() { 20.0 } else { 0.0 };
+    let (rect, resp) = ui.allocate_exact_size(
+        vec2(g.size().x + extra + icon_w + 24.0, CONTROL_H),
+        Sense::click(),
+    );
     let fill = if selected {
         p.card
     } else if resp.hovered() {
@@ -551,12 +565,24 @@ pub fn tab(ui: &mut Ui, label: &str, count: Option<usize>, selected: bool) -> Re
     );
     let y = rect.center().y - g.size().y / 2.0;
     let gx = g.size().x;
+    if let Some(ic) = icon {
+        ui.painter().text(
+            egui::pos2(rect.left() + 12.0, rect.center().y),
+            Align2::LEFT_CENTER,
+            ic,
+            FontId::proportional(13.0),
+            if selected { p.accent_ink } else { p.muted },
+        );
+    }
     ui.painter()
-        .galley(egui::pos2(rect.left() + 12.0, y), g, ink);
+        .galley(egui::pos2(rect.left() + 12.0 + icon_w, y), g, ink);
     if let Some(c) = cg {
         let col = if selected { p.accent_ink } else { p.faint };
-        ui.painter()
-            .galley(egui::pos2(rect.left() + 12.0 + gx + 8.0, y), c, col);
+        ui.painter().galley(
+            egui::pos2(rect.left() + 12.0 + icon_w + gx + 8.0, y),
+            c,
+            col,
+        );
     }
     resp
 }

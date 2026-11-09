@@ -367,6 +367,20 @@ impl ConsoleApp {
             Dialog::Updates { .. } => (tr("Yangilanishlar"), 600.0),
         };
 
+        let header_icon = match dialog {
+            Dialog::Message { .. } => icons::MESSAGE_SQUARE_TEXT,
+            Dialog::Launch { .. } => icons::GLOBE,
+            Dialog::File(_) => icons::FILE_UP,
+            Dialog::Apps(_) => icons::BAN,
+            Dialog::Net { .. } => icons::GLOBE_LOCK,
+            Dialog::Power(_) => icons::POWER,
+            Dialog::Settings(_) => icons::SETTINGS,
+            Dialog::Room { .. } => icons::LAYOUT_GRID,
+            Dialog::Activity => icons::BELL,
+            Dialog::Freeze { .. } => icons::SNOWFLAKE,
+            Dialog::Rename { .. } => icons::SETTINGS,
+            Dialog::Updates { .. } => icons::DOWNLOAD,
+        };
         // Drawers slide in from the right; modals fade in at the centre.
         // Drawers hang flush on the right edge of the window, full height; modals drop
         // from the top edge right under the navbar and tabs. Nothing floats free.
@@ -414,6 +428,8 @@ impl ConsoleApp {
                     |ui| {
                         ui.spacing_mut().item_spacing.x = 0.0;
                         ui.add_space(20.0);
+                        ui.label(RichText::new(header_icon).size(17.0).color(p.accent_ink));
+                        ui.add_space(10.0);
                         ui.label(
                             RichText::new(title)
                                 .family(ui_kit::bold())
@@ -626,6 +642,13 @@ impl ConsoleApp {
             self.settings_applied(ctx, before);
         }
         self.settings_actions(ctx, settings_out);
+        if let Some(Dialog::Launch { bookmarks, .. }) = &self.dialog {
+            let mut c = self.cfg.write().unwrap();
+            if c.bookmarks != *bookmarks {
+                c.bookmarks = bookmarks.clone();
+                crate::config::save(&c);
+            }
+        }
         if let Some(Dialog::Message { text, send }) = &mut self.dialog {
             self.hub.lock().unwrap().unread = 0;
             if std::mem::take(send) && !text.trim().is_empty() && !targets.is_empty() {

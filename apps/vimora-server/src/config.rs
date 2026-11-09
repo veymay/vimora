@@ -54,6 +54,8 @@ pub struct ServerConfig {
     pub known_pcs: BTreeMap<String, KnownPc>,
     /// Sites opened recently (newest first), offered again in the "Sayt" window.
     pub recent_urls: Vec<String>,
+    /// Sites the teacher saved as favourites in the "Sayt" window.
+    pub bookmarks: Vec<String>,
     /// Shadow mode: folders kept across restarts (one per line).
     pub persistent_folders: String,
     /// Shadow Defender password on the student PCs (empty = its default, no password).
@@ -113,6 +115,7 @@ impl Default for ServerConfig {
             known: BTreeMap::new(),
             known_pcs: BTreeMap::new(),
             recent_urls: vec![],
+            bookmarks: vec![],
             persistent_folders: String::new(),
             shadow_password: String::new(),
             lock_title: lock_title.into(),

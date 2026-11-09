@@ -382,17 +382,24 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
     let painter = ui.painter();
     let fade = (v.time / 0.6).clamp(0.0, 1.0); // gentle fade-in
 
-    // Soft square halos behind the tile, breathing slowly (the design has no rounded shapes).
+    // Background: a calm vertical gradient with a soft green glow behind the lock tile.
     let c = pos2(rect.center().x, rect.center().y - 70.0);
-    let breathe = 0.5 + 0.5 * (v.time * 1.1).sin();
-    for (r, a) in [(300.0, 7.0), (210.0, 12.0), (140.0, 20.0), (92.0, 32.0)] {
-        let r = r + breathe * 8.0;
-        painter.rect_filled(
-            Rect::from_center_size(c, vec2(r * 2.0, r * 2.0)),
-            Rounding::ZERO,
-            p.accent.gamma_multiply(a / 255.0 * fade),
-        );
+    let top = Color32::from_rgb(0x1d, 0x1f, 0x1b);
+    let bottom = Color32::from_rgb(0x0e, 0x0f, 0x0d);
+    {
+        let mut mesh = egui::epaint::Mesh::default();
+        mesh.colored_vertex(rect.left_top(), top);
+        mesh.colored_vertex(rect.right_top(), top);
+        mesh.colored_vertex(rect.right_bottom(), bottom);
+        mesh.colored_vertex(rect.left_bottom(), bottom);
+        mesh.add_triangle(0, 1, 2);
+        mesh.add_triangle(0, 2, 3);
+        painter.add(egui::Shape::mesh(mesh));
     }
+    let breathe = 0.5 + 0.5 * (v.time * 0.9).sin();
+    glow(painter, c, 560.0 + breathe * 30.0, p.accent, 0.13 * fade);
+    glow(painter, c, 300.0 + breathe * 14.0, p.accent, 0.20 * fade);
+    glow(painter, c, 150.0, p.accent, 0.20 * fade);
     // Fine corner brackets: a quiet "locked" frame around the screen.
     let m = 28.0;
     let len = 46.0;
@@ -486,7 +493,7 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
     // The code boxes: like a phone's PIN screen.
     if let Some(n) = v.digits {
         y += 26.0;
-        let cell = vec2(46.0, 58.0);
+        let cell = vec2(56.0, 56.0);
         let gap = 12.0;
         let total = n as f32 * cell.x + (n as f32 - 1.0) * gap;
         let shake = v
@@ -536,9 +543,10 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
                 ),
             );
             if filled {
-                painter.rect_filled(
-                    Rect::from_center_size(r.center(), vec2(13.0, 13.0)),
-                    Rounding::ZERO,
+                // A typed digit shows as a dot, like a password field.
+                painter.circle_filled(
+                    r.center(),
+                    8.5,
                     if v.unlocked {
                         p.success
                     } else if wrong {
@@ -584,6 +592,30 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
         p.faint.gamma_multiply(fade),
     );
     let _ = Color32::WHITE;
+}
+
+/// A soft round glow: a triangle fan fading from `color` at the centre to nothing at `radius`.
+fn glow(
+    painter: &egui::Painter,
+    centre: egui::Pos2,
+    radius: f32,
+    color: egui::Color32,
+    alpha: f32,
+) {
+    let mut mesh = egui::epaint::Mesh::default();
+    mesh.colored_vertex(centre, color.gamma_multiply(alpha));
+    const N: usize = 72;
+    for i in 0..N {
+        let a = i as f32 / N as f32 * std::f32::consts::TAU;
+        mesh.colored_vertex(
+            centre + egui::vec2(a.cos(), a.sin()) * radius,
+            egui::Color32::TRANSPARENT,
+        );
+    }
+    for i in 0..N {
+        mesh.add_triangle(0, 1 + i as u32, 1 + ((i + 1) % N) as u32);
+    }
+    painter.add(egui::Shape::mesh(mesh));
 }
 
 fn return_blocked(painter: &egui::Painter, x: f32, y: f32, secs: u64, col: egui::Color32) {

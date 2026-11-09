@@ -220,9 +220,10 @@ impl ConsoleApp {
             Ok("launch") => {
                 app.dev_open = Some(Dialog::Launch {
                     web: true,
-                    url: "https://".into(),
+                    url: String::new(),
                     program: String::new(),
                     args: String::new(),
+                    bookmarks: vec!["youtube.com".into(), "wikipedia.org".into()],
                 })
             }
             _ => {}
@@ -664,12 +665,16 @@ impl ConsoleApp {
                     });
                 }
             }
-            Menu::Web | Menu::Program => self.open_dialog(Dialog::Launch {
-                web: m == Menu::Web,
-                url: "https://".into(),
-                program: String::new(),
-                args: String::new(),
-            }),
+            Menu::Web | Menu::Program => {
+                let bookmarks = self.cfg.read().unwrap().bookmarks.clone();
+                self.open_dialog(Dialog::Launch {
+                    web: m == Menu::Web,
+                    url: String::new(),
+                    program: String::new(),
+                    args: String::new(),
+                    bookmarks,
+                })
+            }
             Menu::File => self.open_dialog(Dialog::File(String::new())),
             Menu::Net => self.open_dialog(self.net_dialog()),
             Menu::Apps => {

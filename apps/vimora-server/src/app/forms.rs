@@ -154,48 +154,23 @@ pub(super) fn dialog_body(
             url,
             program,
             args,
+            bookmarks,
         } => {
             ui_kit::segmented(p).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    if ui_kit::tab(ui, tr("Sayt"), None, *web).clicked() {
+                    if ui_kit::tab_icon(ui, Some(icons::GLOBE), tr("Sayt"), None, *web).clicked() {
                         *web = true;
                     }
-                    if ui_kit::tab(ui, tr("Dastur"), None, !*web).clicked() {
+                    if ui_kit::tab_icon(ui, Some(icons::PLAY), tr("Dastur"), None, !*web).clicked()
+                    {
                         *web = false;
                     }
                 });
             });
             ui.add_space(10.0);
             if *web {
-                let r = wide(ui, url, tr("Sayt manzili yoki qidiruv: youtube.com"));
-                if ui.memory(|m| m.focused().is_none()) {
-                    r.request_focus();
-                }
-                if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                    *confirm = true;
-                }
-                if let Some(u) = crate::app::overlay::normalize_url(url) {
-                    ui.add_space(4.0);
-                    ui.label(
-                        RichText::new(with_icon(icons::GLOBE, &u))
-                            .size(12.0)
-                            .color(p.faint),
-                    );
-                }
-                if !cx.recent.is_empty() {
-                    ui.add_space(8.0);
-                    ui_kit::hud(ui, tr("Oxirgi saytlar"), p.muted);
-                    ui.add_space(2.0);
-                    for r in cx.recent {
-                        let short = r
-                            .trim_start_matches("https://")
-                            .trim_start_matches("http://");
-                        if ui_kit::button(ui, Some(icons::GLOBE), short, Kind::Outline).clicked() {
-                            *url = r.clone();
-                        }
-                    }
-                }
+                launch_site(ui, p, url, bookmarks, confirm, cx);
             } else {
                 wide(
                     ui,
@@ -316,6 +291,162 @@ pub(super) fn dialog_body(
                 .color(p.faint),
             );
         }
+    }
+}
+
+/// "https://www.youtube.com/" → "youtube.com": what the teacher sees; the scheme stays hidden.
+pub(super) fn site_label(u: &str) -> String {
+    u.trim()
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_start_matches("www.")
+        .trim_end_matches('/')
+        .to_string()
+}
+
+/// The "Sayt" tab: one box (no `https://` to type or see), favourites, recent sites.
+fn launch_site(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    url: &mut String,
+    bookmarks: &mut Vec<String>,
+    confirm: &mut bool,
+    cx: &FormCtx<'_>,
+) {
+    let norm = crate::app::overlay::normalize_url(url);
+    let saved = norm.as_ref().and_then(|u| {
+        let l = site_label(u);
+        bookmarks.iter().position(|b| site_label(b) == l)
+    });
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        let r = ui.add(
+            ui_kit::text_field(url)
+                .hint_text(tr("youtube.com yoki qidiruv so'zi"))
+                .desired_width(ui.available_width() - 150.0),
+        );
+        if ui.memory(|m| m.focused().is_none()) {
+            r.request_focus();
+        }
+        if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+            *confirm = true;
+        }
+        ui.add_enabled_ui(norm.is_some(), |ui| {
+            let (ic, label) = if saved.is_some() {
+                (icons::BOOKMARK_CHECK, tr("Saqlangan"))
+            } else {
+                (icons::BOOKMARK_PLUS, tr("Saqlash"))
+            };
+            if ui_kit::button(ui, Some(ic), label, Kind::Outline)
+                .tip(tr("Saralangan saytlarga qo'shish / olib tashlash"))
+                .clicked()
+            {
+                match (saved, &norm) {
+                    (Some(i), _) => {
+                        bookmarks.remove(i);
+                    }
+                    (None, Some(u)) => bookmarks.push(u.clone()),
+                    _ => {}
+                }
+            }
+        });
+    });
+
+    // Favourites: one click opens the site on the students' screens.
+    ui.add_space(12.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        ui.label(RichText::new(icons::BOOKMARK).size(13.0).color(p.muted));
+        ui_kit::hud(ui, tr("Saralangan saytlar"), p.muted);
+    });
+    ui.add_space(4.0);
+    if bookmarks.is_empty() {
+        ui.label(
+            RichText::new(tr("Hali yo'q. Sayt manzilini yozib \"Saqlash\" ni bosing."))
+                .size(12.5)
+                .color(p.faint),
+        );
+    } else {
+        let mut remove: Option<usize> = None;
+        Frame::none()
+            .stroke(Stroke::new(1.0_f32, p.line))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for (i, b) in bookmarks.iter().enumerate() {
+                    let (rect, resp) =
+                        ui.allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::click());
+                    if i > 0 {
+                        ui.painter().hline(
+                            rect.x_range(),
+                            rect.top(),
+                            Stroke::new(1.0_f32, p.line),
+                        );
+                    }
+                    let x_rect = Rect::from_center_size(
+                        pos2(rect.right() - 20.0, rect.center().y),
+                        vec2(28.0, 28.0),
+                    );
+                    let x_resp = ui.interact(x_rect, resp.id.with("x"), Sense::click());
+                    if resp.hovered() {
+                        ui.painter().rect_filled(rect, Rounding::ZERO, p.hover);
+                    }
+                    ui.painter().text(
+                        pos2(rect.left() + 18.0, rect.center().y),
+                        Align2::CENTER_CENTER,
+                        icons::GLOBE,
+                        FontId::proportional(14.0),
+                        p.accent_ink,
+                    );
+                    let t = ui_kit::truncated(
+                        ui,
+                        &site_label(b),
+                        FontId::new(13.5, ui_kit::medium()),
+                        p.text,
+                        rect.width() - 90.0,
+                    );
+                    ui.painter().galley(
+                        pos2(rect.left() + 38.0, rect.center().y - t.size().y / 2.0),
+                        t,
+                        p.text,
+                    );
+                    ui.painter().text(
+                        x_rect.center(),
+                        Align2::CENTER_CENTER,
+                        icons::X,
+                        FontId::proportional(13.0),
+                        if x_resp.hovered() { p.danger } else { p.faint },
+                    );
+                    x_resp.clone().tip(tr("Olib tashlash"));
+                    if x_resp.clicked() {
+                        remove = Some(i);
+                    } else if resp.clicked() {
+                        *url = b.clone();
+                        *confirm = true;
+                    }
+                }
+            });
+        if let Some(i) = remove {
+            bookmarks.remove(i);
+        }
+    }
+
+    if !cx.recent.is_empty() {
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            ui.label(RichText::new(icons::HISTORY).size(13.0).color(p.muted));
+            ui_kit::hud(ui, tr("Oxirgi saytlar"), p.muted);
+        });
+        ui.add_space(4.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+            for r in cx.recent {
+                if ui_kit::button(ui, None, &site_label(r), Kind::Ghost).clicked() {
+                    *url = r.clone();
+                }
+            }
+        });
     }
 }
 
@@ -624,12 +755,12 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
     ui_kit::segmented(p).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
-            for (t, label) in [
-                (ShadowTab::Protection, tr("Himoya")),
-                (ShadowTab::Commit, "Commit"),
-                (ShadowTab::Settings, tr("Sozlama")),
+            for (t, ic, label) in [
+                (ShadowTab::Protection, icons::SHIELD, tr("Himoya")),
+                (ShadowTab::Commit, icons::GIT_COMMIT, "Commit"),
+                (ShadowTab::Settings, icons::SETTINGS, tr("Sozlama")),
             ] {
-                if ui_kit::tab(ui, label, None, *f.tab == t).clicked() {
+                if ui_kit::tab_icon(ui, Some(ic), label, None, *f.tab == t).clicked() {
                     *f.tab = t;
                 }
             }
@@ -1069,12 +1200,12 @@ pub(super) fn updates_form(
     ui_kit::segmented(p).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
-            for (m, label) in [
-                (OsUpdateMode::Auto, tr("Avtomatik")),
-                (OsUpdateMode::Manual, tr("Faqat konsoldan")),
-                (OsUpdateMode::Disabled, tr("O'chirilgan")),
+            for (m, ic, label) in [
+                (OsUpdateMode::Auto, icons::REFRESH_CW, tr("Avtomatik")),
+                (OsUpdateMode::Manual, icons::DOWNLOAD, tr("Faqat konsoldan")),
+                (OsUpdateMode::Disabled, icons::BAN, tr("O'chirilgan")),
             ] {
-                if ui_kit::tab(ui, label, None, policy.os == m).clicked() {
+                if ui_kit::tab_icon(ui, Some(ic), label, None, policy.os == m).clicked() {
                     policy.os = m;
                 }
             }
@@ -1157,20 +1288,27 @@ pub(super) fn net_form(
     ui_kit::segmented(p).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
-            for (t, label, n) in [
+            for (t, ic, label, n) in [
                 (
                     NetTab::Domains,
+                    icons::GLOBE_LOCK,
                     tr("Saytlar"),
                     Some(split_list(domains).len()),
                 ),
                 (
                     NetTab::Keywords,
+                    icons::TEXT_SEARCH,
                     tr("Kalit so'zlar"),
                     Some(split_list(keywords).len()),
                 ),
-                (NetTab::Search, tr("Xavfsiz qidiruv"), None),
+                (
+                    NetTab::Search,
+                    icons::SHIELD_CHECK,
+                    tr("Xavfsiz qidiruv"),
+                    None,
+                ),
             ] {
-                if ui_kit::tab(ui, label, n, *tab == t).clicked() {
+                if ui_kit::tab_icon(ui, Some(ic), label, n, *tab == t).clicked() {
                     *tab = t;
                 }
             }
