@@ -367,6 +367,24 @@ impl ConsoleApp {
             Dialog::Updates { .. } => (tr("Yangilanishlar"), 600.0),
         };
 
+        let count_label: Option<String> = if matches!(
+            dialog,
+            Dialog::Settings(_)
+                | Dialog::Freeze { .. }
+                | Dialog::Room { .. }
+                | Dialog::Activity
+                | Dialog::Rename { .. }
+                | Dialog::Message { .. }
+        ) {
+            None
+        } else {
+            let shown = if matches!(dialog, Dialog::Power(PowerChoice::Wake)) {
+                offline
+            } else {
+                n
+            };
+            Some(tf!("{n} ta kompyuterga", n = shown).to_uppercase())
+        };
         let header_icon = match dialog {
             Dialog::Message { .. } => icons::MESSAGE_SQUARE_TEXT,
             Dialog::Launch { .. } => icons::GLOBE,
@@ -431,11 +449,21 @@ impl ConsoleApp {
                         ui.label(RichText::new(header_icon).size(17.0).color(p.accent_ink));
                         ui.add_space(10.0);
                         ui.label(
-                            RichText::new(title)
-                                .family(ui_kit::bold())
-                                .size(16.0)
+                            RichText::new(title.to_uppercase())
+                                .family(ui_kit::mono_bold())
+                                .size(13.5)
                                 .color(p.strong),
                         );
+                        // How many computers it acts on, right after the title.
+                        if let Some(c) = &count_label {
+                            ui.add_space(10.0);
+                            ui.label(
+                                RichText::new(format!("·  {c}"))
+                                    .family(ui_kit::mono())
+                                    .size(11.5)
+                                    .color(p.muted),
+                            );
+                        }
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if ui_kit::icon_cell(ui, icons::X, HEADER_H, false)
                                 .on_hover_text(tr("Yopish (Esc)"))
@@ -483,26 +511,6 @@ impl ConsoleApp {
                         .inner_margin(Margin::symmetric(22.0, 18.0))
                         .show(ui, |ui| {
                             ui.set_width(width - 44.0);
-                            if !matches!(
-                                dialog,
-                                Dialog::Settings(_)
-                                    | Dialog::Freeze { .. }
-                                    | Dialog::Room { .. }
-                                    | Dialog::Activity
-                                    | Dialog::Rename { .. }
-                            ) {
-                                ui.horizontal(|ui| {
-                                    ui.label(RichText::new(icons::USERS).color(p.faint));
-                                    let shown =
-                                        if matches!(dialog, Dialog::Power(PowerChoice::Wake)) {
-                                            offline
-                                        } else {
-                                            n
-                                        };
-                                    ui_kit::hud(ui, &tf!("{n} ta kompyuterga", n = shown), p.muted);
-                                });
-                                ui.add_space(4.0);
-                            }
                             dialog_body(
                                 ui,
                                 p,
