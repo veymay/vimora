@@ -219,7 +219,9 @@ mod imp {
             {
                 Ok(r) => r,
                 Err(e) if std::env::var("XDG_SESSION_TYPE").is_ok_and(|t| t == "wayland") => {
-                    bail!("Wayland session: screen capture needs an X11 (Xorg) session ({e})")
+                    // The console turns this marker into a plain-language hint.
+                    let _ = &e;
+                    bail!("WAYLAND")
                 }
                 Err(e) => return Err(e.into()),
             };

@@ -57,6 +57,8 @@ pub(super) struct SettingsOut {
     pub(super) restart: bool,
     pub(super) update_students: bool,
     pub(super) push_policy: bool,
+    pub(super) backup_save: bool,
+    pub(super) backup_load: bool,
 }
 
 pub(super) const SETTINGS_W: f32 = 880.0;
@@ -188,7 +190,7 @@ pub(super) fn settings_page(
                                 ui.set_width(SETTINGS_W - NAV_W - 52.0);
                                 ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
                                 match tab {
-                                    SettingsTab::General => general(ui, p, c),
+                                    SettingsTab::General => general(ui, p, c, out),
                                     SettingsTab::Appearance => appearance(ui, p, c),
                                     SettingsTab::LockScreen => lock_screen(ui, p, c),
                                     SettingsTab::Students => students(ui, p, c, cx, out),
@@ -384,7 +386,7 @@ fn note(ui: &mut egui::Ui, p: &Palette, text: &str) {
 // ---------------------------------------------------------------------------------------------
 // Sections
 
-fn general(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
+fn general(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig, out: &mut SettingsOut) {
     heading(ui, p, tr("Umumiy"));
     row(ui, p, tr("Til"), None, |ui| {
         let items: Vec<(Lang, &str)> = Lang::ALL.iter().map(|l| (*l, l.native_name())).collect();
@@ -403,9 +405,38 @@ fn general(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
         ui,
         p,
         tr("Oynani to'liq ochish"),
-        Some(tr("Yoqilsa, konsol ekranni to'liq egallab ochiladi. O'chiq bo'lsa — eng kichik o'lchamda (1120 × 640) ochiladi. Keyingi ishga tushirishda kuchga kiradi.")),
+        Some(tr("Yoqilsa, konsol to'liq ekranda ochiladi. Aks holda oyna o'lchami doim bir xil (1280 × 760).")),
         |ui| {
             ui_kit::toggle(ui, &mut c.start_maximized);
+        },
+    );
+    row(
+        ui,
+        p,
+        tr("Ovozli signallar"),
+        Some(tr(
+            "Natija, xato va o'quvchi ogohlantirishlarida qisqa ovoz chiqadi.",
+        )),
+        |ui| {
+            if ui_kit::toggle(ui, &mut c.sounds).changed() && c.sounds {
+                crate::sound::play(crate::sound::Sound::Ok);
+            }
+        },
+    );
+    row(
+        ui,
+        p,
+        tr("Zaxira nusxa"),
+        Some(tr(
+            "Barcha sozlamalar, xonalar va ro'yxatlar bitta faylga saqlanadi yoki undan tiklanadi.",
+        )),
+        |ui| {
+            if ui_kit::button(ui, Some(icons::FILE_UP), tr("Tiklash"), Kind::Outline).clicked() {
+                out.backup_load = true;
+            }
+            if ui_kit::button(ui, Some(icons::DOWNLOAD), tr("Saqlash"), Kind::Outline).clicked() {
+                out.backup_save = true;
+            }
         },
     );
 }
@@ -556,43 +587,96 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
                 .color(p.warning),
         );
     }
-    // Preview of what students see.
+    // Live preview: what the student sees with these texts and this code.
     heading(ui, p, tr("Ko'rinishi"));
     let w = ui.available_width();
-    let (r, _) = ui.allocate_exact_size(vec2(w, 170.0), Sense::hover());
-    ui.painter()
-        .rect_filled(r, Rounding::ZERO, Color32::from_rgb(0x14, 0x14, 0x13));
-    ui.painter().text(
-        pos2(r.center().x, r.top() + 46.0),
+    let (r, _) = ui.allocate_exact_size(vec2(w, 230.0), Sense::hover());
+    let d = ui_kit::DARK;
+    let painter = ui.painter().with_clip_rect(r);
+    {
+        let (top, bottom) = (
+            Color32::from_rgb(0x1d, 0x1f, 0x1b),
+            Color32::from_rgb(0x0e, 0x0f, 0x0d),
+        );
+        let mut mesh = egui::epaint::Mesh::default();
+        mesh.colored_vertex(r.left_top(), top);
+        mesh.colored_vertex(r.right_top(), top);
+        mesh.colored_vertex(r.right_bottom(), bottom);
+        mesh.colored_vertex(r.left_bottom(), bottom);
+        mesh.add_triangle(0, 1, 2);
+        mesh.add_triangle(0, 2, 3);
+        painter.add(egui::Shape::mesh(mesh));
+    }
+    let has_code = vimora_core::pin::valid(&c.unlock_pin);
+    let has_text = !c.lock_title.trim().is_empty() || !c.lock_message.trim().is_empty();
+    let mut y = r.top() + if has_code || has_text { 30.0 } else { 80.0 };
+    // Soft glow + tile.
+    let centre = pos2(r.center().x, y + 24.0);
+    {
+        let mut mesh = egui::epaint::Mesh::default();
+        mesh.colored_vertex(centre, d.accent.gamma_multiply(0.28));
+        const N: u32 = 40;
+        for i in 0..N {
+            let a = i as f32 / N as f32 * std::f32::consts::TAU;
+            mesh.colored_vertex(
+                centre + vec2(a.cos(), a.sin()) * 120.0,
+                Color32::TRANSPARENT,
+            );
+        }
+        for i in 0..N {
+            mesh.add_triangle(0, 1 + i, 1 + (i + 1) % N);
+        }
+        painter.add(egui::Shape::mesh(mesh));
+    }
+    painter.rect_filled(
+        Rect::from_center_size(centre, vec2(48.0, 48.0)),
+        Rounding::ZERO,
+        d.accent,
+    );
+    painter.text(
+        centre,
         Align2::CENTER_CENTER,
         icons::LOCK,
-        FontId::proportional(30.0),
-        ui_kit::DARK.accent_ink,
+        FontId::proportional(22.0),
+        d.on_accent,
     );
-    let t = ui_kit::truncated(
-        ui,
-        &c.lock_title,
-        FontId::new(18.0, ui_kit::bold()),
-        Color32::WHITE,
-        w - 40.0,
-    );
-    ui.painter().galley(
-        pos2(r.center().x - t.size().x / 2.0, r.top() + 80.0),
-        t,
-        Color32::WHITE,
-    );
-    let m = ui_kit::truncated(
-        ui,
-        &c.lock_message,
-        FontId::proportional(13.0),
-        ui_kit::DARK.muted,
-        w - 40.0,
-    );
-    ui.painter().galley(
-        pos2(r.center().x - m.size().x / 2.0, r.top() + 114.0),
-        m,
-        ui_kit::DARK.muted,
-    );
+    y += 62.0;
+    if !c.lock_title.trim().is_empty() {
+        let t = ui_kit::truncated(
+            ui,
+            &c.lock_title,
+            FontId::new(18.0, ui_kit::bold()),
+            Color32::WHITE,
+            w - 40.0,
+        );
+        painter.galley(pos2(r.center().x - t.size().x / 2.0, y), t, Color32::WHITE);
+        y += 28.0;
+    }
+    if !c.lock_message.trim().is_empty() {
+        let m = ui_kit::truncated(
+            ui,
+            &c.lock_message,
+            FontId::proportional(13.0),
+            d.muted,
+            w - 40.0,
+        );
+        painter.galley(pos2(r.center().x - m.size().x / 2.0, y), m, d.muted);
+        y += 24.0;
+    }
+    if has_code {
+        y += 10.0;
+        let n = c.unlock_pin.len() as f32;
+        let (cell, gap) = (26.0, 6.0);
+        let x0 = r.center().x - (n * cell + (n - 1.0) * gap) / 2.0;
+        for i in 0..c.unlock_pin.len() {
+            let cr = Rect::from_min_size(pos2(x0 + i as f32 * (cell + gap), y), vec2(cell, cell));
+            painter.rect_filled(cr, Rounding::ZERO, d.sunken);
+            painter.rect_stroke(cr, Rounding::ZERO, Stroke::new(1.0_f32, d.line_strong));
+            if i < 2 {
+                painter.circle_filled(cr.center(), 4.0, d.accent);
+            }
+        }
+    }
 }
 
 fn students(
@@ -717,8 +801,11 @@ fn updates(
                     },
                 ),
             };
-            ui.label(RichText::new(ic).size(22.0).color(col));
+            ui.add_space(2.0);
+            ui.label(RichText::new(ic).size(34.0).color(col));
+            ui.add_space(6.0);
             ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
                 ui.label(
                     RichText::new(tf!("Vimora {v}", v = vimora_update::current()))
                         .family(ui_kit::bold())

@@ -64,6 +64,7 @@ pub fn run() -> anyhow::Result<()> {
             .with_inner_size([STRIP_W, 640.0])
             // Hidden until it has been moved to the right screen edge (no jump on start).
             .with_visible(false),
+        renderer: crate::ui_renderer(),
         ..Default::default()
     };
     let i2 = inbox.clone();

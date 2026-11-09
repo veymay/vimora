@@ -86,6 +86,10 @@ pub struct ConsoleApp {
     zoom_acc: f32,
     /// Computers to put into the room the "new room" dialog creates.
     pending_assign: Vec<String>,
+    /// A file dialog running on its own thread (backup, import).
+    file_job: Option<std::sync::mpsc::Receiver<FileResult>>,
+    /// Last time the window was snapped back to its fixed size.
+    last_resize: Option<Instant>,
     textures: HashMap<u64, (u64, TextureHandle)>,
     dialog: Option<Dialog>,
     viewer: Option<Viewer>,
@@ -145,6 +149,8 @@ impl ConsoleApp {
             visible_order: vec![],
             zoom_acc: 1.0,
             pending_assign: vec![],
+            file_job: None,
+            last_resize: None,
             textures: HashMap::new(),
             dialog: None,
             viewer: None,
@@ -224,6 +230,7 @@ impl ConsoleApp {
                     program: String::new(),
                     args: String::new(),
                     bookmarks: vec!["youtube.com".into(), "wikipedia.org".into()],
+                    recent: vec!["kun.uz".into(), "google.com/search?q=dars".into()],
                 })
             }
             _ => {}
@@ -245,6 +252,7 @@ impl ConsoleApp {
                         user: "Ali".into(),
                         os: "windows".into(),
                         ip: format!("192.168.1.{}", 40 + i),
+                        version: "0.3.6".into(),
                         mac: format!("aabbccdd00{:02x}", 10 + i),
                         last_seen: crate::net::unix_now() - 3600 * (i as u64 + 1) * 5,
                     },
@@ -335,6 +343,8 @@ impl ConsoleApp {
                     priv_counter: 0,
                     apps: None,
                     changes: demo_changes,
+                    version: "0.3.7".into(),
+                    cursor: 0,
                 },
             );
             if let (Some(r), true) = (rooms.first(), i % 2 == 0) {
@@ -425,6 +435,8 @@ impl ConsoleApp {
                 online_secs: s.connected_at.elapsed().as_secs(),
                 online: true,
                 last_seen: 0,
+                version: s.version.clone(),
+                cursor: s.cursor,
             })
             .collect();
         // Computers seen before but not connected now stay in the list, greyed out.
@@ -453,6 +465,8 @@ impl ConsoleApp {
                 online_secs: 0,
                 online: false,
                 last_seen: k.last_seen,
+                version: k.version.clone(),
+                cursor: 0,
                 key,
             });
         }
@@ -487,6 +501,49 @@ impl ConsoleApp {
             c.assignments.remove(k);
         }
         config::save(&c);
+    }
+
+    /// The window is either maximized / fullscreen or exactly [`crate::MIN_WINDOW`]: a
+    /// half-resized console would squeeze the navbar. Dragging an edge snaps back.
+    fn keep_window_size(&mut self, ctx: &egui::Context) {
+        let (max, full, size) = ctx.input(|i| {
+            let v = i.viewport();
+            (
+                v.maximized.unwrap_or(false),
+                v.fullscreen.unwrap_or(false),
+                v.inner_rect.map(|r| r.size()),
+            )
+        });
+        let want = egui::Vec2::from(crate::MIN_WINDOW);
+        let Some(size) = size else { return };
+        if max || full || (size - want).abs().max_elem() < 2.0 {
+            return;
+        }
+        if self
+            .last_resize
+            .is_some_and(|t| t.elapsed() < Duration::from_millis(250))
+        {
+            ctx.request_repaint_after(Duration::from_millis(250));
+            return;
+        }
+        self.last_resize = Some(Instant::now());
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(want));
+    }
+
+    /// Plays what the network thread queued (results, warnings, student alerts).
+    fn play_sounds(&mut self) {
+        let queued = std::mem::take(&mut self.hub.lock().unwrap().sounds);
+        if queued.is_empty() || !self.cfg.read().unwrap().sounds {
+            return;
+        }
+        // One sound per frame is plenty: the most urgent wins.
+        use crate::sound::Sound;
+        let pick = [Sound::Alert, Sound::Warn, Sound::Ok]
+            .into_iter()
+            .find(|s| queued.contains(s));
+        if let Some(s) = pick {
+            crate::sound::play(s);
+        }
     }
 
     fn send(&self, ids: &[u64], cmd: Command, what: &str) {
@@ -635,22 +692,16 @@ impl ConsoleApp {
             domains: c.web_blocklist.clone(),
             keywords: c.keyword_blocklist.clone(),
             safe: c.safe_search,
+            entry: String::new(),
+            import: false,
         }
     }
 
     fn menu(&mut self, m: Menu, all: &[View]) {
         let t = self.targets(all);
         match m {
-            Menu::Lock => {
-                let all_locked = !t.is_empty()
-                    && t.iter()
-                        .all(|id| all.iter().any(|v| v.id == *id && v.status.locked));
-                if all_locked {
-                    self.send(&t, Command::Unlock, tr("Qulfdan chiqarish"));
-                } else {
-                    self.lock(&t);
-                }
-            }
+            Menu::Lock => self.lock(&t),
+            Menu::Unlock => self.send(&t, Command::Unlock, tr("Qulfdan chiqarish")),
             Menu::Show => {
                 let on = !self.showing;
                 self.set_show(on, all);
@@ -666,13 +717,17 @@ impl ConsoleApp {
                 }
             }
             Menu::Web | Menu::Program => {
-                let bookmarks = self.cfg.read().unwrap().bookmarks.clone();
+                let (bookmarks, recent) = {
+                    let c = self.cfg.read().unwrap();
+                    (c.bookmarks.clone(), c.recent_urls.clone())
+                };
                 self.open_dialog(Dialog::Launch {
                     web: m == Menu::Web,
                     url: String::new(),
                     program: String::new(),
                     args: String::new(),
                     bookmarks,
+                    recent,
                 })
             }
             Menu::File => self.open_dialog(Dialog::File(String::new())),
@@ -786,6 +841,8 @@ impl ConsoleApp {
 impl eframe::App for ConsoleApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.now_frame += 1;
+        self.keep_window_size(ctx);
+        self.play_sounds();
         self.snapshots(ctx);
         let want = self.wanted_theme(ctx);
         self.set_theme(ctx, want);
@@ -887,4 +944,14 @@ pub(super) fn offline_id(key: &str) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     key.hash(&mut h);
     h.finish() | (1 << 63)
+}
+
+/// What a background file dialog came back with.
+pub(super) enum FileResult {
+    /// Lines of a text file to add to a block list.
+    NetImport(String),
+    /// The backup was written (path) or failed (message).
+    BackupSaved(Result<String, String>),
+    /// Content of a backup file to restore.
+    BackupLoaded(Result<String, String>),
 }

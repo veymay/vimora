@@ -20,7 +20,7 @@ bincode.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-eframe.workspace = true
+eframe = { workspace = true, features = ["wgpu"] }
 egui.workspace = true
 image.workspace = true
 dirs.workspace = true

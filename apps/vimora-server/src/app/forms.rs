@@ -52,29 +52,53 @@ pub(super) fn activity_body(
         ui.add_space(20.0);
         ui.vertical_centered(|ui| ui_kit::hud(ui, tr("Hozircha hech narsa yo'q"), p.faint));
     }
+    ui.add_space(4.0);
+    // One clean line per event: coloured edge, icon, time, then the text (two lines at most;
+    // the whole message is in the tooltip).
+    let w = ui.available_width();
     for e in h.log.iter() {
         let (ic, col) = match e.level {
             Level::Info => (icons::INFO, p.muted),
             Level::Ok => (icons::CIRCLE_CHECK, p.success),
             Level::Warn => (icons::TRIANGLE_ALERT, p.warning),
         };
-        Frame::none()
-            .fill(p.bg)
-            .rounding(Rounding::ZERO)
-            .inner_margin(Margin::symmetric(10.0, 8.0))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new(ic).color(col));
-                    ui.label(
-                        RichText::new(&e.time)
-                            .size(11.0)
-                            .color(p.faint)
-                            .family(ui_kit::mono()),
-                    );
-                    ui.label(RichText::new(&e.text).size(13.0));
-                });
-            });
+        let short: String = if e.text.chars().count() > 150 {
+            e.text.chars().take(147).collect::<String>() + "…"
+        } else {
+            e.text.clone()
+        };
+        let text_w = w - 100.0;
+        let g = ui
+            .painter()
+            .layout(short, FontId::proportional(13.0), p.text, text_w);
+        let hgt = (g.size().y + 18.0).max(38.0);
+        let (rect, resp) = ui.allocate_exact_size(vec2(w, hgt), Sense::hover());
+        ui.painter().rect_filled(rect, Rounding::ZERO, p.bg);
+        ui.painter().rect_filled(
+            Rect::from_min_size(rect.min, vec2(3.0, rect.height())),
+            Rounding::ZERO,
+            col,
+        );
+        ui.painter().text(
+            pos2(rect.left() + 20.0, rect.top() + 19.0),
+            Align2::CENTER_CENTER,
+            ic,
+            FontId::proportional(14.0),
+            col,
+        );
+        ui.painter().text(
+            pos2(rect.left() + 36.0, rect.top() + 19.0),
+            Align2::LEFT_CENTER,
+            &e.time[..e.time.len().min(5)],
+            FontId::new(11.0, ui_kit::mono()),
+            p.faint,
+        );
+        ui.painter()
+            .galley(pos2(rect.left() + 86.0, rect.top() + 9.0), g, p.text);
+        if e.text.chars().count() > 150 {
+            resp.tip(&e.text);
+        }
+        ui.add_space(2.0);
     }
 }
 
@@ -84,8 +108,6 @@ pub(super) struct FormCtx<'a> {
     /// Offline computers the power window would wake, and how many have a known address.
     pub(super) offline: usize,
     pub(super) offline_with_mac: usize,
-    /// Sites opened recently.
-    pub(super) recent: &'a [String],
     pub(super) hub: &'a SharedHub,
     pub(super) all: &'a [View],
     pub(super) targets: &'a [u64],
@@ -155,6 +177,7 @@ pub(super) fn dialog_body(
             program,
             args,
             bookmarks,
+            recent,
         } => {
             ui_kit::segmented(p).show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -170,7 +193,7 @@ pub(super) fn dialog_body(
             });
             ui.add_space(10.0);
             if *web {
-                launch_site(ui, p, url, bookmarks, confirm, cx);
+                launch_site(ui, p, url, bookmarks, recent, confirm);
             } else {
                 wide(
                     ui,
@@ -208,7 +231,9 @@ pub(super) fn dialog_body(
             domains,
             keywords,
             safe,
-        } => net_form(ui, p, tab, domains, keywords, safe),
+            entry,
+            import,
+        } => net_form(ui, p, tab, domains, keywords, safe, entry, import),
         Dialog::Power(a) => {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
@@ -304,14 +329,75 @@ pub(super) fn site_label(u: &str) -> String {
         .to_string()
 }
 
+/// One row of a site list: globe, name, optional action icons on the right.
+/// Returns (row clicked, index of the action icon clicked).
+fn site_row(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    first: bool,
+    label: &str,
+    actions: &[(&str, Color32, &str)],
+) -> (bool, Option<usize>) {
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::click());
+    if !first {
+        ui.painter()
+            .hline(rect.x_range(), rect.top(), Stroke::new(1.0_f32, p.line));
+    }
+    if resp.hovered() {
+        ui.painter().rect_filled(rect, Rounding::ZERO, p.hover);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    ui.painter().text(
+        pos2(rect.left() + 18.0, rect.center().y),
+        Align2::CENTER_CENTER,
+        icons::GLOBE,
+        FontId::proportional(14.0),
+        p.accent_ink,
+    );
+    let t = ui_kit::truncated(
+        ui,
+        label,
+        FontId::new(13.5, ui_kit::medium()),
+        p.text,
+        rect.width() - 60.0 - 30.0 * actions.len() as f32,
+    );
+    ui.painter().galley(
+        pos2(rect.left() + 38.0, rect.center().y - t.size().y / 2.0),
+        t,
+        p.text,
+    );
+    let mut hit = None;
+    for (i, (icon, col, tip)) in actions.iter().enumerate() {
+        let r = Rect::from_center_size(
+            pos2(
+                rect.right() - 20.0 - 30.0 * (actions.len() - 1 - i) as f32,
+                rect.center().y,
+            ),
+            vec2(28.0, 28.0),
+        );
+        let ar = ui.interact(r, resp.id.with(("act", i)), Sense::click());
+        ui.painter().text(
+            r.center(),
+            Align2::CENTER_CENTER,
+            *icon,
+            FontId::proportional(14.0),
+            if ar.hovered() { *col } else { p.faint },
+        );
+        if ar.clone().tip(*tip).clicked() {
+            hit = Some(i);
+        }
+    }
+    (hit.is_none() && resp.clicked(), hit)
+}
+
 /// The "Sayt" tab: one box (no `https://` to type or see), favourites, recent sites.
 fn launch_site(
     ui: &mut egui::Ui,
     p: &Palette,
     url: &mut String,
     bookmarks: &mut Vec<String>,
+    recent: &mut Vec<String>,
     confirm: &mut bool,
-    cx: &FormCtx<'_>,
 ) {
     let norm = crate::app::overlay::normalize_url(url);
     let saved = norm.as_ref().and_then(|u| {
@@ -337,10 +423,7 @@ fn launch_site(
             } else {
                 (icons::BOOKMARK_PLUS, tr("Saqlash"))
             };
-            if ui_kit::button(ui, Some(ic), label, Kind::Outline)
-                .tip(tr("Saralangan saytlarga qo'shish / olib tashlash"))
-                .clicked()
-            {
+            if ui_kit::button(ui, Some(ic), label, Kind::Outline).clicked() {
                 match (saved, &norm) {
                     (Some(i), _) => {
                         bookmarks.remove(i);
@@ -353,16 +436,19 @@ fn launch_site(
     });
 
     // Favourites: one click opens the site on the students' screens.
-    ui.add_space(12.0);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
-        ui.label(RichText::new(icons::BOOKMARK).size(13.0).color(p.muted));
-        ui_kit::hud(ui, tr("Saralangan saytlar"), p.muted);
-    });
-    ui.add_space(4.0);
+    let head = |ui: &mut egui::Ui, icon: &str, title: &str| {
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            ui.label(RichText::new(icon).size(13.0).color(p.muted));
+            ui_kit::hud(ui, title, p.muted);
+        });
+        ui.add_space(4.0);
+    };
+    head(ui, icons::BOOKMARK, tr("Saralangan"));
     if bookmarks.is_empty() {
         ui.label(
-            RichText::new(tr("Hali yo'q. Sayt manzilini yozib \"Saqlash\" ni bosing."))
+            RichText::new(tr("Bo'sh. Manzil yozib \"Saqlash\" ni bosing."))
                 .size(12.5)
                 .color(p.faint),
         );
@@ -374,53 +460,16 @@ fn launch_site(
                 ui.set_width(ui.available_width());
                 ui.spacing_mut().item_spacing.y = 0.0;
                 for (i, b) in bookmarks.iter().enumerate() {
-                    let (rect, resp) =
-                        ui.allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::click());
-                    if i > 0 {
-                        ui.painter().hline(
-                            rect.x_range(),
-                            rect.top(),
-                            Stroke::new(1.0_f32, p.line),
-                        );
-                    }
-                    let x_rect = Rect::from_center_size(
-                        pos2(rect.right() - 20.0, rect.center().y),
-                        vec2(28.0, 28.0),
-                    );
-                    let x_resp = ui.interact(x_rect, resp.id.with("x"), Sense::click());
-                    if resp.hovered() {
-                        ui.painter().rect_filled(rect, Rounding::ZERO, p.hover);
-                    }
-                    ui.painter().text(
-                        pos2(rect.left() + 18.0, rect.center().y),
-                        Align2::CENTER_CENTER,
-                        icons::GLOBE,
-                        FontId::proportional(14.0),
-                        p.accent_ink,
-                    );
-                    let t = ui_kit::truncated(
+                    let (open, act) = site_row(
                         ui,
+                        p,
+                        i == 0,
                         &site_label(b),
-                        FontId::new(13.5, ui_kit::medium()),
-                        p.text,
-                        rect.width() - 90.0,
+                        &[(icons::X, p.danger, tr("Olib tashlash"))],
                     );
-                    ui.painter().galley(
-                        pos2(rect.left() + 38.0, rect.center().y - t.size().y / 2.0),
-                        t,
-                        p.text,
-                    );
-                    ui.painter().text(
-                        x_rect.center(),
-                        Align2::CENTER_CENTER,
-                        icons::X,
-                        FontId::proportional(13.0),
-                        if x_resp.hovered() { p.danger } else { p.faint },
-                    );
-                    x_resp.clone().tip(tr("Olib tashlash"));
-                    if x_resp.clicked() {
+                    if act.is_some() {
                         remove = Some(i);
-                    } else if resp.clicked() {
+                    } else if open {
                         *url = b.clone();
                         *confirm = true;
                     }
@@ -431,22 +480,59 @@ fn launch_site(
         }
     }
 
-    if !cx.recent.is_empty() {
-        ui.add_space(12.0);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 6.0;
-            ui.label(RichText::new(icons::HISTORY).size(13.0).color(p.muted));
-            ui_kit::hud(ui, tr("Oxirgi saytlar"), p.muted);
-        });
-        ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-            for r in cx.recent {
-                if ui_kit::button(ui, None, &site_label(r), Kind::Ghost).clicked() {
-                    *url = r.clone();
+    if !recent.is_empty() {
+        head(ui, icons::HISTORY, tr("Oxirgi"));
+        let mut remove: Option<usize> = None;
+        let mut star: Option<usize> = None;
+        Frame::none()
+            .stroke(Stroke::new(1.0_f32, p.line))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for (i, r) in recent.iter().enumerate() {
+                    let l = site_label(r);
+                    let is_saved = bookmarks.iter().any(|b| site_label(b) == l);
+                    let (open, act) = site_row(
+                        ui,
+                        p,
+                        i == 0,
+                        &l,
+                        &[
+                            (
+                                if is_saved {
+                                    icons::BOOKMARK_CHECK
+                                } else {
+                                    icons::BOOKMARK_PLUS
+                                },
+                                p.accent_ink,
+                                tr("Saralanganlarga"),
+                            ),
+                            (icons::X, p.danger, tr("Olib tashlash")),
+                        ],
+                    );
+                    match act {
+                        Some(0) => star = Some(i),
+                        Some(_) => remove = Some(i),
+                        None if open => {
+                            *url = r.clone();
+                            *confirm = true;
+                        }
+                        None => {}
+                    }
                 }
+            });
+        if let Some(i) = star {
+            let l = site_label(&recent[i]);
+            match bookmarks.iter().position(|b| site_label(b) == l) {
+                Some(j) => {
+                    bookmarks.remove(j);
+                }
+                None => bookmarks.push(recent[i].clone()),
             }
-        });
+        }
+        if let Some(i) = remove {
+            recent.remove(i);
+        }
     }
 }
 
@@ -1184,6 +1270,45 @@ pub(super) fn rename_form(
     }
 }
 
+/// One settings line inside a drawer: title (+ "?" help) on the left, a control on the right.
+fn srow(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    first: bool,
+    title: &str,
+    help: Option<&str>,
+    control: impl FnOnce(&mut egui::Ui),
+) {
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(vec2(w, 44.0), Sense::hover());
+    if !first {
+        ui.painter()
+            .hline(rect.x_range(), rect.top(), Stroke::new(1.0_f32, p.line));
+    }
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink2(vec2(12.0, 0.0)))
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    child.spacing_mut().item_spacing.x = 4.0;
+    child.label(RichText::new(title).size(13.5).color(p.text));
+    if let Some(h) = help {
+        ui_kit::info(&mut child, h);
+    }
+    child.with_layout(Layout::right_to_left(Align::Center), control);
+}
+
+/// A bordered group of [`srow`]s.
+fn sgroup(ui: &mut egui::Ui, p: &Palette, add: impl FnOnce(&mut egui::Ui)) {
+    Frame::none()
+        .stroke(Stroke::new(1.0_f32, p.line))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 0.0;
+            add(ui);
+        });
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn updates_form(
     ui: &mut egui::Ui,
@@ -1196,49 +1321,81 @@ pub(super) fn updates_form(
     all: &[View],
     targets: &[u64],
 ) {
-    section(ui, p, tr("Avtomatik yangilanish siyosati"));
-    ui_kit::segmented(p).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            for (m, ic, label) in [
-                (OsUpdateMode::Auto, icons::REFRESH_CW, tr("Avtomatik")),
-                (OsUpdateMode::Manual, icons::DOWNLOAD, tr("Faqat konsoldan")),
-                (OsUpdateMode::Disabled, icons::BAN, tr("O'chirilgan")),
-            ] {
-                if ui_kit::tab_icon(ui, Some(ic), label, None, policy.os == m).clicked() {
-                    policy.os = m;
-                }
-            }
-        });
+    section(ui, p, tr("Avtomatik"));
+    sgroup(ui, p, |ui| {
+        srow(
+            ui,
+            p,
+            true,
+            tr("Tizim"),
+            Some(tr("Avtomatik: tizim o'zi o'rnatadi. Qo'lda: faqat siz shu yerdan o'rnatasiz. O'chiq: yangilanmaydi.")),
+            |ui| {
+                ui_kit::segmented(p).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    // Right-to-left row: add last-first so they read in order.
+                    for (m, label) in [
+                        (OsUpdateMode::Disabled, tr("O'chiq")),
+                        (OsUpdateMode::Manual, tr("Qo'lda")),
+                        (OsUpdateMode::Auto, tr("Avto")),
+                    ] {
+                        if ui_kit::tab(ui, label, None, policy.os == m).clicked() {
+                            policy.os = m;
+                        }
+                    }
+                });
+            },
+        );
+        srow(
+            ui,
+            p,
+            false,
+            tr("Dasturlar"),
+            Some(tr("Store, Chrome, Edge, snap dasturlari o'zi yangilanadi.")),
+            |ui| {
+                ui_kit::toggle(ui, &mut policy.apps_auto);
+            },
+        );
+        srow(
+            ui,
+            p,
+            false,
+            "Vimora",
+            Some(tr("O'quvchi agenti yangi versiyani o'zi o'rnatadi.")),
+            |ui| {
+                ui_kit::toggle(ui, &mut policy.vimora);
+            },
+        );
     });
-    let hint = match policy.os {
-        OsUpdateMode::Auto => tr("Windows Update / apt o'zi yuklab, o'zi o'rnatadi."),
-        OsUpdateMode::Manual => {
-            tr("Kompyuterlar o'zi o'rnatmaydi; siz shu yerdan qachon o'rnatishni hal qilasiz.")
-        }
-        OsUpdateMode::Disabled => tr("Tizim yangilanishlari butunlay o'chiriladi."),
-    };
-    ui.label(RichText::new(hint).size(12.5).color(p.muted));
-    ui.checkbox(
-        &mut policy.apps_auto,
-        tr("Dasturlar o'zi yangilansin (Microsoft Store, Chrome, Edge, snap)"),
-    );
 
-    section(ui, p, tr("Hozir bajarish"));
-    ui.horizontal(|ui| {
-        ui.checkbox(os, tr("Tizim (Windows Update / apt)"));
-        ui.checkbox(apps, tr("Dasturlar (winget / snap)"));
+    section(ui, p, tr("Hozir o'rnatish"));
+    sgroup(ui, p, |ui| {
+        srow(ui, p, true, tr("Tizim"), None, |ui| {
+            ui_kit::toggle(ui, os);
+        });
+        srow(ui, p, false, tr("Dasturlar"), None, |ui| {
+            ui_kit::toggle(ui, apps);
+        });
+        srow(
+            ui,
+            p,
+            false,
+            tr("Qayta yuklash"),
+            Some(tr("Kerak bo'lsa, o'rnatgach kompyuter qayta yuklanadi.")),
+            |ui| {
+                ui_kit::toggle(ui, restart);
+            },
+        );
     });
-    ui.checkbox(restart, tr("Kerak bo'lsa qayta yuklash"));
+    ui.add_space(8.0);
     ui.horizontal(|ui| {
         if ui_kit::button(ui, Some(icons::REFRESH_CW), tr("Tekshirish"), Kind::Outline).clicked() {
             *request = Some(UpdateRequest::Check);
         }
-        if ui_kit::button(ui, Some(icons::DOWNLOAD), tr("O'rnatish"), Kind::Primary).clicked()
-            && (*os || *apps)
-        {
-            *request = Some(UpdateRequest::Install);
-        }
+        ui.add_enabled_ui(*os || *apps, |ui| {
+            if ui_kit::button(ui, Some(icons::DOWNLOAD), tr("O'rnatish"), Kind::Primary).clicked() {
+                *request = Some(UpdateRequest::Install);
+            }
+        });
     });
 
     section(ui, p, tr("Kompyuterlar"));
@@ -1256,27 +1413,174 @@ pub(super) fn updates_form(
         }
         (t, col)
     });
-    ui.add_space(6.0);
-    ui.label(
-        RichText::new(tr("Shadow rejimdagi kompyuterga yangilanish o'rnatilmaydi (qayta yuklanganda yo'qoladi) — Shadow → \"Xizmat rejimi\" ni ishlating."))
-            .size(12.0)
-            .color(p.faint),
-    );
 }
 
-pub(super) fn add_preset(list: &mut String, items: &[&str]) {
-    let existing: Vec<String> = split_list(list).iter().map(|s| s.to_lowercase()).collect();
-    for it in items {
-        if !existing.contains(&it.to_lowercase()) {
-            if !list.trim().is_empty() && !list.ends_with('\n') {
-                list.push('\n');
-            }
-            list.push_str(it);
-            list.push('\n');
+/// Block-list text ⇄ items. A leading `#` keeps an item in the list but switched off.
+fn list_items(s: &str) -> Vec<(bool, String)> {
+    split_list(s)
+        .into_iter()
+        .map(|i| match i.strip_prefix('#') {
+            Some(rest) => (false, rest.trim().to_string()),
+            None => (true, i),
+        })
+        .filter(|(_, t)| !t.is_empty())
+        .collect()
+}
+
+fn items_text(items: &[(bool, String)]) -> String {
+    items
+        .iter()
+        .map(|(on, t)| if *on { t.clone() } else { format!("#{t}") })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Adds lines to a block list, skipping what is already there. Returns how many were new.
+pub(super) fn add_lines(list: &mut String, text: &str) -> usize {
+    let mut items = list_items(list);
+    let mut added = 0;
+    for raw in split_list(text) {
+        let t = raw.trim_start_matches('#').trim().to_string();
+        if t.is_empty() || t.len() > 200 {
+            continue;
         }
+        if !items.iter().any(|(_, x)| x.eq_ignore_ascii_case(&t)) {
+            items.push((true, t));
+            added += 1;
+        }
+    }
+    *list = items_text(&items);
+    added
+}
+
+/// The editable list of one tab: add box, import, ready-made sets, rows with a switch and a
+/// delete button.
+#[allow(clippy::too_many_arguments)]
+fn block_list(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    list: &mut String,
+    entry: &mut String,
+    import: &mut bool,
+    hint: &str,
+    help: &str,
+    sets: &[(&str, &[&str])],
+) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        let r = ui.add(
+            ui_kit::text_field(entry)
+                .hint_text(hint)
+                .desired_width(ui.available_width() - 190.0),
+        );
+        let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+        if (ui_kit::button(ui, Some(icons::PLUS), tr("Qo'shish"), Kind::Outline).clicked() || enter)
+            && !entry.trim().is_empty()
+        {
+            add_lines(list, entry);
+            entry.clear();
+            r.request_focus();
+        }
+        if ui_kit::icon_cell(ui, icons::FILE_UP, ui_kit::CONTROL_H, false)
+            .tip(tr("Matn faylidan yuklash (har qatorda bittadan)"))
+            .clicked()
+        {
+            *import = true;
+        }
+        ui_kit::info(ui, help);
+    });
+    ui.add_space(8.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+        for (name, items) in sets {
+            if ui_kit::button(ui, Some(icons::PLUS), name, Kind::Ghost).clicked() {
+                add_lines(list, &items.join("\n"));
+            }
+        }
+    });
+    ui.add_space(8.0);
+
+    let mut items = list_items(list);
+    if items.is_empty() {
+        ui.label(
+            RichText::new(tr("Ro'yxat bo'sh."))
+                .size(12.5)
+                .color(p.faint),
+        );
+        return;
+    }
+    let on_count = items.iter().filter(|(on, _)| *on).count();
+    ui.horizontal(|ui| {
+        ui_kit::hud(
+            ui,
+            &tf!("{a} / {b} yoqilgan", a = on_count, b = items.len()),
+            p.muted,
+        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if ui_kit::button(
+                ui,
+                Some(icons::TRASH_2),
+                tr("Hammasini o'chirish"),
+                Kind::Ghost,
+            )
+            .clicked()
+            {
+                items.clear();
+            }
+        });
+    });
+    ui.add_space(4.0);
+    let mut remove: Option<usize> = None;
+    let mut changed = false;
+    Frame::none()
+        .stroke(Stroke::new(1.0_f32, p.line))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for (i, (on, text)) in items.iter_mut().enumerate() {
+                let w = ui.available_width();
+                let (rect, _) = ui.allocate_exact_size(vec2(w, 38.0), Sense::hover());
+                if i > 0 {
+                    ui.painter()
+                        .hline(rect.x_range(), rect.top(), Stroke::new(1.0_f32, p.line));
+                }
+                let mut child = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(rect.shrink2(vec2(10.0, 0.0)))
+                        .layout(Layout::left_to_right(Align::Center)),
+                );
+                child.spacing_mut().item_spacing.x = 10.0;
+                if ui_kit::toggle(&mut child, on).changed() {
+                    changed = true;
+                }
+                let g = ui_kit::truncated(
+                    &child,
+                    text,
+                    FontId::new(13.0, ui_kit::mono()),
+                    if *on { p.text } else { p.faint },
+                    w - 130.0,
+                );
+                child.label(egui::WidgetText::from(g));
+                child.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui_kit::icon_cell(ui, icons::X, 30.0, false)
+                        .tip(tr("Olib tashlash"))
+                        .clicked()
+                    {
+                        remove = Some(i);
+                    }
+                });
+            }
+        });
+    if let Some(i) = remove {
+        items.remove(i);
+        changed = true;
+    }
+    if changed || items.len() != list_items(list).len() {
+        *list = items_text(&items);
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn net_form(
     ui: &mut egui::Ui,
     p: &Palette,
@@ -1284,7 +1588,10 @@ pub(super) fn net_form(
     domains: &mut String,
     keywords: &mut String,
     safe: &mut bool,
+    entry: &mut String,
+    import: &mut bool,
 ) {
+    let before = *tab;
     ui_kit::segmented(p).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
@@ -1293,13 +1600,13 @@ pub(super) fn net_form(
                     NetTab::Domains,
                     icons::GLOBE_LOCK,
                     tr("Saytlar"),
-                    Some(split_list(domains).len()),
+                    Some(crate::config::active_list(domains).len()),
                 ),
                 (
                     NetTab::Keywords,
                     icons::TEXT_SEARCH,
                     tr("Kalit so'zlar"),
-                    Some(split_list(keywords).len()),
+                    Some(crate::config::active_list(keywords).len()),
                 ),
                 (
                     NetTab::Search,
@@ -1314,140 +1621,108 @@ pub(super) fn net_form(
             }
         })
     });
+    if *tab != before {
+        entry.clear();
+    }
     ui.add_space(12.0);
-    let presets = |ui: &mut egui::Ui, list: &mut String, sets: &[(&str, &[&str])]| {
-        ui_kit::hud(ui, tr("Tayyor ro'yxatlar"), p.faint);
-        ui.add_space(2.0);
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-            for (name, items) in sets {
-                if ui_kit::button(ui, Some(icons::PLUS), name, Kind::Outline).clicked() {
-                    add_preset(list, items);
-                }
-            }
-        });
-    };
     match tab {
-        NetTab::Domains => {
-            ui.label(
-                RichText::new(tr("Bu domenlar va ularning barcha subdomenlari ochilmaydi (hosts fayli + Chrome/Edge/Yandex/Brave siyosatlari)."))
-                    .color(p.muted),
-            );
-            ui.add_space(6.0);
-            presets(
-                ui,
-                domains,
-                &[
-                    (
-                        tr("Ijtimoiy tarmoqlar"),
-                        &[
-                            "instagram.com",
-                            "tiktok.com",
-                            "facebook.com",
-                            "vk.com",
-                            "ok.ru",
-                            "x.com",
-                            "twitter.com",
-                        ],
-                    ),
-                    (
-                        tr("O'yinlar"),
-                        &[
-                            "roblox.com",
-                            "steampowered.com",
-                            "epicgames.com",
-                            "poki.com",
-                            "crazygames.com",
-                            "miniclip.com",
-                        ],
-                    ),
-                    (
-                        tr("Video"),
-                        &["youtube.com", "twitch.tv", "rutube.ru", "kinopoisk.ru"],
-                    ),
-                ],
-            );
-            ui.add_space(6.0);
-            ui.add(
-                ui_kit::text_area(domains)
-                    .hint_text(tr("youtube.com\ntiktok.com"))
-                    .desired_rows(8)
-                    .desired_width(f32::INFINITY)
-                    .font(egui::TextStyle::Monospace),
-            );
-        }
-        NetTab::Keywords => {
-            ui.label(
-                RichText::new(
-                    tr("Google, Yandex, Bing, YouTube va boshqa qidiruv tizimlarida shu so'zlar qidirilsa, brauzer tabi darhol yopiladi, o'quvchiga ogohlantirish chiqadi va sizga xabar keladi. Har biri yangi qatorda; iboralar ham mumkin."),
-                )
-                .color(p.muted),
-            );
-            ui.add_space(6.0);
-            presets(
-                ui,
-                keywords,
-                &[
-                    (
-                        tr("Qimor"),
-                        &[
-                            "kazino",
-                            "casino",
-                            "1xbet",
-                            "poker",
-                            "stavka",
-                            "ставки",
-                            "казино",
-                        ],
-                    ),
-                    (
-                        tr("Kattalar uchun"),
-                        &["porn", "xxx", "18+", "порно", "sex"],
-                    ),
-                    (
-                        tr("O'yinlar"),
-                        &[
-                            "minecraft",
-                            "roblox",
-                            "fortnite",
-                            "o'yin yuklab",
-                            "скачать игру",
-                        ],
-                    ),
-                ],
-            );
-            ui.add_space(6.0);
-            ui.add(
-                ui_kit::text_area(keywords)
-                    .hint_text(tr("kazino\nreferat yuklab olish"))
-                    .desired_rows(8)
-                    .desired_width(f32::INFINITY)
-                    .font(egui::TextStyle::Monospace),
-            );
-        }
+        NetTab::Domains => block_list(
+            ui,
+            p,
+            domains,
+            entry,
+            import,
+            tr("sayt: tiktok.com"),
+            tr("Yoqilgan saytlar va ularning subdomenlari ochilmaydi."),
+            &[
+                (
+                    tr("Ijtimoiy tarmoqlar"),
+                    &[
+                        "instagram.com",
+                        "tiktok.com",
+                        "facebook.com",
+                        "vk.com",
+                        "ok.ru",
+                        "x.com",
+                        "twitter.com",
+                    ],
+                ),
+                (
+                    tr("O'yinlar"),
+                    &[
+                        "roblox.com",
+                        "steampowered.com",
+                        "epicgames.com",
+                        "poki.com",
+                        "crazygames.com",
+                        "miniclip.com",
+                    ],
+                ),
+                (
+                    tr("Video"),
+                    &["youtube.com", "twitch.tv", "rutube.ru", "kinopoisk.ru"],
+                ),
+            ],
+        ),
+        NetTab::Keywords => block_list(
+            ui,
+            p,
+            keywords,
+            entry,
+            import,
+            tr("so'z: kazino"),
+            tr("Shu so'z qidirilsa, tab yopiladi va sizga xabar keladi."),
+            &[
+                (
+                    tr("Qimor"),
+                    &[
+                        "kazino",
+                        "casino",
+                        "1xbet",
+                        "poker",
+                        "stavka",
+                        "ставки",
+                        "казино",
+                    ],
+                ),
+                (
+                    tr("Kattalar uchun"),
+                    &["porn", "xxx", "18+", "порно", "sex"],
+                ),
+                (
+                    tr("O'yinlar"),
+                    &[
+                        "minecraft",
+                        "roblox",
+                        "fortnite",
+                        "o'yin yuklab",
+                        "скачать игру",
+                    ],
+                ),
+            ],
+        ),
         NetTab::Search => {
-            ui.horizontal(|ui| {
-                ui.checkbox(safe, "");
-                ui.vertical(|ui| {
-                    ui.label(RichText::new(tr("Xavfsiz qidiruvni majburlash")).family(ui_kit::bold()).size(15.0));
-                    ui.label(RichText::new(tr("Nomaqbul natijalar qidiruvdan olib tashlanadi; o'quvchi bu sozlamani o'chira olmaydi.")).color(p.muted));
-                });
+            sgroup(ui, p, |ui| {
+                srow(
+                    ui,
+                    p,
+                    true,
+                    tr("Xavfsiz qidiruv"),
+                    Some(tr(
+                        "Nomaqbul natijalar yashiriladi. O'quvchi o'chira olmaydi.",
+                    )),
+                    |ui| {
+                        ui_kit::toggle(ui, safe);
+                    },
+                );
             });
             ui.add_space(12.0);
             ui.horizontal_wrapped(|ui| {
-                for (name, what) in [
-                    ("Google", "SafeSearch"),
-                    ("Yandex", tr("Oilaviy qidiruv")),
-                    ("Bing", "Strict"),
-                    ("DuckDuckGo", "Safe"),
-                    ("YouTube", tr("Cheklangan rejim")),
-                ] {
+                for name in ["Google", "Yandex", "Bing", "DuckDuckGo", "YouTube"] {
                     let col = if *safe { p.success } else { p.faint };
-                    ui_kit::chip(ui, &format!("{name} · {what}"), col);
+                    ui_kit::chip(ui, name, col);
                 }
             });
-            ui.add_space(12.0);
-            ui.label(RichText::new(tr("Brauzerlarda DNS-over-HTTPS o'chiriladi, shuning uchun cheklovlarni chetlab bo'lmaydi.")).size(12.5).color(p.faint));
         }
     }
 }

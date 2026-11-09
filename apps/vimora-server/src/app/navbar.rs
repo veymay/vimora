@@ -516,11 +516,6 @@ impl ConsoleApp {
     /// The class actions as big square buttons.
     fn action_strip(&mut self, ui: &mut egui::Ui, p: &Palette, all: &[View]) {
         ui.spacing_mut().item_spacing.x = BTN_GAP;
-        let targets = self.targets(all);
-        let all_locked = !targets.is_empty()
-            && targets
-                .iter()
-                .all(|id| all.iter().any(|v| v.id == *id && v.status.locked));
 
         let a = |icon, label, hint, menu, active, tint| Act {
             icon,
@@ -530,24 +525,25 @@ impl ConsoleApp {
             active,
             tint,
         };
-        // Grouped: [lock, present] · [site, internet, block] · [shadow, update, power]
+        // Grouped: [lock, unlock, present] · [site, internet, block] · [shadow, update, power]
+        // Lock and unlock are two fixed buttons: they never change with what is selected.
         let groups: Vec<Vec<Act>> = vec![
             vec![
                 a(
-                    if all_locked {
-                        icons::LOCK_OPEN
-                    } else {
-                        icons::LOCK
-                    },
-                    if all_locked {
-                        tr("Ochish")
-                    } else {
-                        tr("Qulflash")
-                    },
-                    tr("Ekranlarni qulflash (Ctrl+L) / ochish (Ctrl+U)"),
+                    icons::LOCK,
+                    tr("Qulflash"),
+                    tr("Ekranlarni qulflash (Ctrl+L)"),
                     Menu::Lock,
-                    all_locked,
-                    all_locked.then_some(p.warning),
+                    false,
+                    None,
+                ),
+                a(
+                    icons::LOCK_OPEN,
+                    tr("unlock|Ochish"),
+                    tr("Qulfni ochish (Ctrl+U)"),
+                    Menu::Unlock,
+                    false,
+                    None,
                 ),
                 a(
                     icons::CAST,

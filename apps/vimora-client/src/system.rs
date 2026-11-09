@@ -217,3 +217,44 @@ impl AppBlocker {
         killed
     }
 }
+
+/// Shape of the mouse pointer right now ([`vimora_core::cursor_kind`]); `None` where the
+/// platform can't tell.
+pub fn cursor_kind() -> Option<u8> {
+    #[cfg(windows)]
+    {
+        use vimora_core::cursor_kind as k;
+        use windows_sys::Win32::UI::WindowsAndMessaging::*;
+        unsafe {
+            let mut ci: CURSORINFO = std::mem::zeroed();
+            ci.cbSize = std::mem::size_of::<CURSORINFO>() as u32;
+            if GetCursorInfo(&mut ci) == 0 {
+                return None;
+            }
+            let table = [
+                (IDC_ARROW, k::ARROW),
+                (IDC_IBEAM, k::TEXT),
+                (IDC_HAND, k::HAND),
+                (IDC_WAIT, k::WAIT),
+                (IDC_SIZEWE, k::SIZE_WE),
+                (IDC_SIZENS, k::SIZE_NS),
+                (IDC_SIZENWSE, k::SIZE_NWSE),
+                (IDC_SIZENESW, k::SIZE_NESW),
+                (IDC_SIZEALL, k::MOVE),
+                (IDC_CROSS, k::CROSS),
+                (IDC_NO, k::NO),
+                (IDC_APPSTARTING, k::PROGRESS),
+            ];
+            for (id, kind) in table {
+                if LoadCursorW(std::ptr::null_mut(), id) == ci.hCursor {
+                    return Some(kind);
+                }
+            }
+            Some(k::ARROW)
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}

@@ -44,3 +44,10 @@ screenshot and exits. Use `XDG_CONFIG_HOME=<dir>` to run with a throw-away confi
 - Releases 0.3.1–0.3.3 shipped with shifted variants (wire-incompatible with 0.3.0 and later
   builds); update all PCs to 0.3.4 or newer.
 - The agent is single-instance per user (`single.rs`): a new copy ends the previous one.
+- Student windows (lock screen, chat, popup) pick a graphics backend that works on the PC:
+  the agent runs `vimora-client ui-probe` with `VIMORA_RENDERER=glow`, then `wgpu`, and passes the
+  winner to its children. A lock screen that dies at once switches backend and reports an alert.
+- Dev aids (agent): `VIMORA_OVERLAY_DEMO=<code>` shows the lock screen without a console
+  (`VIMORA_OVERLAY_TYPE`, `VIMORA_OVERLAY_SCREENSHOT`).
+- Console sounds are synthesised in `sound.rs` (no audio files). Block lists keep switched-off
+  items with a leading `#` (`config::active_list`). Backups are the config as JSON (`.vbk`).

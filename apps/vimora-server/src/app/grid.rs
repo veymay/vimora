@@ -827,7 +827,11 @@ fn details(v: &View) -> String {
         );
     }
     let room = v.room.as_deref().unwrap_or("—");
-    tf!("{v0}\nFoydalanuvchi: {v1}\nIP: {v2}\nTizim: {v3}\nXona: {room}\nUlangan: {v4}\nShadow: {v5}\nYangilanishlar: {v6}{v7}{v8}", v0 = v.label, v1 = v.user, v2 = v.ip, v3 = v.os, room = room, v4 = fmt_dur(v.online_secs), v5 = freeze_label(v.status.freeze), v6 = updates_label(&v.status), v7 = if v.status.service { "" } else { "\n⚠ Vimora xizmati ishlamayapti" }, v8 = v.alert.as_ref().map(|a| format!("\n⚠ {a}")).unwrap_or_default())
+    let mut text = tf!("{v0}\nFoydalanuvchi: {v1}\nIP: {v2}\nTizim: {v3}\nXona: {room}\nUlangan: {v4}\nShadow: {v5}\nYangilanishlar: {v6}{v7}{v8}", v0 = v.label, v1 = v.user, v2 = v.ip, v3 = v.os, room = room, v4 = fmt_dur(v.online_secs), v5 = freeze_label(v.status.freeze), v6 = updates_label(&v.status), v7 = if v.status.service { "" } else { "\n⚠ Vimora xizmati ishlamayapti" }, v8 = v.alert.as_ref().map(|a| format!("\n⚠ {a}")).unwrap_or_default());
+    if !v.version.is_empty() {
+        text.push_str(&format!("\nVimora: {}", v.version));
+    }
+    text
 }
 
 /// Click / context menu, shared by cards and list rows.

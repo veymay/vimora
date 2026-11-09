@@ -122,6 +122,63 @@ pub fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
+/// Things the teacher should hear about (a window that cannot open…); sent as alerts by
+/// `service_status_task` once a console is connected.
+pub(crate) static FAULTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+pub(crate) fn report_fault(text: impl Into<String>) {
+    let text = text.into();
+    warn!("{text}");
+    let mut f = FAULTS.lock().unwrap();
+    if f.len() < 8 && !f.contains(&text) {
+        f.push(text);
+    }
+}
+
+/// The other graphics backend (see `crate::ui_renderer`).
+pub(crate) fn switch_renderer() -> &'static str {
+    let next = match std::env::var("VIMORA_RENDERER").as_deref() {
+        Ok("wgpu") => "glow",
+        _ => "wgpu",
+    };
+    std::env::set_var("VIMORA_RENDERER", next);
+    next
+}
+
+/// Finds a graphics backend that can actually draw on this PC before any window is needed:
+/// runs `vimora-client ui-probe` with each one and keeps the first that works.
+async fn probe_ui() {
+    if std::env::var_os("VIMORA_RENDERER").is_some() {
+        return; // chosen by hand
+    }
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    for r in ["glow", "wgpu"] {
+        let child = tokio::process::Command::new(&exe)
+            .arg("ui-probe")
+            .env("VIMORA_RENDERER", r)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn();
+        let Ok(mut child) = child else { continue };
+        let ok = matches!(
+            tokio::time::timeout(Duration::from_secs(20), child.wait()).await,
+            Ok(Ok(st)) if st.success()
+        );
+        if ok {
+            info!("windows are drawn with {r}");
+            std::env::set_var("VIMORA_RENDERER", r);
+            return;
+        }
+        let _ = child.kill().await;
+        warn!("graphics backend {r} does not work on this PC");
+    }
+    report_fault("Bu kompyuterda oynalarni chizib bo'lmadi (grafik drayver?) — qulf ekrani va xabarlar ishlamasligi mumkin");
+}
+
 /// Runs a background task and starts it again if it ever panics or returns: no helper may
 /// silently disappear and leave the agent half-working.
 fn keep_alive<F, Fut>(name: &'static str, make: F)
@@ -151,6 +208,7 @@ pub async fn run(cfg: Config) -> Result<()> {
         chat: Arc::default(),
     };
     restore_lock(&state);
+    probe_ui().await;
     let (ov_tx, ov_rx) = mpsc::channel(16);
     tokio::spawn(overlay_task(state.clone(), ov_rx));
     {

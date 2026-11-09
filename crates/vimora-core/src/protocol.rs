@@ -445,6 +445,27 @@ pub enum ClientMsg {
     // Append-only (see PrivCommand).
     /// Changes held in the Shadow overlay (answer to `PrivCommand::ListChanges`).
     Changes(Vec<ChangeInfo>),
+    /// The agent's own version ("0.3.8"), sent once after the handshake.
+    AgentVersion(String),
+    /// Shape of the student's mouse pointer while the teacher watches live
+    /// (see [`cursor_kind`]).
+    Cursor(u8),
+}
+
+/// Pointer shapes carried by [`ClientMsg::Cursor`].
+pub mod cursor_kind {
+    pub const ARROW: u8 = 0;
+    pub const TEXT: u8 = 1;
+    pub const HAND: u8 = 2;
+    pub const WAIT: u8 = 3;
+    pub const SIZE_WE: u8 = 4;
+    pub const SIZE_NS: u8 = 5;
+    pub const SIZE_NWSE: u8 = 6;
+    pub const SIZE_NESW: u8 = 7;
+    pub const MOVE: u8 = 8;
+    pub const CROSS: u8 = 9;
+    pub const NO: u8 = 10;
+    pub const PROGRESS: u8 = 11;
 }
 
 #[cfg(test)]
@@ -479,6 +500,8 @@ mod wire_tests {
         );
         assert_eq!(tag(&ClientMsg::Pong), 8);
         assert_eq!(tag(&ClientMsg::Changes(vec![])), 9);
+        assert_eq!(tag(&ClientMsg::AgentVersion(String::new())), 10);
+        assert_eq!(tag(&ClientMsg::Cursor(0)), 11);
         // Command: ChatEnd was the last one before the unlock code was added.
         assert_eq!(
             tag(&Command::UnlockCode {

@@ -111,18 +111,27 @@ impl ConsoleApp {
                         ui_kit::hud(ui, &format!("{} · {}{res}", info.user, info.ip), p.muted);
 
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.spacing_mut().item_spacing.x = 0.0;
+                            // Far right: back to the list.
+                            if ui_kit::icon_cell(ui, icons::X, BAR_H, false)
+                                .tip(tr("Ro'yxatga qaytish (Esc)"))
+                                .clicked()
+                            {
+                                act.back = true;
+                            }
+                            ui_kit::rule(ui, BAR_H);
                             ui.spacing_mut().item_spacing.x = 8.0;
                             ui.add_space(8.0);
-                            let (kind, label) = if control {
-                                (Kind::Danger, tr("Boshqaruvni to'xtatish"))
-                            } else {
-                                (Kind::Primary, tr("Boshqarish"))
-                            };
-                            if ui_kit::button(ui, Some(icons::MOUSE_POINTER_2), label, kind)
-                                .on_hover_text(tr(
-                                    "Sichqoncha va klaviaturani shu kompyuterga yuborish",
-                                ))
-                                .clicked()
+                            // Same label in both states; red while the teacher is in control.
+                            let kind = if control { Kind::Danger } else { Kind::Primary };
+                            if ui_kit::button(
+                                ui,
+                                Some(icons::MOUSE_POINTER_2),
+                                tr("Boshqarish"),
+                                kind,
+                            )
+                            .tip(tr("Sichqoncha va klaviatura shu kompyuterga yuboriladi"))
+                            .clicked()
                             {
                                 act.toggle_control = true;
                             }
@@ -204,26 +213,29 @@ impl ConsoleApp {
                 if !control {
                     return;
                 }
-                // Remote control: frame the screen and forward input.
+                // Remote control: a red frame around the screen (nothing else), and the pointer
+                // looks the way it does on the student's screen.
                 ui.painter().rect_stroke(
                     img.expand(1.0),
                     Rounding::ZERO,
-                    Stroke::new(2.0_f32, p.danger),
+                    Stroke::new(3.0_f32, p.danger),
                 );
-                let hint = ui_kit::caps(
-                    ui,
-                    tr("Boshqaruv faol · klaviatura shu kompyuterga yuboriladi"),
-                    9.5,
-                    ui_kit::mono(),
-                    Color32::WHITE,
-                );
-                let hr =
-                    Rect::from_min_size(pos2(img.left(), img.top()), hint.size() + vec2(16.0, 8.0));
-                ui.painter().rect_filled(hr, Rounding::ZERO, p.danger);
-                ui.painter()
-                    .galley(hr.min + vec2(8.0, 4.0), hint, Color32::WHITE);
                 if resp.hovered() {
-                    ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+                    use vimora_core::cursor_kind as k;
+                    ctx.set_cursor_icon(match info.cursor {
+                        k::TEXT => egui::CursorIcon::Text,
+                        k::HAND => egui::CursorIcon::PointingHand,
+                        k::WAIT => egui::CursorIcon::Wait,
+                        k::SIZE_WE => egui::CursorIcon::ResizeHorizontal,
+                        k::SIZE_NS => egui::CursorIcon::ResizeVertical,
+                        k::SIZE_NWSE => egui::CursorIcon::ResizeNwSe,
+                        k::SIZE_NESW => egui::CursorIcon::ResizeNeSw,
+                        k::MOVE => egui::CursorIcon::Move,
+                        k::CROSS => egui::CursorIcon::Crosshair,
+                        k::NO => egui::CursorIcon::NotAllowed,
+                        k::PROGRESS => egui::CursorIcon::Progress,
+                        _ => egui::CursorIcon::Default,
+                    });
                 }
                 let norm = |pos: Pos2| {
                     (
@@ -279,6 +291,9 @@ impl ConsoleApp {
                 }
             });
 
+        if !control && self.dialog.is_none() && ctx.input(|i| i.key_pressed(Key::Escape)) {
+            act.back = true;
+        }
         if let Some(v) = &mut self.viewer {
             v.last_move = last_move;
             if act.toggle_control {

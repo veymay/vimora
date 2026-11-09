@@ -17,8 +17,18 @@ pub(super) fn capture_loop(
     let mut last: Vec<u8> = Vec::new();
     let mut warned = false;
     let mut last_sent = Instant::now() - Duration::from_secs(60);
+    let mut last_cursor = u8::MAX;
     while !stop.load(Ordering::Relaxed) {
         let c = *cfg.lock().unwrap();
+        // Live view: tell the console which pointer shape the student sees.
+        if c.interval_ms > 0 && c.interval_ms <= 250 {
+            if let Some(k) = system::cursor_kind().filter(|k| *k != last_cursor) {
+                last_cursor = k;
+                let _ = tx.try_send(ClientMsg::Cursor(k));
+            }
+        } else {
+            last_cursor = u8::MAX;
+        }
         if c.interval_ms == 0 {
             std::thread::sleep(Duration::from_millis(200));
             continue;
@@ -171,6 +181,10 @@ pub(super) async fn service_status_task(ctx: Ctx) {
                     let _ = tx.send(ClientMsg::Apps(list)).await;
                 }
             }
+            let faults: Vec<String> = std::mem::take(&mut *FAULTS.lock().unwrap());
+            for text in faults {
+                let _ = tx.send(ClientMsg::Alert { text }).await;
+            }
             for (ok, message) in st.events {
                 let _ = tx.send(ClientMsg::CommandResult { ok, message }).await;
             }
@@ -231,7 +245,10 @@ pub(super) fn keyword_watch(ctx: Ctx) {
         ]);
         if let Some(tx) = ctx.uplink.lock().unwrap().as_ref() {
             let _ = tx.try_send(ClientMsg::Alert {
-                text: format!("taqiqlangan so'z \"{hit}\" — {}", f.title),
+                text: format!(
+                    "taqiqlangan so'z \"{hit}\" — {}",
+                    f.title.chars().take(70).collect::<String>()
+                ),
             });
         }
         std::thread::sleep(Duration::from_millis(2500));

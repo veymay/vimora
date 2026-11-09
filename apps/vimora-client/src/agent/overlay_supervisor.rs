@@ -20,6 +20,7 @@ pub(super) fn spawn_overlay(state: &Shared) -> Result<(Child, ChildStdin)> {
         .arg("overlay")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()?;
     let stdin = child.stdin.take().context("no stdin")?;
@@ -42,11 +43,28 @@ pub(super) fn spawn_overlay(state: &Shared) -> Result<(Child, ChildStdin)> {
             }
         });
     }
+    // Keep the last thing it complained about: if it dies at once, the teacher is told why.
+    if let Some(err) = child.stderr.take() {
+        tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let mut lines = BufReader::new(err).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let line = line.trim();
+                if !line.is_empty() {
+                    *LAST_ERROR.lock().unwrap() = line.chars().take(160).collect();
+                }
+            }
+        });
+    }
     Ok((child, stdin))
 }
 
+static LAST_ERROR: Mutex<String> = Mutex::new(String::new());
+
 pub(super) async fn overlay_task(state: Shared, mut rx: mpsc::Receiver<OverlayReq>) {
     let mut child: Option<(Child, ChildStdin)> = None;
+    let mut born = Instant::now();
+    let mut quick_deaths = 0u32;
     let mut tick = tokio::time::interval(Duration::from_secs(1));
     loop {
         let req = tokio::select! {
@@ -75,6 +93,24 @@ pub(super) async fn overlay_task(state: Shared, mut rx: mpsc::Receiver<OverlayRe
             if let Ok(Some(_)) = c.try_wait() {
                 warn!("overlay exited; respawning if needed");
                 child = None;
+                // Died right after starting while it is still wanted: the window could not
+                // open. Try the other graphics backend and tell the teacher.
+                let wanted = {
+                    let s = state.lock().unwrap();
+                    s.show || s.lock.is_some()
+                };
+                if wanted && born.elapsed() < Duration::from_secs(4) {
+                    quick_deaths += 1;
+                    if quick_deaths == 2 || quick_deaths == 6 {
+                        let next = switch_renderer();
+                        let why = LAST_ERROR.lock().unwrap().clone();
+                        report_fault(format!(
+                            "Qulf ekrani ochilmadi ({why}) — {next} bilan qayta uriniladi"
+                        ));
+                    }
+                } else {
+                    quick_deaths = 0;
+                }
             }
         }
         match desired {
@@ -89,7 +125,10 @@ pub(super) async fn overlay_task(state: Shared, mut rx: mpsc::Receiver<OverlayRe
                 let fresh = child.is_none();
                 if fresh {
                     match spawn_overlay(&state) {
-                        Ok(c) => child = Some(c),
+                        Ok(c) => {
+                            child = Some(c);
+                            born = Instant::now();
+                        }
                         Err(e) => {
                             warn!("cannot start overlay: {e:#}");
                             continue;

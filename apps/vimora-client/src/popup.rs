@@ -16,6 +16,7 @@ pub fn run(title: &str, text: &str, reply: bool) -> anyhow::Result<()> {
             .with_resizable(false)
             .with_always_on_top(),
         centered: true,
+        renderer: crate::ui_renderer(),
         ..Default::default()
     };
     eframe::run_native(

@@ -6,12 +6,13 @@ mod app;
 mod config;
 mod i18n_table;
 mod net;
+mod sound;
 mod update;
 
 use std::sync::{Arc, Mutex, RwLock};
 
-/// The window opens at (and can't shrink below) this size.
-pub const MIN_WINDOW: [f32; 2] = [1120.0, 640.0];
+/// The window has exactly this size, unless it is maximized or fullscreen.
+pub const MIN_WINDOW: [f32; 2] = [1280.0, 760.0];
 
 fn main() -> eframe::Result<()> {
     tracing_subscriber::fmt()

@@ -136,6 +136,7 @@ pub(super) async fn session(
         let _ = tx.try_send(ClientMsg::Status(st));
     };
     send_status(&tx);
+    let _ = tx.try_send(ClientMsg::AgentVersion(env!("CARGO_PKG_VERSION").into()));
 
     // --- main read loop ----------------------------------------------------------------------
     let result: Result<()> = async {

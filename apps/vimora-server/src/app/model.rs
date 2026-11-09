@@ -28,6 +28,10 @@ pub(super) struct View {
     pub(super) online: bool,
     /// Unix seconds of the last connection (offline entries).
     pub(super) last_seen: u64,
+    /// Agent version, if known.
+    pub(super) version: String,
+    /// Pointer shape on the student's screen.
+    pub(super) cursor: u8,
 }
 
 /// What the power window can do: the three remote actions, or switching computers on.
@@ -68,6 +72,8 @@ pub(super) enum Dialog {
         args: String,
         /// Favourite sites (a working copy; saved to the config when it changes).
         bookmarks: Vec<String>,
+        /// Recently opened sites (same).
+        recent: Vec<String>,
     },
     File(String),
     Apps(String),
@@ -76,6 +82,10 @@ pub(super) enum Dialog {
         domains: String,
         keywords: String,
         safe: bool,
+        /// The "add" box.
+        entry: String,
+        /// Asked to import a text file into the current tab.
+        import: bool,
     },
     Power(PowerChoice),
     Settings(SettingsTab),
@@ -170,8 +180,10 @@ pub(super) enum ShadowRequest {
 #[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Menu {
-    /// Locks the targets, or unlocks them when they are all locked already.
+    /// Locks the targets.
     Lock,
+    /// Unlocks the targets.
+    Unlock,
     Show,
     Message,
     Web,
@@ -241,7 +253,7 @@ pub(super) fn updates_label(s: &ClientStatus) -> String {
         return b.clone();
     }
     match (s.os_updates, s.app_updates) {
-        (None, None) => "tekshirilmagan".into(),
+        (None, None) => tr("tekshirilmagan").into(),
         (o, a) => tf!(
             "tizim {v0}, dasturlar {v1}",
             v0 = o.map_or("?".into(), |n| n.to_string()),

@@ -12,6 +12,8 @@ pub struct KnownPc {
     pub user: String,
     pub os: String,
     pub ip: String,
+    /// Agent version it reported last ("0.3.8"); empty for old agents.
+    pub version: String,
     /// Hardware address (12 hex digits) for Wake-on-LAN.
     pub mac: String,
     /// Unix seconds of the last time it was connected.
@@ -33,6 +35,8 @@ pub struct ServerConfig {
     pub start_maximized: bool,
     /// Navbar buttons show icons only (default: icon + text).
     pub compact_nav: bool,
+    /// Play short sounds for results, warnings and student alerts.
+    pub sounds: bool,
     /// Order of the computers in the grid and list.
     pub sort: SortBy,
     /// Look for a new console version on GitHub at start-up (and every few hours).
@@ -104,6 +108,7 @@ impl Default for ServerConfig {
             theme_system: false,
             start_maximized: false,
             compact_nav: false,
+            sounds: true,
             sort: SortBy::Name,
             check_updates: true,
             thumb_interval_ms: 2000,
@@ -208,6 +213,14 @@ pub fn split_list(s: &str) -> Vec<String> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(String::from)
+        .collect()
+}
+
+/// Items of a block list that are switched on (a leading `#` switches an item off but keeps it).
+pub fn active_list(s: &str) -> Vec<String> {
+    split_list(s)
+        .into_iter()
+        .filter(|i| !i.starts_with('#'))
         .collect()
 }
 

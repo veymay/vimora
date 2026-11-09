@@ -55,6 +55,9 @@ enum Cmd {
     /// Internal: fullscreen lock / presentation overlay (driven over stdin).
     #[command(hide = true)]
     Overlay,
+    /// Internal: checks that a window can be drawn with the chosen renderer, then exits 0.
+    #[command(hide = true)]
+    UiProbe,
     /// Internal: docked chat panel (driven over stdin).
     #[command(hide = true)]
     Chat,
@@ -84,6 +87,7 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Popup { title, text, reply }) => popup::run(&title, &text, reply),
         Some(Cmd::Service) => service::run(),
         Some(Cmd::Chat) => chat::run(),
+        Some(Cmd::UiProbe) => ui_probe(),
         Some(Cmd::Setup) => service::setup(cli.server, cli.name),
         Some(Cmd::Unpair) => service::unpair(),
         Some(Cmd::Init) => {
@@ -141,4 +145,46 @@ fn watchdog() {
                 }
             }
         });
+}
+
+/// Which graphics backend the windows (lock screen, chat, popups) use. The agent picks one
+/// that works on this PC (see `agent::probe_ui`) and tells its children through
+/// `VIMORA_RENDERER`: OpenGL ("glow") needs a real graphics driver, Direct3D / Vulkan ("wgpu")
+/// also runs on PCs with the basic display driver.
+pub fn ui_renderer() -> eframe::Renderer {
+    match std::env::var("VIMORA_RENDERER").as_deref() {
+        Ok("wgpu") => eframe::Renderer::Wgpu,
+        _ => eframe::Renderer::Glow,
+    }
+}
+
+/// `vimora-client ui-probe`: opens a hidden window, draws two frames, exits 0. If the renderer
+/// cannot start, the process ends with an error instead and the agent tries the other one.
+fn ui_probe() -> anyhow::Result<()> {
+    struct Probe(u32);
+    impl eframe::App for Probe {
+        fn update(&mut self, ctx: &eframe::egui::Context, _: &mut eframe::Frame) {
+            eframe::egui::CentralPanel::default().show(ctx, |ui| {
+                ui.label("Vimora");
+            });
+            self.0 += 1;
+            if self.0 >= 2 {
+                std::process::exit(0);
+            }
+            ctx.request_repaint();
+        }
+    }
+    let opts = eframe::NativeOptions {
+        viewport: eframe::egui::ViewportBuilder::default()
+            .with_title("Vimora")
+            .with_inner_size([160.0, 90.0])
+            .with_decorations(false)
+            .with_taskbar(false)
+            .with_visible(false),
+        renderer: ui_renderer(),
+        ..Default::default()
+    };
+    eframe::run_native("vimora-probe", opts, Box::new(|_| Ok(Box::new(Probe(0)))))
+        .map_err(|e| anyhow::anyhow!("ui probe: {e}"))?;
+    anyhow::bail!("ui probe: window closed before drawing")
 }

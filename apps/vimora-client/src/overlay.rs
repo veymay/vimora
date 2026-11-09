@@ -62,6 +62,7 @@ pub fn run() -> anyhow::Result<()> {
             .with_always_on_top()
             .with_decorations(false)
             .with_taskbar(false),
+        renderer: crate::ui_renderer(),
         ..Default::default()
     };
 

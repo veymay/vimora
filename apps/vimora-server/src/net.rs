@@ -40,6 +40,10 @@ pub struct Student {
     pub apps: Option<Vec<vimora_core::AppInfo>>,
     /// Shadow overlay content as last reported.
     pub changes: Option<Vec<vimora_core::ChangeInfo>>,
+    /// Agent version (empty until it says so; old agents never do).
+    pub version: String,
+    /// Pointer shape on the student's screen (live view).
+    pub cursor: u8,
 }
 
 pub fn unix_now() -> u64 {
@@ -87,6 +91,8 @@ pub struct Hub {
     pub students: BTreeMap<u64, Student>,
     pub log: VecDeque<LogEntry>,
     pub toasts: VecDeque<Toast>,
+    /// Sounds waiting to be played by the UI thread.
+    pub sounds: Vec<crate::sound::Sound>,
     pub chat: VecDeque<ChatMsg>,
     /// Computers that received a message in the current chat (they get `ChatEnd`).
     pub chat_members: std::collections::BTreeSet<u64>,
@@ -103,6 +109,7 @@ impl Hub {
             students: BTreeMap::new(),
             log: VecDeque::new(),
             toasts: VecDeque::new(),
+            sounds: Vec::new(),
             chat: VecDeque::new(),
             chat_members: Default::default(),
             unread: 0,
@@ -112,6 +119,11 @@ impl Hub {
     }
 
     pub fn toast(&mut self, ok: bool, text: impl Into<String>) {
+        use crate::sound::Sound;
+        let snd = if ok { Sound::Ok } else { Sound::Warn };
+        if self.sounds.len() < 4 && !self.sounds.contains(&snd) {
+            self.sounds.push(snd);
+        }
         self.toasts.push_back(Toast {
             ok,
             text: text.into(),
@@ -372,6 +384,8 @@ async fn session(
                 priv_counter: 0,
                 apps: None,
                 changes: None,
+                version: String::new(),
+                cursor: 0,
             },
         );
         h.log(
@@ -395,6 +409,11 @@ async fn session(
             user: info.username.clone(),
             os: info.os.clone(),
             ip: addr.ip().to_string(),
+            version: c
+                .known_pcs
+                .get(&info.key())
+                .map(|k| k.version.clone())
+                .unwrap_or_default(),
             mac: info.machine_id.clone(),
             last_seen: unix_now(),
         };
@@ -486,6 +505,7 @@ async fn session(
                     if let Some(s) = h.students.get_mut(&id) {
                         s.help = Some(text.clone());
                     }
+                    h.sounds.push(crate::sound::Sound::Alert);
                     h.log(
                         Level::Warn,
                         tf!(
@@ -500,12 +520,33 @@ async fn session(
                     if let Some(s) = h.students.get_mut(&id) {
                         s.alert = Some((text.clone(), Instant::now()));
                     }
+                    h.sounds.push(crate::sound::Sound::Alert);
                     h.log(Level::Warn, format!("{}: {text}", info.label()));
                 }
                 ClientMsg::Apps(list) => {
                     let mut h = hub.lock().unwrap();
                     if let Some(s) = h.students.get_mut(&id) {
                         s.apps = Some(list);
+                    }
+                    h.repaint();
+                }
+                ClientMsg::AgentVersion(v) => {
+                    let v: String = v.chars().take(24).collect();
+                    if let Some(s) = hub.lock().unwrap().students.get_mut(&id) {
+                        s.version = v.clone();
+                    }
+                    let mut c = cfg.write().unwrap();
+                    if let Some(k) = c.known_pcs.get_mut(&info.key()) {
+                        if k.version != v {
+                            k.version = v;
+                            crate::config::save(&c);
+                        }
+                    }
+                }
+                ClientMsg::Cursor(k) => {
+                    let mut h = hub.lock().unwrap();
+                    if let Some(s) = h.students.get_mut(&id) {
+                        s.cursor = k;
                     }
                     h.repaint();
                 }
@@ -587,13 +628,18 @@ fn show_loop(hub: SharedHub, show: Arc<Show>) {
             }
             Err(e) => {
                 // Stop presenting instead of leaving students on a black screen.
-                hub.lock().unwrap().log(
-                    Level::Warn,
-                    tf!(
-                        "Namoyish to'xtatildi — ekranni olib bo'lmadi: {e}",
-                        e = format!("{:#}", e)
-                    ),
-                );
+                let wayland = format!("{e:#}").contains("WAYLAND");
+                let msg = if wayland {
+                    tr("Namoyish Wayland'da ishlamaydi. Kirish ekranida \"Ubuntu on Xorg\" ni tanlang.")
+                        .to_string()
+                } else {
+                    tr("Namoyish to'xtadi: ekranni olib bo'lmadi.").to_string()
+                };
+                tracing::warn!("show capture failed: {e:#}");
+                let mut h = hub.lock().unwrap();
+                h.log(Level::Warn, msg.clone());
+                h.toast(false, msg);
+                drop(h);
                 show.active.store(false, Ordering::Relaxed);
                 cap = None;
             }

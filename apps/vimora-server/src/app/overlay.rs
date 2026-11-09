@@ -283,7 +283,6 @@ impl ConsoleApp {
                 .filter(|k| wake_mac(&c, k).is_some())
                 .count()
         };
-        let recent: Vec<String> = self.cfg.read().unwrap().recent_urls.clone();
         let hub = self.hub.clone();
         let cfg = self.cfg.clone();
         let screen = ctx.screen_rect();
@@ -520,7 +519,6 @@ impl ConsoleApp {
                                 &FormCtx {
                                     offline,
                                     offline_with_mac,
-                                    recent: &recent,
                                     hub: &hub,
                                     all,
                                     targets: &targets,
@@ -549,7 +547,6 @@ impl ConsoleApp {
                             &FormCtx {
                                 offline,
                                 offline_with_mac,
-                                recent: &recent,
                                 hub: &hub,
                                 all,
                                 targets: &targets,
@@ -616,9 +613,7 @@ impl ConsoleApp {
                                         | Dialog::Activity => (icons::CHECK, tr("Saqlash")),
                                         Dialog::Freeze { .. } => (icons::CHECK, tr("Saqlash")),
                                         Dialog::Rename { .. } => (icons::CHECK, tr("Saqlash")),
-                                        Dialog::Updates { .. } => {
-                                            (icons::CHECK, tr("Siyosatni saqlash"))
-                                        }
+                                        Dialog::Updates { .. } => (icons::CHECK, tr("Saqlash")),
                                     };
                                     let kind = if matches!(dialog, Dialog::Power(_)) {
                                         Kind::Danger
@@ -650,13 +645,36 @@ impl ConsoleApp {
             self.settings_applied(ctx, before);
         }
         self.settings_actions(ctx, settings_out);
-        if let Some(Dialog::Launch { bookmarks, .. }) = &self.dialog {
+        if let Some(Dialog::Launch {
+            bookmarks, recent, ..
+        }) = &self.dialog
+        {
             let mut c = self.cfg.write().unwrap();
-            if c.bookmarks != *bookmarks {
+            if c.bookmarks != *bookmarks || c.recent_urls != *recent {
                 c.bookmarks = bookmarks.clone();
+                c.recent_urls = recent.clone();
                 crate::config::save(&c);
             }
         }
+        // Internet drawer: "import from a text file" opens a file dialog on its own thread.
+        if let Some(Dialog::Net { import, .. }) = &mut self.dialog {
+            if std::mem::take(import) && self.file_job.is_none() {
+                self.file_job = Some(spawn_file_job(|| {
+                    let picked = rfd::FileDialog::new()
+                        .add_filter("Text", &["txt", "csv", "list"])
+                        .pick_file()?;
+                    let text = std::fs::read(&picked).ok()?;
+                    // Refuse huge files; tolerate any encoding.
+                    if text.len() > 2 * 1024 * 1024 {
+                        return None;
+                    }
+                    Some(FileResult::NetImport(
+                        String::from_utf8_lossy(&text).into_owned(),
+                    ))
+                }));
+            }
+        }
+        self.file_results(ctx);
         if let Some(Dialog::Message { text, send }) = &mut self.dialog {
             self.hub.lock().unwrap().unread = 0;
             if std::mem::take(send) && !text.trim().is_empty() && !targets.is_empty() {
@@ -720,6 +738,81 @@ impl ConsoleApp {
             let d = self.dialog.take().unwrap();
             self.closing = Some(d.clone());
             self.run_dialog(d, &targets, clear);
+        }
+    }
+
+    /// Takes what a finished file dialog returned (import, backup save / restore).
+    fn file_results(&mut self, ctx: &egui::Context) {
+        let Some(rx) = &self.file_job else { return };
+        let res = match rx.try_recv() {
+            Ok(r) => r,
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                ctx.request_repaint_after(Duration::from_millis(200));
+                return;
+            }
+            Err(_) => {
+                self.file_job = None; // cancelled
+                return;
+            }
+        };
+        self.file_job = None;
+        match res {
+            FileResult::NetImport(text) => {
+                if let Some(Dialog::Net {
+                    tab,
+                    domains,
+                    keywords,
+                    ..
+                }) = &mut self.dialog
+                {
+                    let n = match tab {
+                        NetTab::Keywords => add_lines(keywords, &text),
+                        _ => add_lines(domains, &text),
+                    };
+                    self.hub
+                        .lock()
+                        .unwrap()
+                        .toast(true, tf!("{n} ta qator qo'shildi", n = n));
+                }
+            }
+            FileResult::BackupSaved(Ok(path)) => {
+                self.hub
+                    .lock()
+                    .unwrap()
+                    .toast(true, tf!("Zaxira saqlandi: {path}", path = path));
+            }
+            FileResult::BackupSaved(Err(_)) => {
+                self.hub
+                    .lock()
+                    .unwrap()
+                    .toast(false, tr("Zaxirani saqlab bo'lmadi."));
+            }
+            FileResult::BackupLoaded(text) => {
+                let parsed = text
+                    .ok()
+                    .and_then(|t| serde_json::from_str::<ServerConfig>(&t).ok());
+                match parsed {
+                    Some(new) => {
+                        let before = {
+                            let mut c = self.cfg.write().unwrap();
+                            let before = c.clone();
+                            *c = new;
+                            config::save(&c);
+                            before
+                        };
+                        self.settings_applied(ctx, before);
+                        self.hub
+                            .lock()
+                            .unwrap()
+                            .toast(true, tr("Sozlamalar zaxiradan tiklandi."));
+                    }
+                    None => self
+                        .hub
+                        .lock()
+                        .unwrap()
+                        .toast(false, tr("Bu Vimora zaxira fayli emas.")),
+                }
+            }
         }
     }
 
@@ -913,8 +1006,8 @@ impl ConsoleApp {
                     c.keyword_blocklist = keywords.clone();
                     c.safe_search = safe;
                     NetPolicy {
-                        domains: split_list(&domains),
-                        keywords: split_list(&keywords),
+                        domains: crate::config::active_list(&domains),
+                        keywords: crate::config::active_list(&keywords),
                         safe_search: safe,
                     }
                 };
@@ -1028,6 +1121,35 @@ impl ConsoleApp {
         if out.install_update {
             self.updater.install();
         }
+        if out.backup_save && self.file_job.is_none() {
+            // Everything the teacher configured, in one file (the console identity is not in it).
+            let json = serde_json::to_string_pretty(&*self.cfg.read().unwrap()).unwrap_or_default();
+            let name = format!(
+                "vimora_backup_{}.vbk",
+                chrono::Local::now().format("%Y-%m-%d")
+            );
+            self.file_job = Some(spawn_file_job(move || {
+                let path = rfd::FileDialog::new()
+                    .set_file_name(&name)
+                    .add_filter("Vimora backup", &["vbk"])
+                    .save_file()?;
+                Some(FileResult::BackupSaved(
+                    std::fs::write(&path, json)
+                        .map(|_| path.display().to_string())
+                        .map_err(|e| e.to_string()),
+                ))
+            }));
+        }
+        if out.backup_load && self.file_job.is_none() {
+            self.file_job = Some(spawn_file_job(|| {
+                let path = rfd::FileDialog::new()
+                    .add_filter("Vimora backup", &["vbk", "json"])
+                    .pick_file()?;
+                Some(FileResult::BackupLoaded(
+                    std::fs::read_to_string(&path).map_err(|e| e.to_string()),
+                ))
+            }));
+        }
         if out.restart {
             config::save(&self.cfg.read().unwrap());
             crate::update::relaunch();
@@ -1111,4 +1233,17 @@ mod url_tests {
             "https://localhost:8080"
         );
     }
+}
+
+/// Runs a (blocking) file dialog on its own thread; a dropped sender means "cancelled".
+fn spawn_file_job(
+    job: impl FnOnce() -> Option<FileResult> + Send + 'static,
+) -> std::sync::mpsc::Receiver<FileResult> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        if let Some(r) = job() {
+            let _ = tx.send(r);
+        }
+    });
+    rx
 }
