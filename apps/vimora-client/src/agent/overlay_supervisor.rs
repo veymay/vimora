@@ -16,32 +16,24 @@ pub(super) async fn write_overlay(stdin: &mut ChildStdin, cmd: &OverlayCmd) -> R
 }
 
 /// How the overlay is started, tried in this order until one stays up: (renderer, own desktop).
-/// On Windows the lock desktop comes first (nothing to Alt+Tab to); many OpenGL drivers don't
-/// work there, so Direct3D (wgpu) is tried first, then OpenGL, then the normal desktop with the
-/// backend that works for the other windows. A plan that worked is kept.
+/// Always the normal desktop with the backend the startup check found, then the other one.
+/// (A separate lock desktop was tried in 0.3.11–0.3.15: on many PCs OpenGL doesn't work there
+/// and Direct3D shows only black, so it is not used; the keyboard hooks, the guard and the
+/// Windows policies keep the student on the lock screen instead.) A plan that worked is kept.
 fn plans() -> Vec<(&'static str, bool)> {
     let usual = match std::env::var("VIMORA_RENDERER").as_deref() {
         Ok("wgpu") => "wgpu",
         _ => "glow",
     };
     let other = if usual == "wgpu" { "glow" } else { "wgpu" };
-    if cfg!(windows) {
-        vec![
-            ("wgpu", true),
-            ("glow", true),
-            (usual, false),
-            (other, false),
-        ]
-    } else {
-        vec![(usual, false), (other, false)]
-    }
+    vec![(usual, false), (other, false)]
 }
 
 /// Index into [`plans`] of the way the overlay starts now (`usize::MAX` = not loaded yet).
 static PLAN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(usize::MAX);
 
 fn plan_file() -> Option<std::path::PathBuf> {
-    dirs::config_dir().map(|d| d.join("vimora").join("overlay-plan"))
+    dirs::config_dir().map(|d| d.join("vimora").join("overlay-plan-2"))
 }
 
 /// The plan to use: the one that worked last time on this PC, else the first.
