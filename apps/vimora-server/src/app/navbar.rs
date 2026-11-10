@@ -249,7 +249,7 @@ impl ConsoleApp {
 
                         // Fullscreen (rightmost): same as F11; the icon follows the real state,
                         // whichever way it was switched.
-                        let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+                        let full = self.fullscreen;
                         let r = Btn {
                             icon: if full {
                                 icons::MINIMIZE_2

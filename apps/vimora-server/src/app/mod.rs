@@ -95,6 +95,10 @@ pub struct ConsoleApp {
     file_job: Option<std::sync::mpsc::Receiver<FileResult>>,
     /// Last time the window was snapped back to its fixed size.
     last_resize: Option<Instant>,
+    /// Fullscreen as the teacher asked for it (the window manager's report lags behind).
+    pub(super) fullscreen: bool,
+    /// A fullscreen switch is half done (see `toggle_fullscreen`).
+    fs_step: Option<Instant>,
     textures: HashMap<u64, (u64, TextureHandle)>,
     dialog: Option<Dialog>,
     viewer: Option<Viewer>,
@@ -161,6 +165,8 @@ impl ConsoleApp {
             pending_assign: vec![],
             file_job: None,
             last_resize: None,
+            fullscreen: false,
+            fs_step: None,
             textures: HashMap::new(),
             dialog: None,
             viewer: None,
@@ -534,8 +540,37 @@ impl ConsoleApp {
     /// half-resized console would squeeze the navbar. Dragging an edge snaps back.
     /// The only way to change the window's size: fullscreen on / off (F11 or the status bar).
     pub(super) fn toggle_fullscreen(&mut self, ctx: &egui::Context) {
-        let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
-        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
+        let full = self.fullscreen;
+        self.fullscreen = !full;
+        if full {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+        } else {
+            // A window that can't be resized can't go fullscreen either (X11 window managers
+            // only move it to the corner): make it resizable first, then go fullscreen a moment
+            // later, once the window manager has seen the new size limits.
+            ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::MaxInnerSize(egui::vec2(
+                16384.0, 16384.0,
+            )));
+        }
+        self.fs_step = Some(Instant::now());
+        ctx.request_repaint();
+    }
+
+    /// Second half of [`toggle_fullscreen`], a few frames later.
+    fn finish_fullscreen(&mut self, ctx: &egui::Context) {
+        let Some(t) = self.fs_step else { return };
+        if t.elapsed() < Duration::from_millis(150) {
+            ctx.request_repaint_after(Duration::from_millis(50));
+            return;
+        }
+        self.fs_step = None;
+        if self.fullscreen {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+        } else {
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(crate::MIN_WINDOW.into()));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
+        }
     }
 
     fn keep_window_size(&mut self, ctx: &egui::Context) {
@@ -549,6 +584,9 @@ impl ConsoleApp {
         });
         let want = egui::Vec2::from(crate::MIN_WINDOW);
         let Some(size) = size else { return };
+        if self.fullscreen || self.fs_step.is_some() {
+            return;
+        }
         if max || full || (size - want).abs().max_elem() < 2.0 {
             return;
         }
@@ -879,6 +917,11 @@ impl eframe::App for ConsoleApp {
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::F11)) {
             self.toggle_fullscreen(ctx);
         }
+        // Dev aid: VIMORA_FULLSCREEN=1 goes fullscreen shortly after start (for screenshots).
+        if self.now_frame == 20 && std::env::var_os("VIMORA_FULLSCREEN").is_some() {
+            self.toggle_fullscreen(ctx);
+        }
+        self.finish_fullscreen(ctx);
         self.keep_window_size(ctx);
         self.play_sounds();
         self.snapshots(ctx);
