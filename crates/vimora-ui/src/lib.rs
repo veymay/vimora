@@ -268,6 +268,24 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
         s.spacing.interact_size.y = CONTROL_H;
         s.spacing.menu_margin = Margin::same(6.0);
         s.spacing.window_margin = Margin::same(18.0);
+        // Thin, quiet scrollbars: a 2 px line that widens to 6 px under the pointer, drawn in
+        // the text colour at low opacity (no light track, also in dark mode).
+        s.spacing.scroll = egui::style::ScrollStyle {
+            floating: true,
+            bar_width: 6.0,
+            floating_width: 2.0,
+            floating_allocated_width: 0.0,
+            handle_min_length: 24.0,
+            bar_inner_margin: 2.0,
+            bar_outer_margin: 2.0,
+            foreground_color: true,
+            dormant_background_opacity: 0.0,
+            active_background_opacity: 0.0,
+            interact_background_opacity: 0.0,
+            dormant_handle_opacity: 0.18,
+            active_handle_opacity: 0.32,
+            interact_handle_opacity: 0.5,
+        };
         s.text_styles = [
             (TextStyle::Heading, FontId::new(22.0, bold())),
             (TextStyle::Body, FontId::new(14.0, FontFamily::Proportional)),

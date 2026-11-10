@@ -61,9 +61,9 @@ pub(super) struct SettingsOut {
     pub(super) backup_load: bool,
 }
 
-pub(super) const SETTINGS_W: f32 = 880.0;
-const NAV_W: f32 = 240.0;
-const BODY_H: f32 = 520.0;
+/// Settings live in a drawer like everything else: same width as the others.
+pub(super) const SETTINGS_W: f32 = super::overlay::DRAWER_W;
+const NAV_W: f32 = 176.0;
 const ROW_H: f32 = 56.0;
 const NAV_ITEM_H: f32 = 46.0;
 
@@ -86,11 +86,12 @@ pub(super) fn settings_page(
     c: &mut ServerConfig,
     cx: &SettingsCtx<'_>,
     out: &mut SettingsOut,
+    body_h: f32,
 ) {
     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
     ui.horizontal_top(|ui| {
         // --- section list ------------------------------------------------------------------
-        let (nav, _) = ui.allocate_exact_size(vec2(NAV_W, BODY_H), Sense::hover());
+        let (nav, _) = ui.allocate_exact_size(vec2(NAV_W, body_h), Sense::hover());
         ui.painter().rect_filled(nav, Rounding::ZERO, p.bg);
         ui.painter().vline(
             nav.right() - 0.5,
@@ -180,12 +181,12 @@ pub(super) fn settings_page(
 
         // --- rows ----------------------------------------------------------------------------
         ui.allocate_ui_with_layout(
-            vec2(SETTINGS_W - NAV_W, BODY_H),
+            vec2(SETTINGS_W - NAV_W, body_h),
             Layout::top_down(Align::Min),
             |ui| {
                 egui::ScrollArea::vertical()
                     .id_salt(("settings", *tab as u8))
-                    .max_height(BODY_H)
+                    .max_height(body_h)
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         Frame::none()

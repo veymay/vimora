@@ -1,9 +1,12 @@
 //! Student chat panel (`vimora-client chat`), docked to the right screen edge like AIMP's
 //! docked mode.
 //!
-//! * A new teacher message slides the panel in and keeps it open (**pinned**).
-//! * ✕ hides it into a thin strip on the screen edge (**collapsed**).
-//! * Hovering the strip slides it out (**peek**); moving the mouse away hides it again.
+//! * A new teacher message slides the panel in once (**shown**). If the student doesn't touch it
+//!   (pointer or typing) within a few seconds, it slides back to the edge (**collapsed**).
+//! * The collapsed panel is an invisible strip on the screen edge. Hovering it slides the panel
+//!   out (**peek**) — unless a full-screen program is in front; the pointer leaving hides it.
+//! * Once the panel has been on screen for a moment, the agent is told it was read ("READ" on
+//!   stdout), which the teacher sees as the second tick.
 //! * When the teacher ends the chat the agent closes stdin / sends `End` and the process exits,
 //!   so it can't be reopened until the teacher writes again.
 //!
@@ -26,9 +29,16 @@ pub enum ChatIn {
 }
 
 const OPEN_W: f32 = 380.0;
-const STRIP_W: f32 = 20.0;
+/// The collapsed panel: thin and fully transparent, only there to be hovered.
+const STRIP_W: f32 = 6.0;
 const PEEK_LINGER: Duration = Duration::from_millis(700);
+/// A message that pops the panel out hides it again after this, unless the student uses it.
+const AUTO_HIDE: Duration = Duration::from_secs(6);
+/// On screen this long = read.
+const READ_AFTER: Duration = Duration::from_millis(1200);
 const SLIDE_SECS: f32 = 0.18;
+/// Composer row: the input and the send button share this height.
+const CONTROL_H: f32 = 40.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -60,6 +70,7 @@ pub fn run() -> anyhow::Result<()> {
             .with_always_on_top()
             .with_taskbar(false)
             .with_resizable(false)
+            .with_transparent(true)
             .with_min_inner_size([STRIP_W, 200.0])
             .with_inner_size([STRIP_W, 640.0])
             // Hidden until it has been moved to the right screen edge (no jump on start).
@@ -87,6 +98,10 @@ pub fn run() -> anyhow::Result<()> {
                 last_geometry: None,
                 left_at: None,
                 draft: String::new(),
+                shown_at: Instant::now(),
+                touched: false,
+                read: 0,
+                scroll_down: true,
             }))
         }),
     )
@@ -135,6 +150,14 @@ struct ChatApp {
     /// When the pointer left the panel while peeking.
     left_at: Option<Instant>,
     draft: String,
+    /// When it last slid out on its own (new message).
+    shown_at: Instant,
+    /// The student used it since then (pointer or typing): it stays.
+    touched: bool,
+    /// Teacher messages already reported as read.
+    read: usize,
+    /// Jump to the newest message on the next frame.
+    scroll_down: bool,
 }
 
 impl ChatApp {
@@ -219,6 +242,10 @@ pub fn now_hhmm() -> String {
 }
 
 impl eframe::App for ChatApp {
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        [0.0, 0.0, 0.0, 0.0]
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         dev_screenshot(ctx);
         let p = vimora_ui::palette(ctx);
@@ -229,20 +256,37 @@ impl eframe::App for ChatApp {
         }
 
         // State machine.
+        let hovered = ctx.input(|i| i.pointer.hover_pos().is_some());
+        let typing = ctx.memory(|m| m.focused().is_some()) && !self.draft.is_empty();
         {
             let mut inbox = self.inbox.lock().unwrap();
             if std::mem::take(&mut inbox.new_message) {
-                self.mode = Mode::Pinned;
+                // Pops out once for a new message.
+                if self.mode == Mode::Collapsed {
+                    self.mode = Mode::Pinned;
+                    self.shown_at = Instant::now();
+                    self.touched = false;
+                }
+                self.scroll_down = true;
             }
             if self.mode != Mode::Collapsed {
                 inbox.unseen = 0;
             }
         }
-        let hovered = ctx.input(|i| i.pointer.hover_pos().is_some());
+        if self.mode == Mode::Pinned {
+            if hovered || typing {
+                self.touched = true;
+                self.shown_at = Instant::now();
+            } else if self.shown_at.elapsed() > if self.touched { PEEK_LINGER } else { AUTO_HIDE } {
+                self.mode = Mode::Collapsed;
+            }
+            ctx.request_repaint_after(Duration::from_millis(200));
+        }
         match self.mode {
-            Mode::Collapsed if hovered => {
+            Mode::Collapsed if hovered && !fullscreen_app_active() => {
                 self.mode = Mode::Peek;
                 self.left_at = None;
+                self.scroll_down = true;
             }
             Mode::Peek if !hovered => {
                 let t = *self.left_at.get_or_insert_with(Instant::now);
@@ -252,8 +296,28 @@ impl eframe::App for ChatApp {
                 }
                 ctx.request_repaint_after(Duration::from_millis(100));
             }
+            Mode::Peek if typing => self.left_at = None,
             Mode::Peek => self.left_at = None,
             _ => {}
+        }
+        // Read receipt: open and on screen for a moment.
+        if self.mode != Mode::Collapsed && self.width >= OPEN_W - 1.0 {
+            let teacher = self
+                .inbox
+                .lock()
+                .unwrap()
+                .messages
+                .iter()
+                .filter(|m| !m.mine)
+                .count();
+            if teacher > self.read
+                && (hovered || self.shown_at.elapsed() > READ_AFTER || self.mode == Mode::Peek)
+            {
+                self.read = teacher;
+                let mut out = std::io::stdout().lock();
+                let _ = writeln!(out, "READ").and_then(|_| out.flush());
+            }
+            ctx.request_repaint_after(Duration::from_millis(300));
         }
 
         // Slide.
@@ -274,12 +338,16 @@ impl eframe::App for ChatApp {
         }
         self.place(ctx);
 
+        let collapsed = self.width < OPEN_W * 0.5;
         egui::CentralPanel::default()
-            .frame(egui::Frame::none().fill(p.panel))
+            .frame(egui::Frame::none().fill(if collapsed {
+                egui::Color32::TRANSPARENT
+            } else {
+                p.panel
+            }))
             .show(ctx, |ui| {
-                if self.width < OPEN_W * 0.5 {
-                    strip(ui, &p, self.inbox.lock().unwrap().unseen);
-                } else {
+                // Collapsed: nothing is drawn — an invisible edge that only reacts to the pointer.
+                if !collapsed {
                     self.panel(ui, &p);
                 }
             });
@@ -323,26 +391,85 @@ fn dev_screenshot(ctx: &egui::Context) {
     ctx.request_repaint();
 }
 
-/// The collapsed tab on the screen edge.
-fn strip(ui: &mut egui::Ui, p: &Palette, unseen: usize) {
-    let r = ui.max_rect();
-    ui.painter().rect_filled(r, egui::Rounding::ZERO, p.accent);
-    ui.painter().text(
-        r.center(),
-        egui::Align2::CENTER_CENTER,
-        icons::MESSAGE_CIRCLE,
-        egui::FontId::proportional(14.0),
-        egui::Color32::WHITE,
-    );
-    if unseen > 0 {
-        ui.painter().text(
-            egui::pos2(r.center().x, r.center().y + 22.0),
-            egui::Align2::CENTER_CENTER,
-            unseen.min(99).to_string(),
-            egui::FontId::new(11.0, vimora_ui::mono_bold()),
-            egui::Color32::WHITE,
-        );
+/// Is a full-screen program in front (a video, a game, a presentation)? Then hovering the
+/// screen edge must not pull the chat over it.
+#[cfg(windows)]
+fn fullscreen_app_active() -> bool {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetClassNameW, GetForegroundWindow, GetWindowRect,
+    };
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg.is_null() {
+            return false;
+        }
+        let mut cls = [0u16; 64];
+        let n = GetClassNameW(fg, cls.as_mut_ptr(), cls.len() as i32).max(0) as usize;
+        let class = String::from_utf16_lossy(&cls[..n]);
+        if matches!(class.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd") {
+            return false; // the desktop itself
+        }
+        let mut r: RECT = std::mem::zeroed();
+        GetWindowRect(fg, &mut r);
+        let mut mi: MONITORINFO = std::mem::zeroed();
+        mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        if GetMonitorInfoW(MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST), &mut mi) == 0 {
+            return false;
+        }
+        let m = mi.rcMonitor;
+        // A maximised window leaves the taskbar free; full screen covers the whole monitor.
+        r.left <= m.left && r.top <= m.top && r.right >= m.right && r.bottom >= m.bottom
     }
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn fullscreen_app_active() -> bool {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{AtomEnum, ConnectionExt};
+    let Ok((c, screen)) = x11rb::connect(None) else {
+        return false;
+    };
+    let root = c.setup().roots[screen].root;
+    let atom = |n: &str| {
+        c.intern_atom(false, n.as_bytes())
+            .ok()?
+            .reply()
+            .ok()
+            .map(|r| r.atom)
+    };
+    (|| -> Option<bool> {
+        let (active, state, full) = (
+            atom("_NET_ACTIVE_WINDOW")?,
+            atom("_NET_WM_STATE")?,
+            atom("_NET_WM_STATE_FULLSCREEN")?,
+        );
+        let r = c
+            .get_property(false, root, active, AtomEnum::WINDOW, 0, 1)
+            .ok()?
+            .reply()
+            .ok()?;
+        let win = r.value32()?.next()?;
+        if win == 0 {
+            return Some(false);
+        }
+        let s = c
+            .get_property(false, win, state, AtomEnum::ATOM, 0, 32)
+            .ok()?
+            .reply()
+            .ok()?;
+        let fullscreen = s.value32()?.any(|a| a == full);
+        Some(fullscreen)
+    })()
+    .unwrap_or(false)
+}
+
+#[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
+fn fullscreen_app_active() -> bool {
+    false
 }
 
 impl ChatApp {
@@ -377,34 +504,6 @@ impl ChatApp {
             egui::FontId::new(15.0, vimora_ui::bold()),
             p.strong,
         );
-        let close = egui::Rect::from_min_size(
-            egui::pos2(head.right() - HEADER_H, head.top()),
-            egui::vec2(HEADER_H, HEADER_H),
-        );
-        let resp = ui.interact(close, egui::Id::new("chat-close"), egui::Sense::click());
-        if resp.hovered() {
-            ui.painter()
-                .rect_filled(close, egui::Rounding::ZERO, p.hover);
-        }
-        ui.painter().vline(
-            close.left(),
-            close.y_range(),
-            egui::Stroke::new(1.0_f32, p.line),
-        );
-        ui.painter().text(
-            close.center(),
-            egui::Align2::CENTER_CENTER,
-            icons::X,
-            egui::FontId::proportional(16.0),
-            p.muted,
-        );
-        if resp
-            .on_hover_text("Yashirish — chetga sichqonchani olib borsangiz yana ochiladi")
-            .clicked()
-        {
-            self.mode = Mode::Collapsed;
-        }
-
         // Messages
         let list = egui::Rect::from_min_max(
             egui::pos2(full.left(), head.bottom()),
@@ -462,6 +561,10 @@ impl ChatApp {
                                 });
                                 ui.add_space(8.0);
                             }
+                            // Opening or a new message: show the newest one.
+                            if std::mem::take(&mut self.scroll_down) {
+                                ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
+                            }
                         });
                 });
         });
@@ -476,23 +579,36 @@ impl ChatApp {
             comp.top() + 0.5,
             egui::Stroke::new(1.0_f32, p.line),
         );
-        let inner = comp.shrink2(egui::vec2(14.0, 13.0));
+        // Input and send button: one height, centred in the composer.
+        let inner =
+            egui::Rect::from_center_size(comp.center(), egui::vec2(comp.width() - 28.0, CONTROL_H));
         let send_rect = egui::Rect::from_min_size(
-            egui::pos2(inner.right() - inner.height(), inner.top()),
-            egui::vec2(inner.height(), inner.height()),
+            egui::pos2(inner.right() - CONTROL_H, inner.top()),
+            egui::vec2(CONTROL_H, CONTROL_H),
         );
         let edit_rect = egui::Rect::from_min_max(
             inner.min,
             egui::pos2(send_rect.left() - 8.0, inner.bottom()),
         );
-        let edit = ui.put(
+        let focused = ui.memory(|m| m.has_focus(egui::Id::new("chat-input")));
+        ui.painter().rect(
             edit_rect,
-            vimora_ui::text_area(&mut self.draft)
+            egui::Rounding::ZERO,
+            p.sunken,
+            egui::Stroke::new(1.0_f32, if focused { p.accent } else { p.line_strong }),
+        );
+        let field = edit_rect.shrink2(egui::vec2(10.0, 1.0));
+        let edit = ui.put(
+            field,
+            egui::TextEdit::multiline(&mut self.draft)
+                .id(egui::Id::new("chat-input"))
+                .frame(false)
+                .margin(egui::vec2(0.0, 0.0))
                 .hint_text("Javob yozing…")
                 .desired_rows(1)
                 .vertical_align(egui::Align::Center)
-                .desired_width(edit_rect.width())
-                .min_size(edit_rect.size())
+                .desired_width(field.width())
+                .min_size(field.size())
                 .return_key(Some(egui::KeyboardShortcut::new(
                     egui::Modifiers::SHIFT,
                     egui::Key::Enter,

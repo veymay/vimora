@@ -450,6 +450,8 @@ pub enum ClientMsg {
     /// Shape of the student's mouse pointer while the teacher watches live
     /// (see [`cursor_kind`]).
     Cursor(u8),
+    /// The student has seen the teacher's chat messages (Telegram's second tick).
+    ChatRead,
 }
 
 /// Pointer shapes carried by [`ClientMsg::Cursor`].
@@ -502,6 +504,7 @@ mod wire_tests {
         assert_eq!(tag(&ClientMsg::Changes(vec![])), 9);
         assert_eq!(tag(&ClientMsg::AgentVersion(String::new())), 10);
         assert_eq!(tag(&ClientMsg::Cursor(0)), 11);
+        assert_eq!(tag(&ClientMsg::ChatRead), 12);
         // Command: ChatEnd was the last one before the unlock code was added.
         assert_eq!(
             tag(&Command::UnlockCode {

@@ -5,10 +5,11 @@ use super::*;
 use vimora_ui::{tf, tr};
 
 /// Open/close animation length for modals and drawers.
-const OVERLAY_ANIM_SECS: f32 = 0.22;
+/// Drawer slide: quick, but long enough to be seen.
+const OVERLAY_ANIM_SECS: f32 = 0.26;
 /// Overlay header and footer bar heights.
 /// Width of every right-side drawer.
-pub(super) const DRAWER_W: f32 = 620.0;
+pub(super) const DRAWER_W: f32 = 680.0;
 const HEADER_H: f32 = 52.0;
 const FOOTER_H: f32 = 62.0;
 
@@ -355,14 +356,8 @@ impl ConsoleApp {
         }) else {
             return;
         };
-        let drawer = matches!(
-            dialog,
-            Dialog::Net { .. }
-                | Dialog::Message { .. }
-                | Dialog::Activity
-                | Dialog::Freeze { .. }
-                | Dialog::Updates { .. }
-        );
+        // No modals: every dialog is a drawer on the right edge.
+        let drawer = true;
         let (title, width) = match dialog {
             Dialog::Message { .. } => (tr("Xabarlar"), 460.0),
             Dialog::Launch { .. } => (tr("Sayt yoki dasturni ochish"), 520.0),
@@ -433,7 +428,8 @@ impl ConsoleApp {
         let mut clear = false;
         let mut clear_help: Option<u64> = None;
         area.show(ctx, |ui| {
-            ui.set_opacity(if drawer { ease.max(0.35) } else { ease });
+            // Opaque while sliding: the movement itself is the animation.
+            ui.set_opacity(if drawer { ease.max(0.85) } else { ease });
             if !live {
                 ui.disable();
             }
@@ -447,7 +443,23 @@ impl ConsoleApp {
                     spread: 0.0,
                     color: Color32::from_black_alpha(if p.dark { 120 } else { 40 }),
                 });
-            frame.show(ui, |ui| {
+            // A fixed rectangle: content can't widen it, so ✕ is always on the right edge and
+            // switching tabs never changes the drawer's size.
+            {
+                let rect = Rect::from_min_size(ui.max_rect().min, vec2(width, screen.height()));
+                ui.painter()
+                    .add(frame.shadow.as_shape(rect, Rounding::ZERO));
+                ui.painter()
+                    .rect(rect, Rounding::ZERO, p.card, Stroke::new(1.0_f32, p.line));
+                // Clicks on empty parts of the drawer stay in the drawer.
+                ui.allocate_rect(rect, Sense::click());
+                let mut inner = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(rect)
+                        .layout(Layout::top_down(Align::Min)),
+                );
+                inner.set_clip_rect(rect.intersect(ui.clip_rect()));
+                let ui = &mut inner;
                 ui.set_width(width);
                 ui.set_max_width(width);
                 // Header: one title, fixed height, close cell flush right and flush with the
@@ -544,7 +556,15 @@ impl ConsoleApp {
                     // Edits go straight into the live config; the app reacts after the frame.
                     let mut c = cfg.write().unwrap();
                     let before = c.clone();
-                    settings_page(ui, p, tab, &mut c, &scx, &mut settings_out);
+                    settings_page(
+                        ui,
+                        p,
+                        tab,
+                        &mut c,
+                        &scx,
+                        &mut settings_out,
+                        screen.height() - HEADER_H - 2.0,
+                    );
                     if *c != before {
                         settings_before = Some(before);
                     }
@@ -651,7 +671,7 @@ impl ConsoleApp {
                             });
                         });
                 }
-            });
+            };
         });
 
         if let Some(before) = settings_before {
@@ -703,7 +723,7 @@ impl ConsoleApp {
                 );
                 let mut h = self.hub.lock().unwrap();
                 h.chat_members.extend(targets.iter().copied());
-                h.chat(true, who, body);
+                h.chat_out(who, body, targets.clone());
             }
         }
         self.shadow_requests(&targets);

@@ -1842,21 +1842,32 @@ pub(super) fn chat_form(
         comp.top() + 0.5,
         Stroke::new(1.0_f32, p.line),
     );
-    let inner = comp.shrink2(vec2(16.0, 14.0));
-    let send_rect = Rect::from_min_size(
-        pos2(inner.right() - inner.height(), inner.top()),
-        vec2(inner.height(), inner.height()),
-    );
+    // One height for both; the input's box is painted here (not by TextEdit, whose frame and
+    // focus ring came out a few pixels off the button).
+    const ROW_H: f32 = 40.0;
+    let inner = Rect::from_center_size(comp.center(), vec2(comp.width() - 32.0, ROW_H));
+    let send_rect =
+        Rect::from_min_size(pos2(inner.right() - ROW_H, inner.top()), vec2(ROW_H, ROW_H));
     let edit_rect = Rect::from_min_max(inner.min, pos2(send_rect.left() - 8.0, inner.bottom()));
+    let focused = ui.memory(|m| m.has_focus(egui::Id::new("chat-input")));
+    ui.painter().rect(
+        edit_rect,
+        Rounding::ZERO,
+        p.sunken,
+        Stroke::new(1.0_f32, if focused { p.accent } else { p.line_strong }),
+    );
     let edit = ui
         .put(
-            edit_rect,
-            ui_kit::text_area(text)
+            edit_rect.shrink2(vec2(10.0, 1.0)),
+            egui::TextEdit::multiline(text)
+                .id(egui::Id::new("chat-input"))
+                .frame(false)
+                .margin(vec2(0.0, 0.0))
                 .hint_text(tr("Xabar yozing…"))
                 .desired_rows(1)
                 .vertical_align(egui::Align::Center)
-                .desired_width(edit_rect.width())
-                .min_size(edit_rect.size())
+                .desired_width(edit_rect.width() - 20.0)
+                .min_size(edit_rect.shrink2(vec2(10.0, 1.0)).size())
                 .return_key(Some(egui::KeyboardShortcut::new(
                     egui::Modifiers::SHIFT,
                     Key::Enter,
@@ -1926,7 +1937,21 @@ fn chat_bubble(ui: &mut egui::Ui, p: &Palette, m: &crate::net::ChatMsg, max_w: f
                     }
                     ui.label(RichText::new(&m.text).size(14.0).color(ink));
                     let meta = if m.outgoing {
-                        format!("{} · {}", m.time, m.who)
+                        // Telegram-style: clock = not on their screen yet, ✓ = on every
+                        // recipient's screen, ✓✓ = every recipient has seen it.
+                        let all = |set: &std::collections::BTreeSet<u64>| {
+                            !m.to.is_empty() && m.to.iter().all(|id| set.contains(id))
+                        };
+                        let tick = if all(&m.read) {
+                            icons::CHECK_CHECK
+                        } else if all(&m.delivered) {
+                            icons::CHECK
+                        } else if m.to.is_empty() {
+                            ""
+                        } else {
+                            icons::TIMER
+                        };
+                        format!("{} · {}  {tick}", m.time, m.who)
                     } else {
                         m.time.clone()
                     };

@@ -267,9 +267,13 @@ impl eframe::App for OverlayApp {
         if ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
         }
+        // The pointer may move (so it ends up over us) but is never shown.
+        ctx.set_cursor_icon(egui::CursorIcon::None);
         // Only repair what was actually lost: re-sending fullscreen/focus on a timer made the
-        // screen flash (the window was re-laid out every time).
-        if self.last_focus.elapsed() > Duration::from_secs(1) {
+        // screen flash (the window was re-laid out every time). On Windows the hooks swallow
+        // all input, so egui never even sees the window as focused: the native guard thread in
+        // `input_block` keeps it in front instead, and this block must stay out of the way.
+        if cfg!(not(windows)) && self.last_focus.elapsed() > Duration::from_secs(1) {
             self.last_focus = Instant::now();
             let (full, focused) = ctx.input(|i| {
                 let v = i.viewport();
@@ -452,12 +456,7 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
         p.faint.gamma_multiply(fade),
     );
 
-    // The tile.
-    painter.rect_filled(
-        Rect::from_center_size(c, vec2(112.0, 112.0)),
-        Rounding::ZERO,
-        if v.unlocked { p.success } else { p.accent },
-    );
+    // The lock itself: a large icon on the soft glow, no box around it.
     painter.text(
         c,
         Align2::CENTER_CENTER,
@@ -466,8 +465,8 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
         } else {
             icons::LOCK
         },
-        FontId::proportional(50.0),
-        p.on_accent,
+        FontId::proportional(84.0),
+        if v.unlocked { p.success } else { p.accent },
     );
 
     // Texts: shown only when the teacher wrote them.
@@ -649,73 +648,147 @@ fn return_blocked(painter: &egui::Painter, x: f32, y: f32, secs: u64, col: egui:
 #[cfg(windows)]
 mod input_block {
     use std::ptr::{null, null_mut};
-    use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, WPARAM};
+    use std::sync::atomic::{AtomicIsize, Ordering};
+    use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_ESCAPE, VK_MENU,
+    };
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
+
+    /// Marks input we inject ourselves (Esc to close the Start menu, Alt to take focus):
+    /// the hooks let exactly these through.
+    const MAGIC: usize = 0x5649_4D52;
 
     /// Keys the lock screen's code box may use, collected by the keyboard hook.
     static KEYS: std::sync::Mutex<Vec<char>> = std::sync::Mutex::new(Vec::new());
+    /// Our full-screen window (found once it exists).
+    static OURS: AtomicIsize = AtomicIsize::new(0);
 
     /// Drains the typed digits / Backspace (`\u{8}`) / Escape (`\u{1b}`).
     pub fn take_keys() -> Vec<char> {
         std::mem::take(&mut *KEYS.lock().unwrap())
     }
 
-    unsafe extern "system" fn swallow(code: i32, w: WPARAM, l: LPARAM) -> LRESULT {
+    /// Mouse: movement passes (the pointer is hidden over us), everything else is eaten.
+    unsafe extern "system" fn mouse(code: i32, w: WPARAM, l: LPARAM) -> LRESULT {
         if code >= 0 {
-            return 1;
+            let m = &*(l as *const MSLLHOOKSTRUCT);
+            if w as u32 != WM_MOUSEMOVE && m.dwExtraInfo != MAGIC {
+                return 1;
+            }
         }
         CallNextHookEx(null_mut(), code, w, l)
     }
 
     /// Keyboard: eat everything, but remember digits for the unlock code.
     unsafe extern "system" fn keyboard(code: i32, w: WPARAM, l: LPARAM) -> LRESULT {
-        if code >= 0 && (w as u32 == WM_KEYDOWN || w as u32 == WM_SYSKEYDOWN) {
-            let vk = (*(l as *const KBDLLHOOKSTRUCT)).vkCode;
-            let c = match vk {
-                0x30..=0x39 => Some((b'0' + (vk - 0x30) as u8) as char),
-                0x60..=0x69 => Some((b'0' + (vk - 0x60) as u8) as char), // numpad
-                0x08 => Some('\u{8}'),
-                0x1B => Some('\u{1b}'),
-                _ => None,
-            };
-            if let Some(c) = c {
-                if let Ok(mut k) = KEYS.lock() {
-                    if k.len() < 64 {
-                        k.push(c);
+        if code >= 0 {
+            let k = &*(l as *const KBDLLHOOKSTRUCT);
+            if k.dwExtraInfo == MAGIC {
+                return CallNextHookEx(null_mut(), code, w, l);
+            }
+            if w as u32 == WM_KEYDOWN || w as u32 == WM_SYSKEYDOWN {
+                let vk = k.vkCode;
+                let c = match vk {
+                    0x30..=0x39 => Some((b'0' + (vk - 0x30) as u8) as char),
+                    0x60..=0x69 => Some((b'0' + (vk - 0x60) as u8) as char), // numpad
+                    0x08 => Some('\u{8}'),
+                    0x1B => Some('\u{1b}'),
+                    _ => None,
+                };
+                if let Some(c) = c {
+                    if let Ok(mut keys) = KEYS.lock() {
+                        if keys.len() < 64 {
+                            keys.push(c);
+                        }
                     }
                 }
             }
             return 1;
         }
-        swallow(code, w, l)
-    }
-
-    unsafe extern "system" fn raise(hwnd: HWND, _: LPARAM) -> BOOL {
-        let mut pid = 0u32;
-        GetWindowThreadProcessId(hwnd, &mut pid);
-        if pid == GetCurrentProcessId() && IsWindowVisible(hwnd) != 0 {
-            // Z-order only: no show/activate, so nothing is redrawn (that was the flashing).
-            SetWindowPos(
-                hwnd,
-                HWND_TOPMOST,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOREDRAW,
-            );
-        }
-        1
+        CallNextHookEx(null_mut(), code, w, l)
     }
 
     unsafe fn hook_all() -> (HHOOK, HHOOK) {
         let module = GetModuleHandleW(null());
         (
             SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard), module, 0),
-            SetWindowsHookExW(WH_MOUSE_LL, Some(swallow), module, 0),
+            SetWindowsHookExW(WH_MOUSE_LL, Some(mouse), module, 0),
         )
+    }
+
+    unsafe extern "system" fn find_ours(hwnd: HWND, _: LPARAM) -> BOOL {
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        if pid == GetCurrentProcessId() && IsWindowVisible(hwnd) != 0 {
+            let mut r: RECT = std::mem::zeroed();
+            GetWindowRect(hwnd, &mut r);
+            if r.right - r.left > 400 {
+                OURS.store(hwnd as isize, Ordering::Relaxed);
+                return 0;
+            }
+        }
+        1
+    }
+
+    unsafe fn key(vk: u16, up: bool) -> INPUT {
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: vk,
+                    wScan: 0,
+                    dwFlags: if up { KEYEVENTF_KEYUP } else { 0 },
+                    time: 0,
+                    dwExtraInfo: MAGIC,
+                },
+            },
+        }
+    }
+
+    unsafe fn press(vk: u16) {
+        let i = [key(vk, false), key(vk, true)];
+        SendInput(2, i.as_ptr(), std::mem::size_of::<INPUT>() as i32);
+    }
+
+    /// Keeps the overlay in front without touching it while all is well (that touching was the
+    /// once-a-second flashing): if something else got to the front — the Start menu, a window —
+    /// close the Start menu and take the foreground back.
+    unsafe fn guard() {
+        let mut ours = OURS.load(Ordering::Relaxed) as HWND;
+        if ours.is_null() || IsWindow(ours) == 0 {
+            OURS.store(0, Ordering::Relaxed);
+            EnumWindows(Some(find_ours), 0);
+            ours = OURS.load(Ordering::Relaxed) as HWND;
+            if ours.is_null() {
+                return;
+            }
+        }
+        let fg = GetForegroundWindow();
+        if fg == ours {
+            return;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(fg, &mut pid);
+        if !fg.is_null() && pid != GetCurrentProcessId() {
+            // Start / search / any shell popup closes on Esc.
+            press(VK_ESCAPE);
+        }
+        // Windows only hands the foreground to a process that just got input: a (harmless,
+        // marked) Alt press makes that us.
+        press(VK_MENU);
+        SetWindowPos(
+            ours,
+            HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOOWNERZORDER,
+        );
+        SetForegroundWindow(ours);
     }
 
     pub fn install() {
@@ -745,10 +818,8 @@ mod input_block {
             }
         });
         std::thread::spawn(|| loop {
-            std::thread::sleep(std::time::Duration::from_millis(1000));
-            unsafe {
-                EnumWindows(Some(raise), 0);
-            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            unsafe { guard() };
         });
     }
 }

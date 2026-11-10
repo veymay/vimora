@@ -39,6 +39,13 @@ fn spawn(ctx: &Ctx) -> Result<ChatProc> {
             .lines()
             .map_while(Result::ok)
         {
+            // The panel was seen: the teacher gets the second tick.
+            if line.trim() == "READ" {
+                if let Some(tx) = uplink.lock().unwrap().as_ref() {
+                    let _ = tx.try_send(ClientMsg::ChatRead);
+                }
+                continue;
+            }
             let Ok(text) = serde_json::from_str::<String>(&line) else {
                 continue;
             };

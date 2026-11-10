@@ -83,7 +83,15 @@ pub struct ChatMsg {
     pub text: String,
     /// A notice in the middle of the chat ("Chat yakunlandi").
     pub system: bool,
+    /// Outgoing only: who it was sent to, whose panel showed it, who has seen it
+    /// (Telegram's clock / one tick / two ticks).
+    pub to: Vec<u64>,
+    pub delivered: std::collections::BTreeSet<u64>,
+    pub read: std::collections::BTreeSet<u64>,
 }
+
+/// What the student agent answers when the chat panel took the message.
+pub const CHAT_DELIVERED: &str = "xabar yetkazildi";
 
 pub struct Hub {
     /// Signs sessions and privileged commands; student PCs pin its public key.
@@ -154,12 +162,48 @@ impl Hub {
             who: who.into(),
             text: text.into(),
             system: false,
+            to: vec![],
+            delivered: Default::default(),
+            read: Default::default(),
         });
         while self.chat.len() > 500 {
             self.chat.pop_front();
         }
         if !outgoing {
             self.unread += 1;
+        }
+        self.repaint();
+    }
+
+    /// A teacher's message to `to` (delivery and read ticks are tracked per computer).
+    pub fn chat_out(&mut self, who: impl Into<String>, text: impl Into<String>, to: Vec<u64>) {
+        self.chat(true, who, text);
+        if let Some(m) = self.chat.back_mut() {
+            m.to = to;
+        }
+    }
+
+    /// The oldest of `id`'s messages its panel hasn't confirmed yet is now delivered.
+    fn chat_delivered(&mut self, id: u64) {
+        if let Some(m) = self
+            .chat
+            .iter_mut()
+            .find(|m| m.outgoing && m.to.contains(&id) && !m.delivered.contains(&id))
+        {
+            m.delivered.insert(id);
+        }
+        self.repaint();
+    }
+
+    /// The student saw the panel: everything sent to them so far is read.
+    fn chat_read(&mut self, id: u64) {
+        for m in self
+            .chat
+            .iter_mut()
+            .filter(|m| m.outgoing && m.to.contains(&id))
+        {
+            m.delivered.insert(id);
+            m.read.insert(id);
         }
         self.repaint();
     }
@@ -177,6 +221,9 @@ impl Hub {
             who: String::new(),
             text: tr("Chat yakunlandi").into(),
             system: true,
+            to: vec![],
+            delivered: Default::default(),
+            read: Default::default(),
         });
         self.repaint();
     }
@@ -492,6 +539,11 @@ async fn session(
                     if message.is_empty() {
                         continue;
                     }
+                    // Chat delivery is a tick on the message, not a notification.
+                    if ok && message == CHAT_DELIVERED {
+                        hub.lock().unwrap().chat_delivered(id);
+                        continue;
+                    }
                     let label = info.label().to_string();
                     let mut h = hub.lock().unwrap();
                     h.log(
@@ -558,8 +610,12 @@ async fn session(
                     h.repaint();
                 }
                 ClientMsg::Chat { text } => {
-                    hub.lock().unwrap().chat(false, info.label(), text);
+                    let mut h = hub.lock().unwrap();
+                    // A reply means they have read what came before it.
+                    h.chat_read(id);
+                    h.chat(false, info.label(), text);
                 }
+                ClientMsg::ChatRead => hub.lock().unwrap().chat_read(id),
                 ClientMsg::Pong | ClientMsg::Hello { .. } => {}
             }
         }
