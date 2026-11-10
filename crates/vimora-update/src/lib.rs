@@ -356,6 +356,9 @@ pub fn install_student(path: &Path) -> Result<()> {
                 "--quiet",
                 "--setenv=DEBIAN_FRONTEND=noninteractive",
                 "apt-get",
+                // Unattended upgrades may hold the dpkg lock: wait for it instead of failing.
+                "-o",
+                "DPkg::Lock::Timeout=600",
                 "install",
                 "-y",
                 "--reinstall",

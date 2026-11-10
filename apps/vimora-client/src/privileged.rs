@@ -102,10 +102,18 @@ impl Engine {
         self.refresh_freeze();
     }
 
-    /// Background self-update (service, every few hours) unless the teacher turned it off.
+    /// Background self-update (service, every 30 minutes) unless the teacher turned it off.
     pub fn auto_update(self: &Arc<Self>) {
+        // An update started earlier that never arrived is reported (and retried below).
+        self.check_pending_update();
         if self.shield.store().vimora_manual || self.inner.lock().unwrap().busy.is_some() {
             return;
+        }
+        // The same version failed several times: try it only every 6 hours.
+        if let Some(p) = PendingUpdate::load() {
+            if p.tries >= 3 && now_secs().saturating_sub(p.at) < 6 * 3600 {
+                return;
+            }
         }
         let res = self.update_vimora();
         // update_vimora shows its progress as "busy"; outside a job nobody else clears it.
@@ -113,7 +121,40 @@ impl Engine {
         match res {
             Ok(m) if m.contains("o'rnatilmoqda") => self.push(true, m),
             Ok(_) => {}
-            Err(e) => tracing::warn!("self-update skipped: {e:#}"),
+            Err(e) => {
+                let msg = format!("{e:#}");
+                tracing::warn!("self-update skipped: {msg}");
+                // No internet is normal in a classroom; anything else the teacher should see.
+                let offline = msg.contains("bog'lanib bo'lmadi") || msg.contains("reliz topilmadi");
+                if !offline {
+                    self.push(false, format!("Vimora yangilanmadi: {msg}"));
+                }
+            }
+        }
+    }
+
+    /// After an installer was started: did the new version arrive? Told to the teacher once.
+    fn check_pending_update(&self) {
+        let Some(mut p) = PendingUpdate::load() else {
+            return;
+        };
+        let current = vimora_update::current();
+        if !vimora_update::is_newer(&p.version, current) {
+            PendingUpdate::clear();
+            self.push(true, format!("Vimora {current} o'rnatildi"));
+            return;
+        }
+        // Still the old version 10 minutes after the installer started: it failed.
+        if !p.reported && now_secs().saturating_sub(p.at) > 600 {
+            p.reported = true;
+            p.save();
+            self.push(
+                false,
+                format!(
+                    "Vimora {} o'rnatilmadi ({}-urinish) — keyinroq yana urinib ko'riladi",
+                    p.version, p.tries
+                ),
+            );
         }
     }
 
@@ -162,6 +203,18 @@ impl Engine {
         vimora_update::clear_old(&update_dir());
         let path = vimora_update::download(&rel, Role::Student, &update_dir(), &progress)?;
         self.inner.lock().unwrap().busy = Some(format!("Vimora {v} o'rnatilmoqda"));
+        // Remember what was started, so the result can be checked (see check_pending_update).
+        let tries = PendingUpdate::load()
+            .filter(|p| p.version == rel.version)
+            .map_or(0, |p| p.tries)
+            + 1;
+        PendingUpdate {
+            version: rel.version.clone(),
+            at: now_secs(),
+            tries,
+            reported: false,
+        }
+        .save();
         vimora_update::install_student(&path)?;
         Ok(format!("Vimora {} o'rnatilmoqda", rel.version))
     }
@@ -209,7 +262,14 @@ impl Engine {
                 self.shield.set_vimora_auto(p.vimora);
                 msg
             }
-            PrivCommand::UpdateVimora => self.job("Vimora yangilanmoqda", |e| e.update_vimora())?,
+            PrivCommand::UpdateVimora => {
+                // Already updating by itself: not an error for the teacher.
+                let running = self.inner.lock().unwrap().busy.clone();
+                match running {
+                    Some(b) if b.contains("Vimora") => format!("{b} (allaqachon boshlangan)"),
+                    _ => self.job("Vimora yangilanmoqda", |e| e.update_vimora())?,
+                }
+            }
             PrivCommand::CheckUpdates => self.job("Yangilanishlar tekshirilmoqda", |e| {
                 let p = updates::check()?;
                 let mut i = e.inner.lock().unwrap();
@@ -414,6 +474,8 @@ impl Engine {
             self.push(ok, m);
         }
         self.flush_commits();
+        // The service starts again after an update: say whether the new version arrived.
+        self.check_pending_update();
     }
 
     /// Commits files an update left in the Shadow overlay (see `update_vimora`).
@@ -437,5 +499,46 @@ fn update_dir() -> std::path::PathBuf {
     #[cfg(not(windows))]
     {
         std::path::PathBuf::from("/var/cache/vimora")
+    }
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// An update whose installer was started (kept in the update folder, which the write filters
+/// leave alone), so the next service start / check can confirm it arrived.
+#[derive(Serialize, Deserialize, Default)]
+struct PendingUpdate {
+    version: String,
+    at: u64,
+    tries: u32,
+    /// The failure was already reported to the teacher.
+    reported: bool,
+}
+
+impl PendingUpdate {
+    fn file() -> std::path::PathBuf {
+        update_dir().join("pending.json")
+    }
+
+    fn load() -> Option<Self> {
+        std::fs::read_to_string(Self::file())
+            .ok()
+            .and_then(|j| serde_json::from_str(&j).ok())
+    }
+
+    fn save(&self) {
+        let _ = std::fs::create_dir_all(update_dir());
+        if let Ok(j) = serde_json::to_string(self) {
+            let _ = std::fs::write(Self::file(), j);
+        }
+    }
+
+    fn clear() {
+        let _ = std::fs::remove_file(Self::file());
     }
 }

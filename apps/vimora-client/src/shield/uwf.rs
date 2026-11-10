@@ -385,6 +385,31 @@ impl Backend for Uwf {
         Ok(())
     }
 
+    /// UWF commits files one by one: a folder (e.g. Vimora's own after an update) is walked.
+    fn commit_path(&self, path: &Path) -> Result<()> {
+        if !path.is_dir() {
+            return self.commit_file(path);
+        }
+        let (mut ok, mut failed) = (0, 0);
+        let mut stack = vec![path.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            for e in std::fs::read_dir(&d)?.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if self.commit_file(&p).is_ok() {
+                    ok += 1;
+                } else {
+                    failed += 1;
+                }
+            }
+        }
+        if ok == 0 && failed > 0 {
+            bail!("{} dagi fayllarni saqlab bo'lmadi", path.display());
+        }
+        Ok(())
+    }
+
     fn commit_registry(&self, key: &str, value: &str) -> Result<()> {
         uwf(&["registry", "commit", key, value])?;
         Ok(())
