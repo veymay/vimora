@@ -26,6 +26,8 @@ pub enum OverlayCmd {
         hash: Vec<u8>,
         digits: u8,
     },
+    /// Fade out and exit (the agent kills it anyway shortly after).
+    Bye,
 }
 
 #[derive(Clone)]
@@ -39,6 +41,8 @@ struct Shared {
     mode: Mode,
     frame: Option<egui::ColorImage>,
     frame_dirty: bool,
+    /// Asked to leave: fading out since then.
+    closing: Option<std::time::Instant>,
 }
 
 pub fn run() -> anyhow::Result<()> {
@@ -50,8 +54,13 @@ pub fn run() -> anyhow::Result<()> {
         },
         frame: None,
         frame_dirty: false,
+        closing: None,
     }));
 
+    // Windows: a desktop of its own — nothing to Alt+Tab or Start-menu to (see `desktop`).
+    // Must come before any window or hook is created on this thread.
+    let own_desktop = crate::desktop::enter();
+    tracing::info!("overlay on its own desktop: {own_desktop}");
     #[cfg(windows)]
     input_block::install();
 
@@ -137,6 +146,7 @@ fn spawn_stdin_reader(shared: Arc<Mutex<Shared>>, ctx: egui::Context) {
             match cmd {
                 OverlayCmd::Lock { title, message } => s.mode = Mode::Lock { title, message },
                 OverlayCmd::Show => s.mode = Mode::Show,
+                OverlayCmd::Bye => s.closing = Some(std::time::Instant::now()),
                 OverlayCmd::Code { salt, hash, digits } => {
                     s.code = (!hash.is_empty()).then_some((salt, hash, digits.clamp(4, 8)))
                 }
@@ -289,6 +299,24 @@ impl eframe::App for OverlayApp {
         ctx.request_repaint_after(Duration::from_millis(500));
 
         overlay_dev_screenshot(ctx);
+        // Enter: fade in from black; leave: fade to black, then exit. Every frame is drawn while
+        // that happens (the screen otherwise repaints only twice a second, which made the
+        // background and the glow jump in instead of fading).
+        const LEAVE_SECS: f32 = 0.35;
+        let leave = self
+            .shared
+            .lock()
+            .unwrap()
+            .closing
+            .map(|t| (t.elapsed().as_secs_f32() / LEAVE_SECS).min(1.0))
+            .unwrap_or(0.0);
+        if leave >= 1.0 {
+            std::process::exit(0);
+        }
+        let entering = self.started.elapsed() < Duration::from_millis(900);
+        if entering || leave > 0.0 {
+            ctx.request_repaint_after(Duration::from_millis(16));
+        }
         self.handle_code_input(ctx);
         let mode = {
             let mut s = self.shared.lock().unwrap();
@@ -327,6 +355,7 @@ impl eframe::App for OverlayApp {
                         .typed_at
                         .is_some_and(|t| now.duration_since(t) < Duration::from_secs(6)),
                     time: self.started.elapsed().as_secs_f32(),
+                    leave,
                 };
                 let animated = view.digits.is_some();
                 egui::CentralPanel::default()
@@ -388,6 +417,8 @@ struct LockView {
     typing: bool,
     /// Seconds since the overlay started (animations).
     time: f32,
+    /// 0 → 1 while fading out before closing.
+    leave: f32,
 }
 
 fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
@@ -395,7 +426,9 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
     let p = vimora_ui::DARK;
     let rect = ui.max_rect();
     let painter = ui.painter();
-    let fade = (v.time / 0.6).clamp(0.0, 1.0); // gentle fade-in
+    // Ease-out fade in over 0.6 s, ease-in fade out while leaving.
+    let t_in = (v.time / 0.6).clamp(0.0, 1.0);
+    let fade = (1.0 - (1.0 - t_in).powi(3)) * (1.0 - v.leave * v.leave);
 
     // Background: a calm vertical gradient with a soft green glow behind the lock tile.
     let c = pos2(rect.center().x, rect.center().y - 70.0);
@@ -411,9 +444,9 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
         mesh.add_triangle(0, 2, 3);
         painter.add(egui::Shape::mesh(mesh));
     }
-    let breathe = 0.5 + 0.5 * (v.time * 0.9).sin();
-    glow(painter, c, 560.0 + breathe * 30.0, p.accent, 0.13 * fade);
-    glow(painter, c, 300.0 + breathe * 14.0, p.accent, 0.20 * fade);
+    // A steady glow (it used to "breathe", which only made it jump between repaints).
+    glow(painter, c, 575.0, p.accent, 0.13 * fade);
+    glow(painter, c, 307.0, p.accent, 0.20 * fade);
     glow(painter, c, 150.0, p.accent, 0.20 * fade);
     // Fine corner brackets: a quiet "locked" frame around the screen.
     let m = 28.0;
@@ -465,8 +498,9 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
         } else {
             icons::LOCK
         },
-        FontId::proportional(84.0),
-        if v.unlocked { p.success } else { p.accent },
+        // Grows into place as it fades in.
+        FontId::proportional(84.0 * (0.86 + 0.14 * fade)),
+        if v.unlocked { p.success } else { p.accent }.gamma_multiply(fade),
     );
 
     // Texts: shown only when the teacher wrote them.
@@ -602,6 +636,14 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
         p.faint.gamma_multiply(fade),
     );
     let _ = Color32::WHITE;
+    // Enter from black / leave to black: one veil over everything.
+    if fade < 1.0 {
+        painter.rect_filled(
+            rect,
+            Rounding::ZERO,
+            Color32::from_black_alpha(((1.0 - fade) * 255.0) as u8),
+        );
+    }
 }
 
 /// A soft round glow: a triangle fan fading from `color` at the centre to nothing at `radius`.
@@ -793,6 +835,7 @@ mod input_block {
 
     pub fn install() {
         std::thread::spawn(|| unsafe {
+            crate::desktop::join_thread();
             let mut hooks = hook_all();
             let mut renewed = std::time::Instant::now();
             let mut msg: MSG = std::mem::zeroed();
@@ -817,9 +860,12 @@ mod input_block {
                 }
             }
         });
-        std::thread::spawn(|| loop {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            unsafe { guard() };
+        std::thread::spawn(|| {
+            crate::desktop::join_thread();
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                unsafe { guard() };
+            }
         });
     }
 }

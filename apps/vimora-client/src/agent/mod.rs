@@ -208,6 +208,9 @@ pub async fn run(cfg: Config) -> Result<()> {
         uplink: Arc::default(),
         chat: Arc::default(),
     };
+    // A lock desktop left behind by a crash: show the normal one (a lock still in force opens
+    // again right away).
+    crate::desktop::restore();
     restore_lock(&state);
     tray::start(state.clone());
     probe_ui().await;

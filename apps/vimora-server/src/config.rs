@@ -67,6 +67,10 @@ pub struct ServerConfig {
     pub app_blocklist: String,
     pub web_blocklist: String,
     pub keyword_blocklist: String,
+    /// Site categories ("O'yinlar", imported lists, …) and what is blocked in them.
+    pub site_categories: Vec<crate::blockcat::BlockCategory>,
+    /// Program categories.
+    pub app_categories: Vec<crate::blockcat::BlockCategory>,
     pub safe_search: bool,
     pub update_policy: vimora_core::UpdatePolicy,
 }
@@ -123,6 +127,8 @@ impl Default for ServerConfig {
             app_blocklist: "steam, discord, telegram".into(),
             web_blocklist: "tiktok.com\ninstagram.com".into(),
             keyword_blocklist: "kazino\ncasino\n1xbet".into(),
+            site_categories: vec![],
+            app_categories: vec![],
             safe_search: true,
             update_policy: vimora_core::UpdatePolicy {
                 os: vimora_core::OsUpdateMode::Manual,

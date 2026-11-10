@@ -85,6 +85,11 @@ pub(super) enum Dialog {
         keywords: String,
         /// Blocked programs (process names), one per line; '#' = switched off.
         apps: String,
+        /// Site / program categories with their items (see `blockcat`).
+        site_cats: Vec<crate::blockcat::BlockCategory>,
+        app_cats: Vec<crate::blockcat::BlockCategory>,
+        /// The category opened in the accordion.
+        open_cat: Option<String>,
         safe: bool,
         /// The "add" box.
         entry: String,

@@ -111,3 +111,14 @@ pub const BOOKMARK_PLUS: &str = "\u{e23d}";
 pub const BOOKMARK_CHECK: &str = "\u{e524}";
 pub const GIT_COMMIT: &str = "\u{e0e6}";
 pub const CIRCLE_DOT: &str = "\u{e349}";
+// Block categories.
+pub const GAMEPAD: &str = "\u{e0e2}";
+pub const CLAPPERBOARD: &str = "\u{e29b}";
+pub const BOT: &str = "\u{e1bb}";
+pub const USERS_ROUND: &str = "\u{e473}";
+pub const DICES: &str = "\u{e2c5}";
+pub const MESSAGES: &str = "\u{e412}";
+pub const DOWNLOAD_DRIVE: &str = "\u{e4ea}";
+pub const MASK: &str = "\u{e2aa}";
+pub const MUSIC: &str = "\u{e126}";
+pub const CART: &str = "\u{e160}";

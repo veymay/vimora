@@ -13,6 +13,7 @@ mod apps;
 mod blocked;
 mod chat;
 mod config;
+mod desktop;
 mod kiosk;
 mod netcontrol;
 mod overlay;

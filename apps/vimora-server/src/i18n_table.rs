@@ -6,6 +6,26 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    // --- block categories -----------------------------------------------------------------------
+    ("Video va kino", "Video and movies", "Видео и кино"),
+    ("AI chatbotlar", "AI chatbots", "ИИ-чат-боты"),
+    ("Qimor va bukmekerlar", "Gambling and betting", "Азартные игры и букмекеры"),
+    ("Kattalar uchun (18+)", "Adult (18+)", "Для взрослых (18+)"),
+    ("Torrent va pirat saytlar", "Torrents and piracy", "Торренты и пиратство"),
+    ("VPN va proksi", "VPN and proxies", "VPN и прокси"),
+    ("Musiqa", "Music", "Музыка"),
+    ("Onlayn do'konlar", "Online shops", "Интернет-магазины"),
+    ("AI ilovalar", "AI apps", "ИИ-приложения"),
+    ("Torrent dasturlari", "Torrent clients", "Торрент-клиенты"),
+    ("Boshqa brauzerlar", "Other browsers", "Другие браузеры"),
+    ("Toifa to'liq bloklangan", "The whole category is blocked", "Категория заблокирована целиком"),
+    ("Butun toifani bloklash", "Block the whole category", "Заблокировать всю категорию"),
+    ("Toifani o'chirish", "Delete the category", "Удалить категорию"),
+    ("Qo'lda qo'shilgan: {a} / {b}", "Added by hand: {a} / {b}", "Добавлено вручную: {a} / {b}"),
+    ("\"{name}\" toifasi qo'shildi: {n} ta", "Category \"{name}\" added: {n} items", "Категория «{name}» добавлена: {n}"),
+    ("Faylda yaroqli qator topilmadi.", "No usable lines in the file.", "В файле нет подходящих строк."),
+    ("Toifani to'liq bloklasangiz, undagi barcha saytlar ochilmaydi; ichidan bittasini tanlasangiz — faqat o'sha sayt. Yoqilgan saytlarning subdomenlari ham ochilmaydi. Import qilingan ro'yxat (masalan, respublika ro'yxati) alohida toifa bo'ladi.", "Block a whole category and none of its sites open; pick single sites inside it and only those are blocked. Subdomains are blocked too. An imported list (for example the national list) becomes a category of its own.", "Заблокируйте категорию целиком — не откроется ни один её сайт; выберите отдельные сайты — заблокируются только они. Поддомены тоже блокируются. Импортированный список (например, республиканский) становится отдельной категорией."),
+    ("Ro'yxatdagi dasturlar ochilishi bilan yopiladi. Jarayon nomini yozing (masalan, steam.exe yoki telegram). Toifani to'liq yoki ichidan alohida dasturlarni bloklash mumkin.", "Listed programs are closed as soon as they start. Enter the process name (e.g. steam.exe or telegram). Block a whole category or single programs inside it.", "Программы из списка закрываются сразу после запуска. Введите имя процесса (например, steam.exe или telegram). Можно заблокировать категорию целиком или отдельные программы."),
     // --- window, header, navigation -----------------------------------------------------------
     ("Vimora — O'qituvchi konsoli", "Vimora — Teacher console", "Vimora — Консоль учителя"),
     ("Qulflash", "Lock", "Блокировать"),

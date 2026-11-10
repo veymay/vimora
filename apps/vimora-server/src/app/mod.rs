@@ -186,6 +186,22 @@ impl ConsoleApp {
         match std::env::var("VIMORA_OPEN").as_deref() {
             Ok("net") => app.dev_open = Some(app.net_dialog(NetTab::Domains)),
             Ok("net:apps") => app.dev_open = Some(app.net_dialog(NetTab::Apps)),
+            Ok("net:cats") => {
+                // An opened category with some sites picked, another one blocked whole.
+                let mut d = app.net_dialog(NetTab::Domains);
+                if let Dialog::Net {
+                    site_cats,
+                    open_cat,
+                    ..
+                } = &mut d
+                {
+                    site_cats[0].set_all(true);
+                    site_cats[4].set_item("chatgpt.com", true);
+                    site_cats[4].set_item("claude.ai", true);
+                    *open_cat = Some(site_cats[4].id.clone());
+                }
+                app.dev_open = Some(d);
+            }
             Ok("activity") => app.dev_open = Some(Dialog::Activity),
             Ok("settings") => app.dev_open = Some(Dialog::Settings(SettingsTab::General)),
             Ok(s) if s.starts_with("settings:") => {
@@ -709,6 +725,9 @@ impl ConsoleApp {
             domains: c.web_blocklist.clone(),
             keywords: c.keyword_blocklist.clone(),
             apps: c.app_blocklist.clone(),
+            site_cats: crate::blockcat::merged(crate::blockcat::SITES, &c.site_categories),
+            app_cats: crate::blockcat::merged(crate::blockcat::APPS, &c.app_categories),
+            open_cat: None,
             safe: c.safe_search,
             entry: String::new(),
             import: false,
@@ -968,7 +987,8 @@ pub(super) fn offline_id(key: &str) -> u64 {
 /// What a background file dialog came back with.
 pub(super) enum FileResult {
     /// Lines of a text file to add to a block list.
-    NetImport(String),
+    /// File name and text.
+    NetImport(String, String),
     /// The backup was written (path) or failed (message).
     BackupSaved(Result<String, String>),
     /// Content of a backup file to restore.

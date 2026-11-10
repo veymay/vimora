@@ -220,10 +220,15 @@ pub(super) fn dialog_body(
             domains,
             keywords,
             apps,
+            site_cats,
+            app_cats,
+            open_cat,
             safe,
             entry,
             import,
-        } => net_form(ui, p, tab, domains, keywords, apps, safe, entry, import),
+        } => net_form(
+            ui, p, tab, domains, keywords, apps, site_cats, app_cats, open_cat, safe, entry, import,
+        ),
         Dialog::Power(a) => {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
@@ -1513,55 +1518,75 @@ fn block_list(
     hint: &str,
     help: &str,
     sets: &[(&str, &[&str])],
+    extra: impl FnOnce(&mut egui::Ui),
 ) {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
-        let r = ui.add(
-            ui_kit::text_field(entry)
-                .hint_text(hint)
-                .desired_width(ui.available_width() - 190.0),
-        );
-        let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-        if (ui_kit::button(ui, Some(icons::PLUS), tr("Qo'shish"), Kind::Outline).clicked() || enter)
-            && !entry.trim().is_empty()
-        {
-            add_lines(list, entry);
-            entry.clear();
-            r.request_focus();
-        }
-        if ui_kit::icon_cell(ui, icons::FILE_UP, ui_kit::CONTROL_H, false)
-            .tip(tr("Matn faylidan yuklash (har qatorda bittadan)"))
-            .clicked()
-        {
-            *import = true;
-        }
-        ui_kit::info(ui, help);
-    });
-    ui.add_space(8.0);
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-        for (name, items) in sets {
-            if ui_kit::button(ui, Some(icons::PLUS), name, Kind::Ghost).clicked() {
-                add_lines(list, &items.join("\n"));
+    // Right to left: the buttons keep their size, the text box takes what is left (nothing
+    // sticks out of the drawer, whatever the language).
+    let w = ui.available_width();
+    ui.allocate_ui_with_layout(
+        vec2(w, ui_kit::CONTROL_H),
+        Layout::right_to_left(Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            ui_kit::info(ui, help);
+            if ui_kit::icon_cell(ui, icons::FILE_UP, ui_kit::CONTROL_H, false)
+                .tip(tr("Matn faylidan yuklash (har qatorda bittadan)"))
+                .clicked()
+            {
+                *import = true;
             }
-        }
-    });
+            let add = ui_kit::button(ui, Some(icons::PLUS), tr("Qo'shish"), Kind::Outline);
+            let r = ui.add(
+                ui_kit::text_field(entry)
+                    .hint_text(hint)
+                    .desired_width(ui.available_width()),
+            );
+            let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+            if (add.clicked() || enter) && !entry.trim().is_empty() {
+                add_lines(list, entry);
+                entry.clear();
+                r.request_focus();
+            }
+        },
+    );
     ui.add_space(8.0);
+    if !sets.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+            for (name, items) in sets {
+                if ui_kit::button(ui, Some(icons::PLUS), name, Kind::Ghost).clicked() {
+                    add_lines(list, &items.join("\n"));
+                }
+            }
+        });
+        ui.add_space(8.0);
+    }
+    extra(ui);
 
     let mut items = list_items(list);
     if items.is_empty() {
-        ui.label(
-            RichText::new(tr("Ro'yxat bo'sh."))
-                .size(12.5)
-                .color(p.faint),
-        );
+        if !sets.is_empty() {
+            ui.label(
+                RichText::new(tr("Ro'yxat bo'sh."))
+                    .size(12.5)
+                    .color(p.faint),
+            );
+        }
         return;
     }
     let on_count = items.iter().filter(|(on, _)| *on).count();
     ui.horizontal(|ui| {
         ui_kit::hud(
             ui,
-            &tf!("{a} / {b} yoqilgan", a = on_count, b = items.len()),
+            &if sets.is_empty() {
+                tf!(
+                    "Qo'lda qo'shilgan: {a} / {b}",
+                    a = on_count,
+                    b = items.len()
+                )
+            } else {
+                tf!("{a} / {b} yoqilgan", a = on_count, b = items.len())
+            },
             p.muted,
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -1628,6 +1653,160 @@ fn block_list(
     }
 }
 
+/// Accordion of block categories: a row per category (whole-category switch, count) that opens
+/// to the items inside it, each with its own switch. Imported lists can be removed.
+fn categories(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    cats: &mut Vec<crate::blockcat::BlockCategory>,
+    defs: &[crate::blockcat::Def],
+    open: &mut Option<String>,
+) {
+    let mut remove: Option<usize> = None;
+    let row_h = 44.0;
+    Frame::none()
+        .stroke(Stroke::new(1.0_f32, p.line))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for (i, cat) in cats.iter_mut().enumerate() {
+                let def = crate::blockcat::def(defs, &cat.id);
+                let name = def.map_or(cat.name.as_str(), |d| tr(d.name));
+                let icon = def.map_or(icons::FILE_TEXT, |d| d.icon);
+                let n_on = cat.blocked().len();
+                let expanded = open.as_deref() == Some(cat.id.as_str());
+                let w = ui.available_width();
+                let (rect, resp) = ui.allocate_exact_size(vec2(w, row_h), Sense::click());
+                if i > 0 {
+                    ui.painter()
+                        .hline(rect.x_range(), rect.top(), Stroke::new(1.0_f32, p.line));
+                }
+                if resp.hovered() || expanded {
+                    ui.painter().rect_filled(
+                        rect.shrink2(vec2(0.0, 0.5)),
+                        egui::Rounding::ZERO,
+                        p.hover,
+                    );
+                }
+                if n_on > 0 {
+                    // Accent edge: something in here is blocked.
+                    ui.painter().rect_filled(
+                        egui::Rect::from_min_size(rect.min, vec2(3.0, row_h)),
+                        egui::Rounding::ZERO,
+                        if cat.all { p.accent } else { p.warning },
+                    );
+                }
+                let mut child = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(rect.shrink2(vec2(12.0, 0.0)))
+                        .layout(Layout::left_to_right(Align::Center)),
+                );
+                child.spacing_mut().item_spacing.x = 10.0;
+                child.label(
+                    RichText::new(if expanded {
+                        icons::CHEVRON_DOWN
+                    } else {
+                        icons::CHEVRON_RIGHT
+                    })
+                    .size(15.0)
+                    .color(p.muted),
+                );
+                child.label(RichText::new(icon).size(17.0).color(if n_on > 0 {
+                    p.accent
+                } else {
+                    p.muted
+                }));
+                let g = ui_kit::truncated(
+                    &child,
+                    name,
+                    FontId::new(14.0, ui_kit::bold()),
+                    p.strong,
+                    w - 250.0,
+                );
+                child.label(egui::WidgetText::from(g));
+                let mut toggled = false;
+                child.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 10.0;
+                    let mut all = cat.all;
+                    if ui_kit::toggle(ui, &mut all)
+                        .tip(if all {
+                            tr("Toifa to'liq bloklangan")
+                        } else {
+                            tr("Butun toifani bloklash")
+                        })
+                        .changed()
+                    {
+                        cat.set_all(all);
+                        toggled = true;
+                    }
+                    let (txt, col) = if cat.all {
+                        (tr("Hammasi").to_string(), p.accent)
+                    } else if n_on > 0 {
+                        (format!("{n_on} / {}", cat.items.len()), p.warning)
+                    } else {
+                        (format!("{}", cat.items.len()), p.faint)
+                    };
+                    ui_kit::hud(ui, &txt, col);
+                    if cat.imported()
+                        && ui_kit::icon_cell(ui, icons::TRASH_2, 30.0, false)
+                            .tip(tr("Toifani o'chirish"))
+                            .clicked()
+                    {
+                        remove = Some(i);
+                        toggled = true;
+                    }
+                });
+                if resp.clicked() && !toggled {
+                    *open = if expanded { None } else { Some(cat.id.clone()) };
+                }
+                if expanded {
+                    let items = cat.items.clone();
+                    Frame::none()
+                        .fill(p.sunken)
+                        .inner_margin(egui::Margin::symmetric(12.0, 6.0))
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            let col_w = (ui.available_width() - 12.0) / 2.0;
+                            for pair in items.chunks(2) {
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 12.0;
+                                    for item in pair {
+                                        let (r, _) = ui
+                                            .allocate_exact_size(vec2(col_w, 34.0), Sense::hover());
+                                        let mut c = ui.new_child(
+                                            egui::UiBuilder::new()
+                                                .max_rect(r)
+                                                .layout(Layout::left_to_right(Align::Center)),
+                                        );
+                                        c.spacing_mut().item_spacing.x = 10.0;
+                                        let mut on = cat.is_on(item);
+                                        if ui_kit::toggle(&mut c, &mut on).changed() {
+                                            cat.set_item(item, on);
+                                        }
+                                        let g = ui_kit::truncated(
+                                            &c,
+                                            item,
+                                            FontId::new(13.0, ui_kit::mono()),
+                                            if on { p.text } else { p.faint },
+                                            col_w - 56.0,
+                                        );
+                                        c.label(egui::WidgetText::from(g));
+                                    }
+                                });
+                            }
+                        });
+                }
+            }
+        });
+    if let Some(i) = remove {
+        if open.as_deref() == Some(cats[i].id.as_str()) {
+            *open = None;
+        }
+        cats.remove(i);
+    }
+    ui.add_space(12.0);
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn net_form(
     ui: &mut egui::Ui,
@@ -1636,6 +1815,9 @@ pub(super) fn net_form(
     domains: &mut String,
     keywords: &mut String,
     apps: &mut String,
+    site_cats: &mut Vec<crate::blockcat::BlockCategory>,
+    app_cats: &mut Vec<crate::blockcat::BlockCategory>,
+    open_cat: &mut Option<String>,
     safe: &mut bool,
     entry: &mut String,
     import: &mut bool,
@@ -1649,7 +1831,7 @@ pub(super) fn net_form(
                     NetTab::Domains,
                     icons::GLOBE_LOCK,
                     tr("Saytlar"),
-                    Some(crate::config::active_list(domains).len()),
+                    Some(crate::blockcat::effective(domains, site_cats).len()),
                 ),
                 (
                     NetTab::Keywords,
@@ -1661,7 +1843,7 @@ pub(super) fn net_form(
                     NetTab::Apps,
                     icons::APP_WINDOW,
                     tr("Dasturlar"),
-                    Some(crate::config::active_list(apps).len()),
+                    Some(crate::blockcat::effective(apps, app_cats).len()),
                 ),
                 (
                     NetTab::Search,
@@ -1678,6 +1860,7 @@ pub(super) fn net_form(
     });
     if *tab != before {
         entry.clear();
+        *open_cat = None;
     }
     ui.add_space(12.0);
     match tab {
@@ -1688,36 +1871,9 @@ pub(super) fn net_form(
             entry,
             import,
             tr("sayt: tiktok.com"),
-            tr("Yoqilgan saytlar va ularning subdomenlari ochilmaydi."),
-            &[
-                (
-                    tr("Ijtimoiy tarmoqlar"),
-                    &[
-                        "instagram.com",
-                        "tiktok.com",
-                        "facebook.com",
-                        "vk.com",
-                        "ok.ru",
-                        "x.com",
-                        "twitter.com",
-                    ],
-                ),
-                (
-                    tr("O'yinlar"),
-                    &[
-                        "roblox.com",
-                        "steampowered.com",
-                        "epicgames.com",
-                        "poki.com",
-                        "crazygames.com",
-                        "miniclip.com",
-                    ],
-                ),
-                (
-                    tr("Video"),
-                    &["youtube.com", "twitch.tv", "rutube.ru", "kinopoisk.ru"],
-                ),
-            ],
+            tr("Toifani to'liq bloklasangiz, undagi barcha saytlar ochilmaydi; ichidan bittasini tanlasangiz — faqat o'sha sayt. Yoqilgan saytlarning subdomenlari ham ochilmaydi. Import qilingan ro'yxat (masalan, respublika ro'yxati) alohida toifa bo'ladi."),
+            &[],
+            |ui| categories(ui, p, site_cats, crate::blockcat::SITES, open_cat),
         ),
         NetTab::Keywords => block_list(
             ui,
@@ -1755,6 +1911,7 @@ pub(super) fn net_form(
                     ],
                 ),
             ],
+            |_| {},
         ),
         NetTab::Apps => block_list(
             ui,
@@ -1763,17 +1920,9 @@ pub(super) fn net_form(
             entry,
             import,
             tr("dastur: steam.exe"),
-            tr("Ro'yxatdagi dasturlar ochilishi bilan yopiladi. Jarayon nomini yozing (masalan, steam.exe yoki telegram)."),
-            &[
-                (
-                    tr("O'yinlar"),
-                    &["steam", "epicgameslauncher", "robloxplayerbeta", "minecraft", "javaw"],
-                ),
-                (
-                    tr("Messenjerlar"),
-                    &["telegram", "discord", "whatsapp", "viber", "skype"],
-                ),
-            ],
+            tr("Ro'yxatdagi dasturlar ochilishi bilan yopiladi. Jarayon nomini yozing (masalan, steam.exe yoki telegram). Toifani to'liq yoki ichidan alohida dasturlarni bloklash mumkin."),
+            &[],
+            |ui| categories(ui, p, app_cats, crate::blockcat::APPS, open_cat),
         ),
         NetTab::Search => {
             sgroup(ui, p, |ui| {

@@ -114,6 +114,8 @@ pub(super) async fn overlay_task(state: Shared, mut rx: mpsc::Receiver<OverlayRe
             if let Ok(Some(_)) = c.try_wait() {
                 warn!("overlay exited; respawning if needed");
                 child = None;
+                // Never leave the student on the (empty) lock desktop.
+                crate::desktop::restore();
                 // Died right after starting while it is still wanted: the window could not
                 // open. Try the other graphics backend and tell the teacher.
                 let wanted = {
@@ -136,9 +138,15 @@ pub(super) async fn overlay_task(state: Shared, mut rx: mpsc::Receiver<OverlayRe
         }
         match desired {
             None => {
-                if let Some((mut c, stdin)) = child.take() {
+                if let Some((mut c, mut stdin)) = child.take() {
+                    // Let it fade out (≈0.35 s), then make sure it is gone.
+                    let _ = write_overlay(&mut stdin, &OverlayCmd::Bye).await;
+                    let gone = tokio::time::timeout(Duration::from_millis(600), c.wait()).await;
                     drop(stdin);
-                    let _ = c.kill().await;
+                    if gone.is_err() {
+                        let _ = c.kill().await;
+                    }
+                    crate::desktop::restore();
                 }
             }
             Some(cmds) => {

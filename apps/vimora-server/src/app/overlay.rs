@@ -715,7 +715,12 @@ impl ConsoleApp {
                     if text.len() > 2 * 1024 * 1024 {
                         return None;
                     }
+                    let name = picked
+                        .file_stem()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
                     Some(FileResult::NetImport(
+                        name,
                         String::from_utf8_lossy(&text).into_owned(),
                     ))
                 }));
@@ -804,24 +809,35 @@ impl ConsoleApp {
         };
         self.file_job = None;
         match res {
-            FileResult::NetImport(text) => {
+            FileResult::NetImport(name, text) => {
                 if let Some(Dialog::Net {
                     tab,
-                    domains,
                     keywords,
-                    apps,
+                    site_cats,
+                    app_cats,
+                    open_cat,
                     ..
                 }) = &mut self.dialog
                 {
-                    let n = match tab {
-                        NetTab::Keywords => add_lines(keywords, &text),
-                        NetTab::Apps => add_lines(apps, &text),
-                        _ => add_lines(domains, &text),
+                    // Sites and programs: the file becomes a category of its own (fully blocked).
+                    let cats = match tab {
+                        NetTab::Keywords => None,
+                        NetTab::Apps => Some(app_cats),
+                        _ => Some(site_cats),
                     };
-                    self.hub
-                        .lock()
-                        .unwrap()
-                        .toast(true, tf!("{n} ta qator qo'shildi", n = n));
+                    let msg = match cats {
+                        None => tf!("{n} ta qator qo'shildi", n = add_lines(keywords, &text)),
+                        Some(cats) => match crate::blockcat::import(cats, &name, &text) {
+                            Some(c) => {
+                                let n = c.items.len();
+                                *open_cat = Some(c.id.clone());
+                                cats.push(c);
+                                tf!("\"{name}\" toifasi qo'shildi: {n} ta", name = name, n = n)
+                            }
+                            None => tr("Faylda yaroqli qator topilmadi.").to_string(),
+                        },
+                    };
+                    self.hub.lock().unwrap().toast(true, msg);
                 }
             }
             FileResult::BackupSaved(Ok(path)) => {
@@ -1030,6 +1046,8 @@ impl ConsoleApp {
                 domains,
                 keywords,
                 apps,
+                site_cats,
+                app_cats,
                 safe,
                 ..
             } => {
@@ -1037,10 +1055,12 @@ impl ConsoleApp {
                 let programs = if clear {
                     vec![]
                 } else {
-                    crate::config::active_list(&apps)
+                    crate::blockcat::effective(&apps, &app_cats)
                 };
                 if !clear {
-                    self.cfg.write().unwrap().app_blocklist = apps.clone();
+                    let mut c = self.cfg.write().unwrap();
+                    c.app_blocklist = apps.clone();
+                    c.app_categories = crate::blockcat::to_config(&app_cats);
                 }
                 let n_programs = programs.len();
                 self.send(t, Command::SetAppBlocklist(programs), "");
@@ -1050,9 +1070,10 @@ impl ConsoleApp {
                     let mut c = self.cfg.write().unwrap();
                     c.web_blocklist = domains.clone();
                     c.keyword_blocklist = keywords.clone();
+                    c.site_categories = crate::blockcat::to_config(&site_cats);
                     c.safe_search = safe;
                     NetPolicy {
-                        domains: crate::config::active_list(&domains),
+                        domains: crate::blockcat::effective(&domains, &site_cats),
                         keywords: crate::config::active_list(&keywords),
                         safe_search: safe,
                     }
