@@ -113,6 +113,8 @@ pub(super) struct FormCtx<'a> {
     pub(super) hub: &'a SharedHub,
     pub(super) all: &'a [View],
     pub(super) targets: &'a [u64],
+    /// Administrator mode (the IT tools need it when a password is set).
+    pub(super) admin: bool,
 }
 
 pub(super) fn dialog_body(
@@ -172,6 +174,35 @@ pub(super) fn dialog_body(
             request,
         } => updates_form(ui, p, tab, policy, restart, request, cx),
         Dialog::Lesson(l) => lesson_form(ui, p, l, cx),
+        Dialog::AdminLogin {
+            password, error, ..
+        } => {
+            ui.label(
+                RichText::new(tr("Bu bo'lim administrator uchun. Parolni kiriting."))
+                    .size(13.0)
+                    .color(p.text),
+            );
+            ui.add_space(8.0);
+            let r = ui.add(
+                ui_kit::text_field(password)
+                    .password(true)
+                    .hint_text(tr("Parol"))
+                    .desired_width(f32::INFINITY),
+            );
+            if !r.has_focus() && password.is_empty() {
+                r.request_focus();
+            }
+            if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                *confirm = true;
+            }
+            if *error {
+                ui.label(
+                    RichText::new(tr("Parol noto'g'ri"))
+                        .size(12.5)
+                        .color(p.danger),
+                );
+            }
+        }
         Dialog::Machine {
             id,
             tab,

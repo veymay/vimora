@@ -133,6 +133,12 @@ pub(super) enum Dialog {
         /// Shadow Defender password for the Windows student PCs.
         password: String,
     },
+    /// Administrator password window; `then` opens after a successful login.
+    AdminLogin {
+        password: String,
+        error: bool,
+        then: Option<Menu>,
+    },
     /// "Dars": files, attendance, polls, tests, timer.
     Lesson(Box<Lesson>),
     /// "Kompyuter holati": one computer's load, battery, disks and processes.
@@ -292,6 +298,8 @@ pub(super) enum Menu {
     Updates,
     /// The "Dars" drawer.
     Lesson,
+    /// The settings drawer.
+    Settings,
     Power,
     Activity,
 }

@@ -12,12 +12,18 @@ pub(super) enum SettingsTab {
     LockScreen,
     /// "Dastur haqida": version, console updates and where things are.
     Updates,
+    Schedule,
+    Reports,
+    Access,
 }
 
 impl SettingsTab {
-    const ALL: [SettingsTab; 3] = [
+    const ALL: [SettingsTab; 6] = [
         SettingsTab::General,
         SettingsTab::LockScreen,
+        SettingsTab::Schedule,
+        SettingsTab::Reports,
+        SettingsTab::Access,
         SettingsTab::Updates,
     ];
 
@@ -26,6 +32,9 @@ impl SettingsTab {
             SettingsTab::General => tr("Umumiy"),
             SettingsTab::LockScreen => tr("Qulf ekrani"),
             SettingsTab::Updates => tr("Dastur haqida"),
+            SettingsTab::Schedule => tr("Jadval"),
+            SettingsTab::Reports => tr("Hisobotlar"),
+            SettingsTab::Access => tr("Kirish"),
         }
     }
 
@@ -34,6 +43,9 @@ impl SettingsTab {
             SettingsTab::General => icons::SLIDERS_HORIZONTAL,
             SettingsTab::LockScreen => icons::LOCK,
             SettingsTab::Updates => icons::BADGE_INFO,
+            SettingsTab::Schedule => icons::TIMER,
+            SettingsTab::Reports => icons::FILE_TEXT,
+            SettingsTab::Access => icons::SHIELD,
         }
     }
 }
@@ -44,6 +56,10 @@ pub(super) struct SettingsOut {
     pub(super) check_update: bool,
     pub(super) install_update: bool,
     pub(super) restart: bool,
+    /// Export a report: 0 computers, 1 activity log, 2 attendance.
+    pub(super) report: Option<u8>,
+    /// The administrator password was just set.
+    pub(super) password_set: bool,
     pub(super) backup_save: bool,
     pub(super) backup_load: bool,
 }
@@ -181,6 +197,9 @@ pub(super) fn settings_page(
                                 match tab {
                                     SettingsTab::General => general(ui, p, c, out),
                                     SettingsTab::LockScreen => lock_screen(ui, p, c),
+                                    SettingsTab::Schedule => super::admin::schedule_page(ui, p, c),
+                                    SettingsTab::Reports => super::admin::reports_page(ui, p, out),
+                                    SettingsTab::Access => super::admin::access_page(ui, p, c, out),
                                     SettingsTab::Updates => {
                                         about(ui, p);
                                         updates(ui, p, c, cx, out);

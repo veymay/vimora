@@ -3,6 +3,7 @@
 //! Layout: top navbar (logo · action strip · tools · status), room tabs row,
 //! then a full-width grid of student cards. No sidebar.
 
+mod admin;
 mod forms;
 mod grid;
 mod lesson;
@@ -114,6 +115,14 @@ pub struct ConsoleApp {
     relaying: Option<u64>,
     /// Computers whose keyboard and mouse are blocked (without the lock screen).
     input_locked: BTreeSet<u64>,
+    /// Administrator mode (always on when no administrator password is set).
+    admin: bool,
+    /// What to open after the administrator logged in.
+    after_login: Option<Menu>,
+    /// A report asked for in the settings (needs the computer list).
+    pending_report: Option<u8>,
+    /// Minute last checked by the schedule.
+    sched_minute: String,
     /// Last automatic screen-history save.
     history_at: Option<Instant>,
     /// Dialog animating out after it was closed (drawn, not interactive).
@@ -187,6 +196,10 @@ impl ConsoleApp {
             showing: false,
             relaying: None,
             input_locked: BTreeSet::new(),
+            admin: true,
+            after_login: None,
+            pending_report: None,
+            sched_minute: String::new(),
             history_at: None,
             pending: None,
             closing: None,
@@ -199,6 +212,7 @@ impl ConsoleApp {
                 .ok()
                 .map(|p| (p, Instant::now())),
         };
+        app.admin = app.cfg.read().unwrap().admin_hash.is_empty();
         if let Some(n) = std::env::var("VIMORA_DEMO")
             .ok()
             .and_then(|n| n.parse().ok())
@@ -268,6 +282,9 @@ impl ConsoleApp {
             Ok(s) if s.starts_with("settings:") => {
                 let tab = match &s[9..] {
                     "lock" => SettingsTab::LockScreen,
+                    "schedule" => SettingsTab::Schedule,
+                    "reports" => SettingsTab::Reports,
+                    "access" => SettingsTab::Access,
                     "updates" | "about" => SettingsTab::Updates,
                     _ => SettingsTab::General,
                 };
@@ -1107,8 +1124,13 @@ impl ConsoleApp {
     }
 
     fn menu(&mut self, m: Menu, all: &[View]) {
+        if admin::restricted(m) && !self.admin {
+            self.ask_admin(Some(m));
+            return;
+        }
         let t = self.targets(all);
         match m {
+            Menu::Settings => self.open_dialog(Dialog::Settings(SettingsTab::General)),
             Menu::Lock => self.lock(&t),
             Menu::Unlock => self.send(&t, Command::Unlock, tr("Qulfdan chiqarish")),
             Menu::Show => {
@@ -1264,6 +1286,16 @@ impl eframe::App for ConsoleApp {
         self.sync_textures(ctx);
         self.screen_history();
         let all = self.snapshot();
+        self.run_schedules(&all);
+        if let Some(m) = self.after_login.take() {
+            self.menu(m, &all);
+        }
+        match self.pending_report.take() {
+            Some(0) => self.export_computers(&all),
+            Some(1) => self.export_log(),
+            Some(_) => self.export_attendance(),
+            None => {}
+        }
         if self.showing && !self.show.active.load(Ordering::Relaxed) {
             self.set_show(false, &all); // capture failed: tell students to close the presentation
         }

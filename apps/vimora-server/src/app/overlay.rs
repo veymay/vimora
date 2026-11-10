@@ -311,6 +311,7 @@ impl ConsoleApp {
                 .is_some_and(|t| t.elapsed() < Duration::from_secs(2)),
         };
         let latest = scx.latest.clone();
+        let admin = self.admin;
         let mut settings_out = SettingsOut::default();
         let mut settings_before: Option<ServerConfig> = None;
 
@@ -350,7 +351,10 @@ impl ConsoleApp {
         };
         // Drawers on the right edge for everything except the two short questions
         // (new room, power), which stay small modals.
-        let drawer = !matches!(dialog, Dialog::Room { .. } | Dialog::Power(_));
+        let drawer = !matches!(
+            dialog,
+            Dialog::Room { .. } | Dialog::Power(_) | Dialog::AdminLogin { .. }
+        );
         let (title, width) = match dialog {
             Dialog::Message { .. } => (tr("Xabarlar"), 460.0),
             Dialog::Launch { .. } => (tr("Sayt yoki dasturni ochish"), 520.0),
@@ -366,6 +370,7 @@ impl ConsoleApp {
             Dialog::Updates { .. } => (tr("Yangilanishlar"), 600.0),
             Dialog::Machine { .. } => (tr("Kompyuter holati"), 600.0),
             Dialog::Lesson(_) => (tr("Dars"), 600.0),
+            Dialog::AdminLogin { .. } => (tr("Administrator"), 420.0),
         };
         // Every drawer has the same width, wide enough for its widest content (four tabs),
         // so the frame never grows past the header and ✕ always sits on the right edge.
@@ -380,6 +385,7 @@ impl ConsoleApp {
                 | Dialog::Rename { .. }
                 | Dialog::Message { .. }
                 | Dialog::Machine { .. }
+                | Dialog::AdminLogin { .. }
         ) {
             None
         } else {
@@ -404,6 +410,7 @@ impl ConsoleApp {
             Dialog::Updates { .. } => icons::DOWNLOAD,
             Dialog::Machine { .. } => icons::GAUGE,
             Dialog::Lesson(_) => icons::GRADUATION_CAP,
+            Dialog::AdminLogin { .. } => icons::LOCK,
         };
         // Drawers slide in from the right; modals fade in at the centre.
         // Drawers hang flush on the right edge of the window, full height; modals drop
@@ -559,6 +566,7 @@ impl ConsoleApp {
                                     hub: &hub,
                                     all,
                                     targets: &targets,
+                                    admin,
                                 },
                             );
                         });
@@ -596,6 +604,7 @@ impl ConsoleApp {
                                 hub: &hub,
                                 all,
                                 targets: &targets,
+                                admin,
                             },
                         );
                     });
@@ -658,6 +667,9 @@ impl ConsoleApp {
                                         | Dialog::Activity => (icons::CHECK, tr("Saqlash")),
                                         Dialog::Freeze { .. } => (icons::CHECK, tr("Saqlash")),
                                         Dialog::Rename { .. } => (icons::CHECK, tr("Saqlash")),
+                                        Dialog::AdminLogin { .. } => {
+                                            (icons::LOCK_OPEN, tr("Kirish"))
+                                        }
                                         Dialog::Updates { .. }
                                         | Dialog::Machine { .. }
                                         | Dialog::Lesson(_) => (icons::CHECK, tr("Saqlash")),
@@ -1002,7 +1014,7 @@ impl ConsoleApp {
     }
 
     /// Wake-on-LAN for the given (offline) computers.
-    fn wake(&mut self, keys: &[String]) {
+    pub(super) fn wake(&mut self, keys: &[String]) {
         let macs: Vec<[u8; 6]> = {
             let c = self.cfg.read().unwrap();
             keys.iter().filter_map(|k| wake_mac(&c, k)).collect()
@@ -1054,6 +1066,10 @@ impl ConsoleApp {
         };
         let id = *id;
         match request.take() {
+            Some(MachineRequest::Login) => {
+                self.ask_admin(None);
+                return;
+            }
             Some(MachineRequest::RefreshSecurity) => {
                 self.send(&[id], Command::GetSecurityInfo, "");
             }
@@ -1348,6 +1364,21 @@ impl ConsoleApp {
             }
             Dialog::Activity => return,
             Dialog::Freeze { .. } | Dialog::Machine { .. } | Dialog::Lesson(_) => return,
+            Dialog::AdminLogin { password, then, .. } => {
+                if super::admin::check_password(&self.cfg.read().unwrap(), &password) {
+                    self.admin = true;
+                    self.after_login = then;
+                } else {
+                    // Wrong: ask again.
+                    self.closing = None;
+                    self.dialog = Some(Dialog::AdminLogin {
+                        password: String::new(),
+                        error: true,
+                        then,
+                    });
+                }
+                return;
+            }
             Dialog::Rename {
                 id,
                 key,
@@ -1425,6 +1456,16 @@ impl ConsoleApp {
     }
 
     fn settings_actions(&mut self, ctx: &egui::Context, out: SettingsOut) {
+        if out.report.is_some() {
+            self.pending_report = out.report;
+        }
+        if out.password_set {
+            self.admin = true;
+            self.hub
+                .lock()
+                .unwrap()
+                .toast(true, tr("Administrator paroli saqlandi"));
+        }
         if out.check_update {
             self.updater.check();
         }

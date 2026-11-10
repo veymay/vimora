@@ -89,6 +89,11 @@ pub struct ServerConfig {
     pub blocked_ports: String,
     /// "Ekran tarixi": save every computer's picture every N minutes (0 = off).
     pub history_minutes: u32,
+    /// "Jadval": things the console does by itself at set times.
+    pub schedules: Vec<Schedule>,
+    /// Administrator password (salted hash, hex). Empty = no password: everyone is admin.
+    pub admin_salt: String,
+    pub admin_hash: String,
     pub update_policy: vimora_core::UpdatePolicy,
 }
 
@@ -156,6 +161,9 @@ impl Default for ServerConfig {
             allow_apps: String::new(),
             blocked_ports: String::new(),
             history_minutes: 0,
+            schedules: vec![],
+            admin_salt: String::new(),
+            admin_hash: String::new(),
             update_policy: vimora_core::UpdatePolicy {
                 os: vimora_core::OsUpdateMode::Manual,
                 apps_auto: false,
@@ -263,5 +271,28 @@ pub fn open(target: &str) {
     let r = std::process::Command::new("xdg-open").arg(target).spawn();
     if let Err(e) = r {
         tracing::warn!("cannot open {target}: {e}");
+    }
+}
+
+/// One scheduled action ("Jadval"): at `time` on the ticked weekdays (Monday first).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Schedule {
+    pub on: bool,
+    /// "08:30"
+    pub time: String,
+    pub days: [bool; 7],
+    /// See `app::admin::ACTIONS`.
+    pub action: u8,
+}
+
+impl Default for Schedule {
+    fn default() -> Self {
+        Self {
+            on: true,
+            time: "08:00".into(),
+            days: [true, true, true, true, true, true, false],
+            action: 0,
+        }
     }
 }

@@ -24,6 +24,8 @@ pub(super) enum MachineTab {
 #[derive(Clone, PartialEq)]
 pub(super) enum MachineRequest {
     RefreshSecurity,
+    /// Ask for the administrator password.
+    Login,
     /// Start (true) or stop a service.
     Service(String, bool),
     Run,
@@ -182,6 +184,28 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
     });
     ui.add_space(12.0);
 
+    // The IT tabs are for the administrator.
+    if matches!(
+        *f.tab,
+        MachineTab::Security | MachineTab::Services | MachineTab::Command
+    ) && !cx.admin
+    {
+        ui.add_space(20.0);
+        ui.vertical_centered(|ui| {
+            ui.label(RichText::new(icons::LOCK).size(30.0).color(p.muted));
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(tr("Bu bo'lim administrator uchun"))
+                    .size(13.5)
+                    .color(p.text),
+            );
+            ui.add_space(10.0);
+            if ui_kit::button(ui, Some(icons::LOCK_OPEN), tr("Kirish"), Kind::Primary).clicked() {
+                *f.request = Some(MachineRequest::Login);
+            }
+        });
+        return;
+    }
     // Tabs that don't need the live report.
     match *f.tab {
         MachineTab::Security | MachineTab::Services => {

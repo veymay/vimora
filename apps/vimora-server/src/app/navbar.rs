@@ -471,7 +471,33 @@ impl ConsoleApp {
                         .show(ui, p)
                         .tip(tr("Sozlamalar"));
                         if r.clicked() {
-                            self.open_dialog(Dialog::Settings(SettingsTab::General));
+                            if self.admin {
+                                self.open_dialog(Dialog::Settings(SettingsTab::General));
+                            } else {
+                                self.ask_admin(Some(Menu::Settings));
+                            }
+                        }
+                        // With an administrator password: who is at the console.
+                        if !self.cfg.read().unwrap().admin_hash.is_empty() {
+                            let (ic, tip) = if self.admin {
+                                (
+                                    icons::LOCK_OPEN,
+                                    tr("Administrator rejimi — bosib o'qituvchi rejimiga qaytish"),
+                                )
+                            } else {
+                                (
+                                    icons::LOCK,
+                                    tr("O'qituvchi rejimi — bosib administrator bo'lib kirish"),
+                                )
+                            };
+                            let r = btn(ic, "", self.admin).show(ui, p).tip(tip);
+                            if r.clicked() {
+                                if self.admin {
+                                    self.admin = false;
+                                } else {
+                                    self.ask_admin(None);
+                                }
+                            }
                         }
 
                         let (ic, tip) = match self.theme {

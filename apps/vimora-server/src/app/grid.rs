@@ -1308,6 +1308,7 @@ impl ConsoleApp {
                     });
                 }
             }
+            Action::Forget(_) if !self.admin => self.ask_admin(None),
             Action::Forget(id) => {
                 // The whole selection when the computer is part of it, else just this one.
                 let picked: Vec<&View> = self.group_of(id, all);

@@ -469,7 +469,7 @@ impl ConsoleApp {
     }
 
     /// Today's attendance as CSV in Documents/Vimora/Davomat.
-    fn export_attendance(&mut self) {
+    pub(super) fn export_attendance(&mut self) {
         let (day, att) = self.hub.lock().unwrap().attendance.clone();
         let mut out = format!(
             "{};{};{}\n",
