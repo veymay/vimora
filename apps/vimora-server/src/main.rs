@@ -18,6 +18,17 @@ use std::sync::{Arc, Mutex, RwLock};
 pub const MIN_WINDOW: [f32; 2] = [1120.0, 700.0];
 
 fn main() -> eframe::Result<()> {
+    // Ubuntu Wayland: a native Wayland window can't be un-minimized or focused by the app, so the
+    // tray's "Open" (and a second start) couldn't bring the console back. Under XWayland it can.
+    // Screen capture for presenting goes through the desktop portal either way.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if std::env::var_os("WAYLAND_DISPLAY").is_some()
+        && std::env::var_os("DISPLAY").is_some()
+        && std::env::var_os("VIMORA_WAYLAND").is_none()
+    {
+        // Still single-threaded here, so changing the environment is safe.
+        std::env::remove_var("WAYLAND_DISPLAY");
+    }
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
