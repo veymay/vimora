@@ -133,6 +133,8 @@ pub(super) enum Dialog {
         /// Shadow Defender password for the Windows student PCs.
         password: String,
     },
+    /// "Dars": files, attendance, polls, tests, timer.
+    Lesson(Box<Lesson>),
     /// "Kompyuter holati": one computer's load, battery, disks and processes.
     Machine {
         id: u64,
@@ -166,6 +168,8 @@ pub(crate) enum ConfirmAction {
         ids: Vec<u64>,
     },
     DeleteRoom(String),
+    /// Delete a saved test.
+    DeleteTest(String),
     /// End a process on a student PC.
     KillProcess {
         id: u64,
@@ -272,6 +276,8 @@ pub(super) enum Menu {
     Apps,
     Freeze,
     Updates,
+    /// The "Dars" drawer.
+    Lesson,
     Power,
     Activity,
 }

@@ -5,6 +5,8 @@
 
 mod forms;
 mod grid;
+mod lesson;
+mod lesson_extra;
 mod machine;
 mod model;
 mod navbar;
@@ -39,6 +41,7 @@ use vimora_core::{
 };
 
 use forms::*;
+use lesson::*;
 use machine::*;
 use model::*;
 use selection::*;
@@ -224,6 +227,28 @@ impl ConsoleApp {
                 app.dev_open = Some(d);
             }
             Ok("activity") => app.dev_open = Some(Dialog::Activity),
+            Ok(s) if s.starts_with("lesson") => {
+                let mut l = Lesson {
+                    tab: match s.trim_start_matches("lesson").trim_start_matches(':') {
+                        "attendance" => LessonTab::Attendance,
+                        "poll" => LessonTab::Poll,
+                        "test" => LessonTab::Test,
+                        "timer" => LessonTab::Timer,
+                        _ => LessonTab::Files,
+                    },
+                    ..Default::default()
+                };
+                if l.tab == LessonTab::Test {
+                    l.test.def.title = "5-sinf, Informatika".into();
+                    l.test.def.minutes = 15;
+                    l.test.def.questions = vec![vimora_core::TestQuestion {
+                        text: "Kompyuterning \"miyasi\" qaysi qism?".into(),
+                        options: vec!["Protsessor".into(), "Monitor".into(), "Sichqoncha".into()],
+                    }];
+                    l.test.correct = vec!["0".into()];
+                }
+                app.dev_open = Some(Dialog::Lesson(Box::new(l)));
+            }
             Ok(m @ ("machine" | "machine:procs")) => {
                 app.dev_open = Some(Dialog::Machine {
                     id: 1001,
@@ -602,6 +627,11 @@ impl ConsoleApp {
                 self.forget(&keys, &ids);
             }
             ConfirmAction::DeleteRoom(name) => self.delete_room(&name),
+            ConfirmAction::DeleteTest(name) => {
+                if let Some(d) = lesson_extra::tests_dir() {
+                    let _ = std::fs::remove_file(d.join(format!("{name}.json")));
+                }
+            }
             ConfirmAction::KillProcess { id, pid, name } => {
                 self.send(
                     &[id],
@@ -1081,6 +1111,7 @@ impl ConsoleApp {
                 })
             }
             Menu::File => self.open_dialog(Dialog::File(String::new())),
+            Menu::Lesson => self.open_dialog(Dialog::Lesson(Box::default())),
             Menu::Net => self.open_dialog(self.net_dialog(NetTab::Domains)),
             Menu::Apps => self.open_dialog(self.net_dialog(NetTab::Apps)),
             Menu::Power => self.open_dialog(Dialog::Power(PowerChoice::Shutdown)),
@@ -1307,6 +1338,8 @@ pub(super) enum FileResult {
     BackupSaved(Result<String, String>),
     /// Content of a backup file to restore.
     BackupLoaded(Result<String, String>),
+    /// File or folder picked in the "Dars" drawer.
+    LessonPath(String),
 }
 
 /// The console's tray icon: click or "Open" brings the window back, "Quit" really exits.

@@ -19,6 +19,7 @@ mod devices;
 mod firewall;
 mod inputlock;
 mod kiosk;
+mod lessonui;
 mod netcontrol;
 mod overlay;
 mod popup;
@@ -85,6 +86,15 @@ enum Cmd {
     /// Internal: "the teacher is watching" pill at the top of the screen.
     #[command(hide = true)]
     Watched,
+    /// Internal: quick question window (JSON on stdin).
+    #[command(hide = true)]
+    Poll,
+    /// Internal: lesson goal / countdown at the top of the screen.
+    #[command(hide = true)]
+    Banner { goal: String, end_unix: u64 },
+    /// Internal: fullscreen test (JSON on stdin).
+    #[command(hide = true)]
+    Test,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -102,6 +112,9 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Popup { title, text, reply }) => popup::run(&title, &text, reply),
         Some(Cmd::Blocked { word }) => blocked::run(&word),
         Some(Cmd::Watched) => watched::run(),
+        Some(Cmd::Poll) => lessonui::run_poll(),
+        Some(Cmd::Banner { goal, end_unix }) => lessonui::run_banner(goal, end_unix),
+        Some(Cmd::Test) => lessonui::run_test(),
         Some(Cmd::Service) => service::run(),
         Some(Cmd::Chat) => chat::run(),
         Some(Cmd::UiProbe) => ui_probe(),

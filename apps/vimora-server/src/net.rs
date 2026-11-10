@@ -113,6 +113,16 @@ pub struct Hub {
     pub unpaired: std::collections::HashSet<String>,
     /// A student's screen shown to the others: (source, targets). Its frames are forwarded.
     pub relay: Option<(u64, Vec<u64>)>,
+    /// Today's attendance: computer key → (computer, user, first seen "HH:MM").
+    pub attendance: (String, BTreeMap<String, (String, String, String)>),
+    /// The poll running now.
+    pub poll: Option<PollState>,
+    /// The test running now.
+    pub test: Option<TestRun>,
+    /// Stars given today: computer key → (name, count).
+    pub stars: BTreeMap<String, (String, u32)>,
+    /// Assignments collected in the current round: student id → number of files.
+    pub collected: BTreeMap<u64, usize>,
     /// Screens being recorded (student id → video file).
     pub recording: BTreeMap<u64, (crate::avi::AviWriter, std::path::PathBuf)>,
     next_id: u64,
@@ -132,6 +142,11 @@ impl Hub {
             ctx: None,
             unpaired: Default::default(),
             relay: None,
+            collected: BTreeMap::new(),
+            attendance: Default::default(),
+            poll: None,
+            test: None,
+            stars: BTreeMap::new(),
             recording: BTreeMap::new(),
             next_id: 0,
         }
@@ -494,6 +509,7 @@ async fn session(
                 v2 = addr.ip()
             ),
         );
+        h.mark_attendance(&info.key(), info.label(), &info.username);
         id
     };
     {
@@ -648,6 +664,57 @@ async fn session(
                     }
                     h.sounds.push(crate::sound::Sound::Alert);
                     h.log(Level::Warn, format!("{}: {text}", info.label()));
+                }
+                ClientMsg::PollAnswer {
+                    id: pid,
+                    choice,
+                    text,
+                } => {
+                    let mut h = hub.lock().unwrap();
+                    if let Some(p) = h.poll.as_mut().filter(|p| p.id == pid) {
+                        p.answers.retain(|a| a.0 != id);
+                        p.answers.push((
+                            id,
+                            info.label().to_string(),
+                            choice,
+                            text.chars().take(500).collect(),
+                        ));
+                    }
+                    h.repaint();
+                }
+                ClientMsg::TestResult { id: tid, answers } => {
+                    let mut h = hub.lock().unwrap();
+                    if let Some(t) = h.test.as_mut().filter(|t| t.spec.def.id == tid) {
+                        let points = t.spec.grade(&answers);
+                        t.results
+                            .insert(id, (info.label().to_string(), answers, points));
+                    }
+                    h.repaint();
+                }
+                ClientMsg::Collected(files) => {
+                    let label = info.label().to_string();
+                    let n = files.len();
+                    let saved =
+                        tokio::task::spawn_blocking(move || save_collected(&label, files)).await?;
+                    let mut h = hub.lock().unwrap();
+                    h.collected.insert(id, n);
+                    match saved {
+                        Ok(_) if n == 0 => {}
+                        Ok(dir) => h.log(
+                            Level::Ok,
+                            tf!(
+                                "{v0}: {n} ta fayl yig'ildi ({dir})",
+                                v0 = info.label(),
+                                n = n,
+                                dir = dir.display().to_string()
+                            ),
+                        ),
+                        Err(e) => h.log(
+                            Level::Warn,
+                            tf!("Topshiriqni saqlab bo'lmadi: {e}", e = e.to_string()),
+                        ),
+                    }
+                    h.repaint();
                 }
                 ClientMsg::SystemInfo(info) => {
                     let mut h = hub.lock().unwrap();
@@ -893,5 +960,140 @@ mod wol_tests {
         assert_eq!(p.len(), 102);
         assert_eq!(&p[..6], &[0xFF; 6]);
         assert_eq!(&p[96..], &[1, 2, 3, 4, 5, 6]);
+    }
+}
+
+/// Documents/Vimora/Topshiriqlar/<day>: where collected assignments go (one folder per PC).
+pub fn collected_root() -> std::path::PathBuf {
+    dirs::document_dir()
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("Vimora")
+        .join("Topshiriqlar")
+        .join(chrono::Local::now().format("%Y-%m-%d").to_string())
+}
+
+/// Writes one student's files under `collected_root()/<pc>/`.
+fn save_collected(
+    label: &str,
+    files: Vec<(String, Vec<u8>)>,
+) -> std::io::Result<std::path::PathBuf> {
+    let pc: String = label
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let dir = collected_root().join(pc);
+    for (name, data) in files {
+        let mut p = dir.clone();
+        for part in name.split(['/', '\\']) {
+            if part.is_empty() || part == "." || part == ".." || part.contains(':') {
+                continue;
+            }
+            p.push(part);
+        }
+        if let Some(parent) = p.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&p, data)?;
+    }
+    Ok(dir)
+}
+
+/// A quick poll and the answers so far, in arrival order.
+pub struct PollState {
+    pub id: u32,
+    pub question: String,
+    pub options: Vec<String>,
+    /// (student id, name, choice, text)
+    pub answers: Vec<(u64, String, Option<u32>, String)>,
+}
+
+/// A test the teacher made: what students see, plus the right answers (console only).
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(default)]
+pub struct TestSpec {
+    pub def: vimora_core::TestDef,
+    /// Per question: the right option's index, or accepted written answers ("a | b").
+    pub correct: Vec<String>,
+}
+
+impl TestSpec {
+    /// Points (one per right answer) for a student's answers.
+    pub fn grade(&self, answers: &[vimora_core::TestAnswer]) -> u32 {
+        let norm = |s: &str| s.trim().to_lowercase();
+        answers
+            .iter()
+            .filter(|a| {
+                let q = a.question as usize;
+                let Some(right) = self.correct.get(q) else {
+                    return false;
+                };
+                let Some(question) = self.def.questions.get(q) else {
+                    return false;
+                };
+                if question.options.is_empty() {
+                    !a.text.trim().is_empty()
+                        && right
+                            .split('|')
+                            .any(|r| !r.trim().is_empty() && norm(r) == norm(&a.text))
+                } else {
+                    a.choice.map(|c| c.to_string()) == Some(right.trim().to_string())
+                }
+            })
+            .count() as u32
+    }
+}
+
+pub struct TestRun {
+    pub spec: TestSpec,
+    pub started: Instant,
+    /// Student id → (name, answers, points).
+    pub results: BTreeMap<u64, (String, Vec<vimora_core::TestAnswer>, u32)>,
+    /// Students the test was sent to.
+    pub sent_to: Vec<u64>,
+}
+
+fn attendance_file(day: &str) -> Option<std::path::PathBuf> {
+    crate::config::dir().map(|d| d.join("attendance").join(format!("{day}.json")))
+}
+
+impl Hub {
+    /// First connection of a computer today goes into the attendance list (kept on disk).
+    pub fn mark_attendance(&mut self, key: &str, label: &str, user: &str) {
+        let now = chrono::Local::now();
+        let day = now.format("%Y-%m-%d").to_string();
+        if self.attendance.0 != day {
+            let loaded = attendance_file(&day)
+                .and_then(|p| std::fs::read_to_string(p).ok())
+                .and_then(|j| serde_json::from_str(&j).ok())
+                .unwrap_or_default();
+            self.attendance = (day.clone(), loaded);
+            self.stars.clear();
+        }
+        if self.attendance.1.contains_key(key) {
+            return;
+        }
+        self.attendance.1.insert(
+            key.to_string(),
+            (
+                label.to_string(),
+                user.to_string(),
+                now.format("%H:%M").to_string(),
+            ),
+        );
+        if let Some(p) = attendance_file(&day) {
+            if let Some(d) = p.parent() {
+                let _ = std::fs::create_dir_all(d);
+            }
+            if let Ok(j) = serde_json::to_string(&self.attendance.1) {
+                let _ = std::fs::write(p, j);
+            }
+        }
     }
 }

@@ -156,20 +156,92 @@ pub fn rename_touched() -> Vec<std::path::PathBuf> {
 }
 
 /// Saves a file sent by the teacher into `Downloads/Vimora/`.
-pub fn save_file(name: &str, data: &[u8]) -> Result<PathBuf> {
-    let safe = std::path::Path::new(name)
-        .file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .filter(|s| !s.is_empty() && s != "." && s != "..")
-        .unwrap_or_else(|| "file.bin".into());
-    let dir = dirs::download_dir()
+/// Where files from the teacher land: Downloads/Vimora.
+fn received_dir() -> PathBuf {
+    dirs::download_dir()
         .or_else(dirs::home_dir)
         .unwrap_or_else(std::env::temp_dir)
-        .join("Vimora");
-    std::fs::create_dir_all(&dir)?;
-    let path = dir.join(safe);
+        .join("Vimora")
+}
+
+/// "Papka/ichki/fayl.txt" → a path under `dir` that can't climb out of it.
+fn safe_join(dir: &std::path::Path, name: &str) -> PathBuf {
+    let mut p = dir.to_path_buf();
+    for part in name.split(['/', '\\']) {
+        if part.is_empty() || part == "." || part == ".." || part.contains(':') {
+            continue;
+        }
+        p.push(part);
+    }
+    if p == dir {
+        p.push("file.bin");
+    }
+    p
+}
+
+/// Saves a file from the teacher (a folder's files keep their sub folders).
+pub fn save_file(name: &str, data: &[u8]) -> Result<PathBuf> {
+    let dir = received_dir();
+    let path = safe_join(&dir, name);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     std::fs::write(&path, data)?;
     Ok(path)
+}
+
+/// Opens a file the teacher sent, with its usual program.
+pub fn open_received(name: &str) -> Result<String> {
+    let path = safe_join(&received_dir(), name);
+    if !path.exists() {
+        anyhow::bail!("fayl topilmadi: {name}");
+    }
+    open_url(&path.to_string_lossy())?;
+    Ok(format!("ochildi: {}", path.display()))
+}
+
+/// The student's assignment folder: Documents/Topshiriq (created when missing).
+pub fn assignment_dir() -> PathBuf {
+    let d = dirs::document_dir()
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("Topshiriq");
+    let _ = std::fs::create_dir_all(&d);
+    d
+}
+
+/// Everything in the assignment folder (up to 50 MB in all).
+pub fn collect_assignments() -> Vec<(String, Vec<u8>)> {
+    const LIMIT: u64 = 50 * 1024 * 1024;
+    let root = assignment_dir();
+    let mut out = vec![];
+    let mut total = 0u64;
+    let mut stack = vec![root.clone()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            let size = e.metadata().map(|m| m.len()).unwrap_or(0);
+            if total + size > LIMIT {
+                continue;
+            }
+            if let Ok(data) = std::fs::read(&p) {
+                total += size;
+                let rel = p
+                    .strip_prefix(&root)
+                    .map(|r| r.to_string_lossy().replace('\\', "/"))
+                    .unwrap_or_default();
+                out.push((rel, data));
+            }
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------------------------

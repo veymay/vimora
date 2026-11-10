@@ -134,3 +134,4 @@ pub const GAUGE: &str = "\u{e1bf}";
 pub const USB: &str = "\u{e35a}";
 pub const CAMERA: &str = "\u{e068}";
 pub const KEYBOARD_OFF: &str = "\u{e5e3}";
+pub const CIRCLE: &str = "\u{e07a}";

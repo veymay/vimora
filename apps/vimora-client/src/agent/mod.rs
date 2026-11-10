@@ -2,6 +2,7 @@
 //! and supervision of the overlay process.
 
 mod chat_supervisor;
+mod lesson_supervisor;
 mod overlay_supervisor;
 mod session;
 mod tasks;
@@ -221,6 +222,8 @@ pub async fn run(cfg: Config) -> Result<()> {
     crate::desktop::restore();
     restore_lock(&state);
     restore_apps(&state);
+    // The folder students save their work into ("Topshiriq"), ready before it is collected.
+    let _ = system::assignment_dir();
     tray::start(state.clone());
     probe_ui().await;
     let (ov_tx, ov_rx) = mpsc::channel(16);

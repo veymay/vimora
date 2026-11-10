@@ -649,6 +649,14 @@ impl ConsoleApp {
             ],
             vec![
                 a(
+                    icons::GRADUATION_CAP,
+                    tr("Dars"),
+                    tr("Fayllar, davomat, so'rov, test, taymer"),
+                    Menu::Lesson,
+                    false,
+                    None,
+                ),
+                a(
                     icons::GLOBE,
                     tr("Sayt"),
                     tr("Barcha ekranlarda bir sahifa ochish"),

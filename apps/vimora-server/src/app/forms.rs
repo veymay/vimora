@@ -171,6 +171,7 @@ pub(super) fn dialog_body(
             restart,
             request,
         } => updates_form(ui, p, tab, policy, restart, request, cx),
+        Dialog::Lesson(l) => lesson_form(ui, p, l, cx),
         Dialog::Machine {
             id,
             tab,

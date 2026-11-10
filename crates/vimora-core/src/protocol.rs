@@ -442,6 +442,56 @@ pub enum Command {
         keyboard: bool,
         mouse: bool,
     },
+    /// Open a file the teacher sent (name as in `SendFile`).
+    OpenFile(String),
+    /// Send back what is in the student's "Topshiriq" folder ([`ClientMsg::Collected`]).
+    CollectFiles,
+    /// A quick question: answer with one of `options`, or with text when there are none
+    /// ([`ClientMsg::PollAnswer`]).
+    Poll {
+        id: u32,
+        question: String,
+        options: Vec<String>,
+    },
+    /// Close the poll window.
+    PollEnd,
+    /// Lesson goal and countdown at the top of the screen (empty goal and `end_unix` 0 = off).
+    LessonBanner {
+        goal: String,
+        end_unix: u64,
+    },
+    /// Start a test in a fullscreen window ([`ClientMsg::TestResult`] when handed in).
+    StartTest(TestDef),
+    /// Time is up: hand in what is answered.
+    EndTest,
+}
+
+/// A test the teacher made.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct TestDef {
+    pub id: u32,
+    pub title: String,
+    /// Time limit (0 = none).
+    pub minutes: u32,
+    /// Questions and their answer options in a different order for each student.
+    pub shuffle: bool,
+    pub questions: Vec<TestQuestion>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct TestQuestion {
+    pub text: String,
+    /// Choices; empty = a written answer.
+    pub options: Vec<String>,
+}
+
+/// One answer: the question's index in the teacher's order, the chosen option (also in the
+/// teacher's order) or the written text.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct TestAnswer {
+    pub question: u32,
+    pub choice: Option<u32>,
+    pub text: String,
 }
 
 /// Technical state of a student PC, Task Manager style.
@@ -563,6 +613,17 @@ pub enum ClientMsg {
     ChatRead,
     /// Answer to [`Command::GetSystemInfo`].
     SystemInfo(SystemInfo),
+    /// The student's assignment files: (path inside the folder, content).
+    Collected(Vec<(String, Vec<u8>)>),
+    PollAnswer {
+        id: u32,
+        choice: Option<u32>,
+        text: String,
+    },
+    TestResult {
+        id: u32,
+        answers: Vec<TestAnswer>,
+    },
 }
 
 /// Pointer shapes carried by [`ClientMsg::Cursor`].
@@ -620,6 +681,20 @@ mod wire_tests {
                 mouse: false
             }),
             tag(&Command::ChatEnd) + 6
+        );
+        assert_eq!(
+            tag(&Command::OpenFile(String::new())),
+            tag(&Command::ChatEnd) + 7
+        );
+        assert_eq!(tag(&Command::CollectFiles), tag(&Command::ChatEnd) + 8);
+        assert_eq!(tag(&ClientMsg::Collected(vec![])), 14);
+        assert_eq!(tag(&Command::EndTest), tag(&Command::ChatEnd) + 13);
+        assert_eq!(
+            tag(&ClientMsg::TestResult {
+                id: 0,
+                answers: vec![]
+            }),
+            16
         );
         assert_eq!(
             tag(&Command::LockStyle {

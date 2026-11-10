@@ -365,6 +365,7 @@ impl ConsoleApp {
             Dialog::Rename { .. } => (tr("Nomini o'zgartirish"), 460.0),
             Dialog::Updates { .. } => (tr("Yangilanishlar"), 600.0),
             Dialog::Machine { .. } => (tr("Kompyuter holati"), 600.0),
+            Dialog::Lesson(_) => (tr("Dars"), 600.0),
         };
         // Every drawer has the same width, wide enough for its widest content (four tabs),
         // so the frame never grows past the header and ✕ always sits on the right edge.
@@ -402,6 +403,7 @@ impl ConsoleApp {
             Dialog::Rename { .. } => icons::SETTINGS,
             Dialog::Updates { .. } => icons::DOWNLOAD,
             Dialog::Machine { .. } => icons::GAUGE,
+            Dialog::Lesson(_) => icons::GRADUATION_CAP,
         };
         // Drawers slide in from the right; modals fade in at the centre.
         // Drawers hang flush on the right edge of the window, full height; modals drop
@@ -522,6 +524,7 @@ impl ConsoleApp {
                         | Dialog::Freeze { .. }
                         | Dialog::Updates { .. }
                         | Dialog::Machine { .. }
+                        | Dialog::Lesson(_)
                 );
                 let body_max = if drawer {
                     // Full window height: the drawer hangs on the right edge, top to bottom.
@@ -655,9 +658,9 @@ impl ConsoleApp {
                                         | Dialog::Activity => (icons::CHECK, tr("Saqlash")),
                                         Dialog::Freeze { .. } => (icons::CHECK, tr("Saqlash")),
                                         Dialog::Rename { .. } => (icons::CHECK, tr("Saqlash")),
-                                        Dialog::Updates { .. } | Dialog::Machine { .. } => {
-                                            (icons::CHECK, tr("Saqlash"))
-                                        }
+                                        Dialog::Updates { .. }
+                                        | Dialog::Machine { .. }
+                                        | Dialog::Lesson(_) => (icons::CHECK, tr("Saqlash")),
                                     };
                                     let kind = if matches!(dialog, Dialog::Power(_)) {
                                         Kind::Danger
@@ -748,6 +751,7 @@ impl ConsoleApp {
         }
         self.shadow_requests(&targets);
         self.machine_requests(ctx);
+        self.lesson_requests(&targets);
         if let Some(Dialog::Updates {
             policy,
             restart,
@@ -949,6 +953,11 @@ impl ConsoleApp {
                         },
                     };
                     self.hub.lock().unwrap().toast(true, msg);
+                }
+            }
+            FileResult::LessonPath(path) => {
+                if let Some(Dialog::Lesson(l)) = &mut self.dialog {
+                    l.path = path;
                 }
             }
             FileResult::BackupSaved(Ok(path)) => {
@@ -1289,7 +1298,7 @@ impl ConsoleApp {
                 return;
             }
             Dialog::Activity => return,
-            Dialog::Freeze { .. } | Dialog::Machine { .. } => return,
+            Dialog::Freeze { .. } | Dialog::Machine { .. } | Dialog::Lesson(_) => return,
             Dialog::Rename {
                 id,
                 key,
@@ -1472,7 +1481,7 @@ mod url_tests {
 }
 
 /// Runs a (blocking) file dialog on its own thread; a dropped sender means "cancelled".
-fn spawn_file_job(
+pub(super) fn spawn_file_job(
     job: impl FnOnce() -> Option<FileResult> + Send + 'static,
 ) -> std::sync::mpsc::Receiver<FileResult> {
     let (tx, rx) = std::sync::mpsc::channel();

@@ -161,6 +161,16 @@ pub(super) async fn session(
                 ServerMsg::ShowFrame { jpeg, .. } => {
                     let _ = ov_tx.try_send(OverlayReq::Frame(jpeg));
                 }
+                ServerMsg::Command(Command::CollectFiles) => {
+                    let tx = tx.clone();
+                    tokio::spawn(async move {
+                        if let Ok(files) =
+                            tokio::task::spawn_blocking(system::collect_assignments).await
+                        {
+                            let _ = tx.send(ClientMsg::Collected(files)).await;
+                        }
+                    });
+                }
                 ServerMsg::Command(Command::GetSystemInfo) => {
                     // Sampled off the async threads (the first sample waits a moment).
                     let tx = tx.clone();
@@ -301,6 +311,33 @@ pub(super) async fn handle_command(
             None
         }
         Command::KillProcess(pid) => Some(crate::sysmon::kill(pid)),
+        Command::OpenFile(name) => Some(system::open_received(&name)),
+        Command::Poll {
+            id,
+            question,
+            options,
+        } => {
+            lesson_supervisor::poll(ctx, id, question, options);
+            None
+        }
+        Command::PollEnd => {
+            lesson_supervisor::poll_end();
+            None
+        }
+        Command::LessonBanner { goal, end_unix } => {
+            lesson_supervisor::banner(goal, end_unix);
+            None
+        }
+        Command::StartTest(def) => {
+            lesson_supervisor::test(ctx, def);
+            None
+        }
+        Command::EndTest => {
+            lesson_supervisor::test_end();
+            None
+        }
+        // Answered in the session loop (it needs the outgoing channel).
+        Command::CollectFiles => None,
         // Answered in the session loop (it needs the outgoing channel).
         Command::GetSystemInfo => None,
         Command::OpenUrl(url) => Some(system::open_url(&url).map(|_| format!("ochildi: {url}"))),
