@@ -159,6 +159,7 @@ impl Engine {
                 self.inner.lock().unwrap().busy = Some(format!("Vimora {v} yuklanmoqda {pct}%"));
             }
         };
+        vimora_update::clear_old(&update_dir());
         let path = vimora_update::download(&rel, Role::Student, &update_dir(), &progress)?;
         self.inner.lock().unwrap().busy = Some(format!("Vimora {v} o'rnatilmoqda"));
         vimora_update::install_student(&path)?;

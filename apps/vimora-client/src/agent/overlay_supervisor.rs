@@ -31,6 +31,11 @@ pub(super) fn spawn_overlay(state: &Shared) -> Result<(Child, ChildStdin)> {
             use tokio::io::{AsyncBufReadExt, BufReader};
             let mut lines = BufReader::new(out).lines();
             while let Ok(Some(line)) = lines.next_line().await {
+                if line.trim() == "NODESKTOP" {
+                    report_fault(
+                        "Qulf ekrani alohida ish stolida ochilmadi — himoya kuchsizroq (Vimora xizmati ishlayaptimi?)",
+                    );
+                }
                 if line.trim() == "UNLOCK" {
                     info!("lock screen opened with the unlock code");
                     {

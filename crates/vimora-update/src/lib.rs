@@ -247,8 +247,41 @@ pub fn download(
     }
     std::fs::create_dir_all(dir)?;
     let path = dir.join(&asset.name);
-    std::fs::write(&path, data)?;
-    Ok(path)
+    if std::fs::write(&path, &data).is_ok() {
+        return Ok(path);
+    }
+    // The file is in use (Windows "os error 32"): an installer started earlier is still
+    // running from it. Save under a fresh name instead of failing the update.
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let alt = dir.join(format!("{stamp}-{}", asset.name));
+    std::fs::write(&alt, &data)
+        .with_context(|| format!("yangilanish faylini saqlab bo'lmadi: {}", alt.display()))?;
+    Ok(alt)
+}
+
+/// Before a new update: stop installers left over from earlier attempts (a hung one would keep
+/// its file locked and block every later update) and delete their files. Best effort.
+pub fn clear_old(dir: &Path) {
+    #[cfg(windows)]
+    let _ = run("schtasks", &["/end", "/tn", "Vimora Update"]);
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let lower = name.to_lowercase();
+        if !(lower.ends_with(".exe") || lower.ends_with(".deb")) {
+            continue;
+        }
+        #[cfg(windows)]
+        if lower.ends_with(".exe") {
+            let _ = run("taskkill", &["/F", "/IM", &name]);
+        }
+        let _ = std::fs::remove_file(e.path());
+    }
 }
 
 /// Starts installing a downloaded console update. On Windows the installer takes over (the caller

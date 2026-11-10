@@ -61,6 +61,10 @@ pub fn run() -> anyhow::Result<()> {
     // Must come before any window or hook is created on this thread.
     let own_desktop = crate::desktop::enter();
     tracing::info!("overlay on its own desktop: {own_desktop}");
+    if cfg!(windows) && !own_desktop && std::env::var_os("VIMORA_OVERLAY_DEMO").is_none() {
+        // The agent passes this on to the console: the lock is weaker on the shared desktop.
+        println!("NODESKTOP");
+    }
     #[cfg(windows)]
     input_block::install();
 
@@ -695,13 +699,15 @@ mod input_block {
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::System::Threading::GetCurrentProcessId;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_ESCAPE, VK_MENU,
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_ESCAPE,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
     /// Marks input we inject ourselves (Esc to close the Start menu, Alt to take focus):
     /// the hooks let exactly these through.
     const MAGIC: usize = 0x5649_4D52;
+    /// A virtual key that is assigned to nothing.
+    const NOOP_KEY: u16 = 0xE8;
 
     /// Keys the lock screen's code box may use, collected by the keyboard hook.
     static KEYS: std::sync::Mutex<Vec<char>> = std::sync::Mutex::new(Vec::new());
@@ -818,9 +824,11 @@ mod input_block {
             // Start / search / any shell popup closes on Esc.
             press(VK_ESCAPE);
         }
-        // Windows only hands the foreground to a process that just got input: a (harmless,
-        // marked) Alt press makes that us.
-        press(VK_MENU);
+        // Windows only hands the foreground to a process that just got input. The injected key
+        // is one no keyboard has (0xE8): it satisfies that rule and does nothing else. (An Alt
+        // tap was used before — but Alt puts the front window into menu mode, which made the
+        // title bar / system menu show up when this ran many times in a row.)
+        press(NOOP_KEY);
         SetWindowPos(
             ours,
             HWND_TOPMOST,

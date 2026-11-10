@@ -182,7 +182,7 @@ Section "Vimora"
     nsExec::Exec '"$SYSDIR\netsh.exe" advfirewall firewall add rule name="Vimora Agent" dir=in action=allow protocol=UDP localport=47800 program="$INSTDIR\vimora-client.exe"'
     Pop $0
     ; Privileged service (SYSTEM), logon task, Shadow control, updates.
-    nsExec::Exec '"$INSTDIR\vimora-client.exe" setup'
+    nsExec::Exec /TIMEOUT=180000 '"$INSTDIR\vimora-client.exe" setup'
     Pop $0
   ${EndIf}
 
