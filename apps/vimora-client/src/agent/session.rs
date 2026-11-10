@@ -261,9 +261,13 @@ pub(super) async fn handle_command(
             None
         }
         Command::SetStream(c) => {
+            // Live (full-size, fast) = the teacher is watching: say so on screen.
+            let live = c.interval_ms > 0 && c.interval_ms <= 300 && c.max_width >= 1000;
             *stream_cfg.lock().unwrap() = c;
+            crate::watched::set(live);
             None
         }
+        Command::InputLock { keyboard, mouse } => Some(crate::inputlock::set(keyboard, mouse)),
         Command::ClearHelp => {
             state.lock().unwrap().help = false;
             None

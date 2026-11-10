@@ -107,6 +107,12 @@ pub struct ConsoleApp {
     dialog: Option<Dialog>,
     viewer: Option<Viewer>,
     showing: bool,
+    /// A student's screen is shown to the class (see `set_relay`).
+    relaying: Option<u64>,
+    /// Computers whose keyboard and mouse are blocked (without the lock screen).
+    input_locked: BTreeSet<u64>,
+    /// Last automatic screen-history save.
+    history_at: Option<Instant>,
     /// Dialog animating out after it was closed (drawn, not interactive).
     closing: Option<Dialog>,
     /// Dialog waiting for its blurred backdrop snapshot.
@@ -176,6 +182,9 @@ impl ConsoleApp {
             dialog: None,
             viewer: None,
             showing: false,
+            relaying: None,
+            input_locked: BTreeSet::new(),
+            history_at: None,
             pending: None,
             closing: None,
             want_snapshot: false,
@@ -752,6 +761,185 @@ impl ConsoleApp {
         self.showing = on;
     }
 
+    /// Shows one student's screen to every other online computer (or stops it).
+    fn set_relay(&mut self, source: Option<u64>, all: &[View]) {
+        if let Some(old) = self.relaying.take() {
+            let targets = self
+                .hub
+                .lock()
+                .unwrap()
+                .relay
+                .take()
+                .map(|(_, t)| t)
+                .unwrap_or_default();
+            self.send(&targets, Command::ShowStop, "");
+            // Back to thumbnails unless it is being watched.
+            if self.viewer.as_ref().map(|v| v.id) != Some(old) {
+                let s = thumb_stream(&self.cfg.read().unwrap());
+                self.send(&[old], Command::SetStream(s), "");
+            }
+        }
+        let Some(id) = source else { return };
+        if self.showing {
+            self.set_show(false, all);
+        }
+        let targets: Vec<u64> = all
+            .iter()
+            .filter(|v| v.online && v.id != id)
+            .map(|v| v.id)
+            .collect();
+        let name = all
+            .iter()
+            .find(|v| v.id == id)
+            .map(|v| v.label.clone())
+            .unwrap_or_default();
+        self.send(
+            &targets,
+            Command::ShowStart,
+            &tf!("{name} ekrani hammaga ko'rsatilmoqda", name = name),
+        );
+        // Full-quality frames from the source while it is shown.
+        self.send(&[id], Command::SetStream(StreamConfig::LIVE), "");
+        self.hub.lock().unwrap().relay = Some((id, targets));
+        self.relaying = Some(id);
+    }
+
+    /// Saves what a computer shows right now as a PNG in Pictures/Vimora.
+    fn screenshot(&mut self, id: u64, label: &str) {
+        let img = self
+            .hub
+            .lock()
+            .unwrap()
+            .students
+            .get(&id)
+            .and_then(|s| s.frame.clone());
+        let Some(img) = img else { return };
+        let dir = media_dir(dirs::picture_dir());
+        let path = dir.join(format!("{}-{}.png", safe_name(label), stamp()));
+        let res = std::fs::create_dir_all(&dir)
+            .map_err(|e| e.to_string())
+            .and_then(|_| {
+                image::RgbaImage::from_raw(
+                    img.size[0] as u32,
+                    img.size[1] as u32,
+                    img.pixels.iter().flat_map(|c| c.to_array()).collect(),
+                )
+                .ok_or_else(|| "rasm".to_string())?
+                .save(&path)
+                .map_err(|e| e.to_string())
+            });
+        let mut h = self.hub.lock().unwrap();
+        match res {
+            Ok(()) => h.toast(
+                true,
+                tf!(
+                    "Skrinshot saqlandi: {path}",
+                    path = path.display().to_string()
+                ),
+            ),
+            Err(e) => h.toast(false, tf!("Skrinshotni saqlab bo'lmadi: {e}", e = e)),
+        }
+    }
+
+    /// Starts or stops recording a computer's screen (MJPEG AVI in Videos/Vimora).
+    fn toggle_recording(&mut self, id: u64, label: &str) {
+        let mut h = self.hub.lock().unwrap();
+        if let Some((w, path)) = h.recording.remove(&id) {
+            let n = w.frames();
+            let res = w.finish();
+            match res {
+                Ok(()) => h.toast(
+                    true,
+                    tf!(
+                        "Video saqlandi ({n} kadr): {path}",
+                        n = n,
+                        path = path.display().to_string()
+                    ),
+                ),
+                Err(e) => h.toast(
+                    false,
+                    tf!("Videoni saqlab bo'lmadi: {e}", e = e.to_string()),
+                ),
+            }
+            return;
+        }
+        let (w, hgt) = h
+            .students
+            .get(&id)
+            .and_then(|s| {
+                s.frame
+                    .as_ref()
+                    .map(|f| (f.size[0] as u32, f.size[1] as u32))
+            })
+            .unwrap_or((1280, 720));
+        let dir = media_dir(dirs::video_dir());
+        let path = dir.join(format!("{}-{}.avi", safe_name(label), stamp()));
+        let fps = (1000 / StreamConfig::LIVE.interval_ms.max(1)).max(1);
+        match std::fs::create_dir_all(&dir)
+            .and_then(|_| crate::avi::AviWriter::create(&path, w, hgt, fps))
+        {
+            Ok(wr) => {
+                h.recording.insert(id, (wr, path));
+                h.toast(true, tr("Yozib olish boshlandi"));
+            }
+            Err(e) => h.toast(
+                false,
+                tf!("Videoni saqlab bo'lmadi: {e}", e = e.to_string()),
+            ),
+        }
+    }
+
+    /// "Ekran tarixi": every few minutes each online computer's picture is saved
+    /// (Pictures/Vimora/Tarix/<day>/); days older than a week are removed.
+    fn screen_history(&mut self) {
+        let every = self.cfg.read().unwrap().history_minutes;
+        if every == 0
+            || self
+                .history_at
+                .is_some_and(|t| t.elapsed() < Duration::from_secs(every as u64 * 60))
+        {
+            return;
+        }
+        self.history_at = Some(Instant::now());
+        let shots: Vec<(String, egui::ColorImage)> = {
+            let h = self.hub.lock().unwrap();
+            h.students
+                .values()
+                .filter_map(|s| s.frame.clone().map(|f| (s.info.label().to_string(), f)))
+                .collect()
+        };
+        std::thread::spawn(move || {
+            let root = media_dir(dirs::picture_dir()).join("Tarix");
+            let day = chrono::Local::now().format("%Y-%m-%d").to_string();
+            let dir = root.join(&day);
+            let _ = std::fs::create_dir_all(&dir);
+            let time = chrono::Local::now().format("%H-%M").to_string();
+            for (label, img) in shots {
+                let rgb: Vec<u8> = img
+                    .pixels
+                    .iter()
+                    .flat_map(|c| [c.r(), c.g(), c.b()])
+                    .collect();
+                if let Some(buf) =
+                    image::RgbImage::from_raw(img.size[0] as u32, img.size[1] as u32, rgb)
+                {
+                    let _ = buf.save(dir.join(format!("{}-{time}.jpg", safe_name(&label))));
+                }
+            }
+            // Keep one week.
+            let cutoff = (chrono::Local::now() - chrono::Duration::days(7))
+                .format("%Y-%m-%d")
+                .to_string();
+            if let Ok(days) = std::fs::read_dir(&root) {
+                for d in days.flatten() {
+                    if d.file_name().to_string_lossy().as_ref() < cutoff.as_str() {
+                        let _ = std::fs::remove_dir_all(d.path());
+                    }
+                }
+            }
+        });
+    }
+
     fn open_viewer(&mut self, id: u64, control: bool) {
         if !self.hub.lock().unwrap().students.contains_key(&id) {
             return; // offline: nothing to watch
@@ -767,6 +955,9 @@ impl ConsoleApp {
 
     fn close_viewer(&mut self) {
         if let Some(v) = self.viewer.take() {
+            if self.relaying == Some(v.id) {
+                return; // shown to the class: keep its full-quality stream
+            }
             let s = thumb_stream(&self.cfg.read().unwrap());
             self.send(&[v.id], Command::SetStream(s), "");
         }
@@ -1011,6 +1202,7 @@ impl eframe::App for ConsoleApp {
             self.quit_now(ctx);
         }
         self.sync_textures(ctx);
+        self.screen_history();
         let all = self.snapshot();
         if self.showing && !self.show.active.load(Ordering::Relaxed) {
             self.set_show(false, &all); // capture failed: tell students to close the presentation
@@ -1239,4 +1431,28 @@ fn demo_sysinfo(i: usize) -> vimora_core::SystemInfo {
             })
             .collect(),
     }
+}
+
+/// <Pictures or Videos>/Vimora.
+pub(super) fn media_dir(base: Option<std::path::PathBuf>) -> std::path::PathBuf {
+    base.or_else(dirs::home_dir)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("Vimora")
+}
+
+/// A computer name usable in a file name.
+fn safe_name(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn stamp() -> String {
+    chrono::Local::now().format("%Y%m%d-%H%M%S").to_string()
 }

@@ -17,6 +17,7 @@ mod config;
 mod desktop;
 mod devices;
 mod firewall;
+mod inputlock;
 mod kiosk;
 mod netcontrol;
 mod overlay;
@@ -30,6 +31,7 @@ mod single;
 mod sysmon;
 mod system;
 mod updates;
+mod watched;
 
 use clap::{Parser, Subcommand};
 
@@ -80,6 +82,9 @@ enum Cmd {
     /// Internal: full-screen "forbidden search" modal.
     #[command(hide = true)]
     Blocked { word: String },
+    /// Internal: "the teacher is watching" pill at the top of the screen.
+    #[command(hide = true)]
+    Watched,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -96,6 +101,7 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Overlay) => overlay::run(),
         Some(Cmd::Popup { title, text, reply }) => popup::run(&title, &text, reply),
         Some(Cmd::Blocked { word }) => blocked::run(&word),
+        Some(Cmd::Watched) => watched::run(),
         Some(Cmd::Service) => service::run(),
         Some(Cmd::Chat) => chat::run(),
         Some(Cmd::UiProbe) => ui_probe(),

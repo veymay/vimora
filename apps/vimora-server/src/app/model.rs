@@ -216,6 +216,8 @@ pub(super) enum Action {
     Rename(u64),
     /// Open the "Kompyuter holati" drawer.
     Machine(u64),
+    /// Block (true) or free the keyboard and mouse.
+    InputLock(u64, bool),
     /// Right click: open the context menu for this computer (anchor rect, pointer x).
     OpenMenu(u64, Rect, f32),
     /// Remove an offline computer from the list.

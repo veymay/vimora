@@ -405,6 +405,32 @@ fn general(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig, out: &mut Setti
         },
     );
     appearance(ui, p, c);
+    let mut every = c.history_minutes;
+    row(
+        ui,
+        p,
+        tr("Ekran tarixi"),
+        Some(tr("Har bir kompyuter ekrani shu oraliqda rasm qilib saqlanadi (Rasmlar/Vimora/Tarix). Bir haftadan eskilari o'chadi.")),
+        |ui| {
+            if ui_kit::icon_cell(ui, icons::FOLDER, ui_kit::CONTROL_H, false)
+                .tip(tr("Papkani ochish"))
+                .clicked()
+            {
+                let dir = super::media_dir(dirs::picture_dir()).join("Tarix");
+                let _ = std::fs::create_dir_all(&dir);
+                config::open(&dir.to_string_lossy());
+            }
+            ui.add_space(6.0);
+            if choice(
+                ui,
+                p,
+                &mut every,
+                &[(0, tr("O'chiq")), (5, "5 min"), (15, "15 min"), (30, "30 min")],
+            ) {
+                c.history_minutes = every;
+            }
+        },
+    );
     heading(ui, p, tr("Zaxira nusxa"));
     row(
         ui,

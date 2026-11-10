@@ -3,6 +3,7 @@
 //! Vimora teacher console.
 
 mod app;
+mod avi;
 mod blockcat;
 mod config;
 mod i18n_table;

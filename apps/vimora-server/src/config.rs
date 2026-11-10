@@ -87,6 +87,8 @@ pub struct ServerConfig {
     pub allow_apps: String,
     /// Blocked outgoing ports ("25, 6881").
     pub blocked_ports: String,
+    /// "Ekran tarixi": save every computer's picture every N minutes (0 = off).
+    pub history_minutes: u32,
     pub update_policy: vimora_core::UpdatePolicy,
 }
 
@@ -153,6 +155,7 @@ impl Default for ServerConfig {
             app_mode: 0,
             allow_apps: String::new(),
             blocked_ports: String::new(),
+            history_minutes: 0,
             update_policy: vimora_core::UpdatePolicy {
                 os: vimora_core::OsUpdateMode::Manual,
                 apps_auto: false,

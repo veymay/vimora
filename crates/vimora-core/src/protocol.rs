@@ -436,6 +436,12 @@ pub enum Command {
     KillProcess(u32),
     /// Only these programs may run (process names); empty = no such limit. Windows.
     SetAppAllowlist(Vec<String>),
+    /// Block the keyboard and/or the mouse without the lock screen (teacher's remote control
+    /// still works).
+    InputLock {
+        keyboard: bool,
+        mouse: bool,
+    },
 }
 
 /// Technical state of a student PC, Task Manager style.
@@ -607,6 +613,13 @@ mod wire_tests {
         assert_eq!(
             tag(&Command::SetAppAllowlist(vec![])),
             tag(&Command::ChatEnd) + 5
+        );
+        assert_eq!(
+            tag(&Command::InputLock {
+                keyboard: false,
+                mouse: false
+            }),
+            tag(&Command::ChatEnd) + 6
         );
         assert_eq!(
             tag(&Command::LockStyle {

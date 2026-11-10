@@ -111,6 +111,10 @@ pub struct Hub {
     pub ctx: Option<egui::Context>,
     /// Removed computers already told (this run) to forget this console.
     pub unpaired: std::collections::HashSet<String>,
+    /// A student's screen shown to the others: (source, targets). Its frames are forwarded.
+    pub relay: Option<(u64, Vec<u64>)>,
+    /// Screens being recorded (student id → video file).
+    pub recording: BTreeMap<u64, (crate::avi::AviWriter, std::path::PathBuf)>,
     next_id: u64,
 }
 
@@ -127,6 +131,8 @@ impl Hub {
             unread: 0,
             ctx: None,
             unpaired: Default::default(),
+            relay: None,
+            recording: BTreeMap::new(),
             next_id: 0,
         }
     }
@@ -559,6 +565,27 @@ async fn session(
                     height,
                     jpeg,
                 } => {
+                    {
+                        let mut h = hub.lock().unwrap();
+                        // This student's screen is shown to the class: pass the frame on.
+                        if let Some((src, targets)) = h.relay.clone() {
+                            if src == id {
+                                h.send(
+                                    &targets,
+                                    &ServerMsg::ShowFrame {
+                                        width,
+                                        height,
+                                        jpeg: jpeg.clone(),
+                                    },
+                                );
+                            }
+                        }
+                        if let Some((w, _)) = h.recording.get_mut(&id) {
+                            if let Err(e) = w.frame(&jpeg) {
+                                warn!("recording: {e}");
+                            }
+                        }
+                    }
                     let img =
                         tokio::task::spawn_blocking(move || capture::decode_jpeg(&jpeg)).await?;
                     if let Ok(f) = img {

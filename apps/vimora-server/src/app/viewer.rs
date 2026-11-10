@@ -32,6 +32,9 @@ pub(super) fn special_key(k: Key) -> Option<SpecialKey> {
 #[derive(Default)]
 struct ViewerActions {
     back: bool,
+    screenshot: bool,
+    record: bool,
+    relay: bool,
     toggle_control: bool,
     lock: Option<Command>,
     message: bool,
@@ -122,6 +125,54 @@ impl ConsoleApp {
                             ui_kit::rule(ui, BAR_H);
                             ui.spacing_mut().item_spacing.x = 8.0;
                             ui.add_space(8.0);
+                            let recording = self.hub.lock().unwrap().recording.contains_key(&id);
+                            let relaying = self.relaying == Some(id);
+                            if ui_kit::button(
+                                ui,
+                                Some(icons::CAST),
+                                if relaying {
+                                    tr("To'xtatish")
+                                } else {
+                                    tr("Hammaga ko'rsatish")
+                                },
+                                if relaying {
+                                    Kind::Danger
+                                } else {
+                                    Kind::Outline
+                                },
+                            )
+                            .tip(tr(
+                                "Shu o'quvchining ekrani boshqa barcha kompyuterlarda ko'rsatiladi",
+                            ))
+                            .clicked()
+                            {
+                                act.relay = true;
+                            }
+                            if ui_kit::button(
+                                ui,
+                                Some(icons::CIRCLE_DOT),
+                                if recording {
+                                    tr("Yozuvni to'xtatish")
+                                } else {
+                                    tr("Yozib olish")
+                                },
+                                if recording {
+                                    Kind::Danger
+                                } else {
+                                    Kind::Outline
+                                },
+                            )
+                            .tip(tr("Ekran video faylga yoziladi (Videolar/Vimora)"))
+                            .clicked()
+                            {
+                                act.record = true;
+                            }
+                            if ui_kit::icon_cell(ui, icons::CAMERA, 36.0, false)
+                                .tip(tr("Skrinshot (Rasmlar/Vimora)"))
+                                .clicked()
+                            {
+                                act.screenshot = true;
+                            }
                             // Same label in both states; red while the teacher is in control.
                             let kind = if control { Kind::Danger } else { Kind::Primary };
                             if ui_kit::button(
@@ -312,6 +363,21 @@ impl ConsoleApp {
             } else {
                 self.send(&[id], c, "");
             }
+        }
+        let label = info.label.clone();
+        if act.screenshot {
+            self.screenshot(id, &label);
+        }
+        if act.record {
+            self.toggle_recording(id, &label);
+        }
+        if act.relay {
+            let next = if self.relaying == Some(id) {
+                None
+            } else {
+                Some(id)
+            };
+            self.set_relay(next, all);
         }
         if act.message {
             self.selected = [id].into();

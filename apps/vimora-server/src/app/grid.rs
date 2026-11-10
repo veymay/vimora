@@ -1019,6 +1019,24 @@ impl ConsoleApp {
                             None,
                         ));
                     }
+                    if !online.is_empty() {
+                        if online.iter().any(|v| !self.input_locked.contains(&v.id)) {
+                            rows.push((
+                                icons::KEYBOARD_OFF,
+                                tr("Klaviatura va sichqonchani bloklash"),
+                                Action::InputLock(id, true),
+                                None,
+                            ));
+                        }
+                        if online.iter().any(|v| self.input_locked.contains(&v.id)) {
+                            rows.push((
+                                icons::KEYBOARD,
+                                tr("Klaviatura va sichqonchani ochish"),
+                                Action::InputLock(id, false),
+                                None,
+                            ));
+                        }
+                    }
                     if !many && v.online {
                         rows.push((
                             icons::MESSAGE_SQUARE_TEXT,
@@ -1314,6 +1332,33 @@ impl ConsoleApp {
                 }
             }
             Action::View(id, control) => self.open_viewer(id, control),
+            Action::InputLock(id, on) => {
+                let ids: Vec<u64> = self
+                    .group_of(id, all)
+                    .iter()
+                    .filter(|v| v.online)
+                    .map(|v| v.id)
+                    .collect();
+                for i in &ids {
+                    if on {
+                        self.input_locked.insert(*i);
+                    } else {
+                        self.input_locked.remove(i);
+                    }
+                }
+                self.send(
+                    &ids,
+                    Command::InputLock {
+                        keyboard: on,
+                        mouse: on,
+                    },
+                    if on {
+                        tr("Klaviatura va sichqoncha bloklandi")
+                    } else {
+                        tr("Klaviatura va sichqoncha ochildi")
+                    },
+                );
+            }
             Action::Lock(id) => {
                 let ids: Vec<u64> = self
                     .group_of(id, all)
