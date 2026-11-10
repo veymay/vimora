@@ -12,6 +12,18 @@ pub fn quiet(cmd: &mut Command) -> &mut Command {
     cmd
 }
 
+/// Runs `prog args…`, returns (exit code, stdout+stderr).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn run_code(prog: &str, args: &[&str]) -> Result<(Option<i32>, String)> {
+    let out: Output = quiet(Command::new(prog).args(args))
+        .output()
+        .with_context(|| format!("{prog} topilmadi"))?;
+    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.push('\n');
+    text.push_str(&String::from_utf8_lossy(&out.stderr));
+    Ok((out.status.code(), text))
+}
+
 /// Runs `prog args…`, returns (success, stdout+stderr).
 pub fn run(prog: &str, args: &[&str]) -> Result<(bool, String)> {
     let out: Output = quiet(Command::new(prog).args(args))

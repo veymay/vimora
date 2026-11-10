@@ -1,11 +1,19 @@
 //! Windows backend: Unified Write Filter (`uwfmgr.exe`).
 //!
+//! Fully automatic on Windows 10/11 Education / Enterprise: switching "Muzlatish" on from the
+//! console installs the optional UWF component if it is missing (DISM) and restarts; the next
+//! boot arms the filter and restarts once more (see `Shield::on_boot`). From then on every
+//! change — settings, installed programs, downloaded files — is gone after a restart.
+//!
 //! Configuration applied when arming:
-//! * disk-backed overlay (not RAM) sized from free space, so long lessons can't exhaust memory;
+//! * disk-backed overlay (not RAM) sized from free space, with free-space passthrough, so long
+//!   lessons can't exhaust memory;
 //! * warning / critical thresholds at 75 % / 90 % of the overlay;
-//! * protection of the system volume;
-//! * exclusions: Vimora's data, Windows Defender signatures and settings (so antivirus stays
-//!   current), and the domain machine-account secret (so the domain trust doesn't break).
+//! * protection of every fixed volume (C:, D:, …), so files downloaded anywhere are rolled back;
+//! * exclusions: Vimora's data and each user's console pairing, Windows Defender signatures and
+//!   settings (so antivirus stays current), the domain machine-account secret, and the folders
+//!   the teacher marked as persistent;
+//! * what UWF needs to work well: fast startup (hibernation) and scheduled defragmentation off.
 
 use super::{overlay_size_mb, Backend, Probe};
 use crate::sh;
@@ -85,6 +93,33 @@ fn data_dir() -> PathBuf {
         .join("Vimora")
 }
 
+/// Fixed (internal) drives, "C:", "D:", … — the system drive always first.
+fn fixed_drives() -> Vec<String> {
+    let sys = system_drive();
+    #[allow(unused_mut)]
+    let mut out = vec![sys.clone()];
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
+        const DRIVE_FIXED: u32 = 3;
+        let mask = unsafe { GetLogicalDrives() };
+        for i in 0..26u32 {
+            if mask & (1 << i) == 0 {
+                continue;
+            }
+            let letter = (b'A' + i as u8) as char;
+            let d = format!("{letter}:");
+            let root: Vec<u16> = format!("{d}\\").encode_utf16().chain(Some(0)).collect();
+            if unsafe { GetDriveTypeW(root.as_ptr()) } == DRIVE_FIXED
+                && !d.eq_ignore_ascii_case(&sys)
+            {
+                out.push(d);
+            }
+        }
+    }
+    out
+}
+
 #[cfg(not(windows))]
 fn free_mb(_drive: &str) -> u64 {
     0
@@ -115,6 +150,27 @@ impl Uwf {
         parse_config(&out)
     }
 
+    /// Settings UWF needs: no hibernation / fast startup (a resumed session would skip the
+    /// rollback) and no scheduled defragmentation (it would fill the overlay).
+    fn prepare_windows(&self) {
+        for (prog, args) in [
+            ("powercfg.exe", &["/h", "off"][..]),
+            (
+                "schtasks.exe",
+                &[
+                    "/Change",
+                    "/TN",
+                    r"\Microsoft\Windows\Defrag\ScheduledDefrag",
+                    "/Disable",
+                ][..],
+            ),
+        ] {
+            if let Err(e) = sh::run_ok(prog, args) {
+                tracing::debug!("uwf prepare {prog}: {e:#}");
+            }
+        }
+    }
+
     fn configure_overlay(&self) -> Result<()> {
         let size = overlay_size_mb(free_mb(&system_drive()));
         uwf(&["overlay", "set-type", "disk"])?;
@@ -129,6 +185,10 @@ impl Uwf {
             "set-criticalthreshold",
             &(size * 90 / 100).to_string(),
         ])?;
+        // Writes into free space where possible: the overlay fills up far more slowly.
+        if let Err(e) = uwf(&["overlay", "set-passthrough", "on"]) {
+            tracing::debug!("uwf passthrough: {e:#}");
+        }
         Ok(())
     }
 
@@ -138,6 +198,15 @@ impl Uwf {
             r"C:\ProgramData\Microsoft\Windows Defender".to_string(),
             r"C:\Program Files\Windows Defender".to_string(),
         ];
+        // Each user's console pairing (%APPDATA%\vimora), so unpairing sticks.
+        if let Ok(users) = std::fs::read_dir(format!("{}\\Users", system_drive())) {
+            for u in users.flatten() {
+                let roaming = u.path().join("AppData").join("Roaming");
+                if roaming.is_dir() {
+                    files.push(roaming.join("vimora").to_string_lossy().into_owned());
+                }
+            }
+        }
         files.extend(persistent.iter().cloned());
         files.push(r"C:\Windows\System32\drivers\etc\hosts".to_string());
         for f in &files {
@@ -190,8 +259,9 @@ impl Backend for Uwf {
 
     fn enable(&self, persistent: &[String]) -> Result<String> {
         let Some(cfg) = self.config() else {
-            // The optional feature exists on Enterprise / Education / IoT only.
-            let (ok, out) = sh::run(
+            // The optional feature exists on Enterprise / Education / IoT only. Install it and
+            // restart; the next boot finishes the job by itself (Shield::on_boot).
+            let (code, out) = sh::run_code(
                 "dism.exe",
                 &[
                     "/online",
@@ -199,24 +269,40 @@ impl Backend for Uwf {
                     "/featurename:Client-UnifiedWriteFilter",
                     "/all",
                     "/norestart",
+                    "/quiet",
                 ],
             )?;
-            if ok {
-                return Ok("UWF komponenti o'rnatildi — kompyuterni qayta yuklang va Shadow ni yana yoqing".into());
+            // 0 = done, 3010 = done, restart needed.
+            if matches!(code, Some(0) | Some(3010)) {
+                sh::restart_soon()?;
+                return Ok("UWF komponenti o'rnatildi — kompyuter qayta yuklanadi, keyin muzlatish o'zi sozlanadi".into());
             }
             bail!(
-                "bu Windows nashrida UWF yo'q (Enterprise/Education kerak): {}",
+                "bu Windows nashrida UWF yo'q (Education yoki Enterprise kerak): {}",
                 sh::tail(&out, 2)
             );
         };
+        self.prepare_windows();
         // The overlay can only be reconfigured while the filter is off in this session.
         if !cfg.filter_now {
             self.configure_overlay()?;
         }
         uwf(&["filter", "enable"])?;
-        uwf(&["volume", "protect", &system_drive()])?;
+        let drives = fixed_drives();
+        for d in &drives {
+            if let Err(e) = uwf(&["volume", "protect", d]) {
+                // The system volume must be protected; others are best effort.
+                if *d == system_drive() {
+                    return Err(e);
+                }
+                tracing::warn!("uwf protect {d}: {e:#}");
+            }
+        }
         self.add_exclusions(persistent);
-        Ok("Shadow rejim qayta yuklangandan keyin yoqiladi".into())
+        Ok(format!(
+            "Muzlatish (UWF) qayta yuklangandan keyin yoqiladi: {}",
+            drives.join(", ")
+        ))
     }
 
     fn disable(&self) -> Result<String> {
@@ -224,7 +310,7 @@ impl Backend for Uwf {
             bail!("UWF o'rnatilmagan");
         }
         uwf(&["filter", "disable"])?;
-        Ok("Shadow rejim qayta yuklangandan keyin o'chadi".into())
+        Ok("Muzlatish (UWF) qayta yuklangandan keyin o'chadi".into())
     }
 
     fn commit_file(&self, path: &Path) -> Result<()> {

@@ -191,6 +191,9 @@ pub struct Store {
     pub pending_commit: Vec<String>,
     /// Windows write filter: 0 = automatic, 1 = Shadow Defender, 2 = UWF.
     pub engine: u8,
+    /// Boots in a row that found protection wanted but not active (each one arms the filter
+    /// and restarts). Capped, so a filter that never comes up can't restart the PC forever.
+    pub arm_boots: u8,
 }
 
 const STORE: &str = "shield.json";
@@ -432,6 +435,9 @@ impl Shield {
     pub fn on_boot(&self, run: impl Fn(&Task) -> Result<String>) -> Vec<(bool, String)> {
         let store = self.store();
         self.backend.mount_persistent(&store.persistent);
+        if !store.cycle && store.desired == Desired::On {
+            return self.finish_arming(store.arm_boots);
+        }
         if !store.cycle || self.protected_now() {
             return vec![];
         }
@@ -456,6 +462,46 @@ impl Shield {
                 }
             }
             Err(e) => events.push((false, format!("Shadow ni qayta yoqib bo'lmadi: {e:#}"))),
+        }
+        events
+    }
+
+    /// Boot with protection wanted: when it is not active yet (UWF just installed, or armed
+    /// without the restart), arm it and restart — at most 3 boots in a row.
+    fn finish_arming(&self, tries: u8) -> Vec<(bool, String)> {
+        let state = self.backend.probe().state;
+        if matches!(state, FreezeState::Frozen | FreezeState::ThawPending) {
+            if tries > 0 {
+                self.update(|s| s.arm_boots = 0);
+                return vec![(
+                    true,
+                    "Muzlatish yoqildi: endi qayta yuklanganda barcha o'zgarishlar o'chadi".into(),
+                )];
+            }
+            return vec![];
+        }
+        if !matches!(state, FreezeState::Thawed | FreezeState::FreezePending) {
+            return vec![];
+        }
+        if tries >= 3 {
+            return vec![(
+                false,
+                "Muzlatishni yoqib bo'lmadi: 3 marta qayta yuklandi, filtr ishga tushmadi".into(),
+            )];
+        }
+        self.update(|s| s.arm_boots = tries + 1);
+        let mut events = vec![];
+        if state == FreezeState::Thawed {
+            if let Err(e) = self.backend.enable(&self.store().persistent) {
+                return vec![(false, format!("Muzlatishni sozlab bo'lmadi: {e:#}"))];
+            }
+        }
+        events.push((
+            true,
+            "Muzlatish sozlandi — kompyuter qayta yuklanmoqda".into(),
+        ));
+        if let Err(e) = crate::sh::restart_soon() {
+            events.push((false, format!("qayta yuklab bo'lmadi: {e:#}")));
         }
         events
     }
