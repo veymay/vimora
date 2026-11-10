@@ -4707,7 +4707,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vimora-client"
-version = "0.3.9"
+version = "0.3.10"
 dependencies = [
  "anyhow",
  "bincode",
@@ -4735,7 +4735,7 @@ dependencies = [
 
 [[package]]
 name = "vimora-core"
-version = "0.3.9"
+version = "0.3.10"
 dependencies = [
  "anyhow",
  "bincode",
@@ -4751,7 +4751,7 @@ dependencies = [
 
 [[package]]
 name = "vimora-server"
-version = "0.3.9"
+version = "0.3.10"
 dependencies = [
  "anyhow",
  "ashpd",
@@ -4779,7 +4779,7 @@ dependencies = [
 
 [[package]]
 name = "vimora-tray"
-version = "0.3.9"
+version = "0.3.10"
 dependencies = [
  "ksni",
  "tracing",
@@ -4789,7 +4789,7 @@ dependencies = [
 
 [[package]]
 name = "vimora-ui"
-version = "0.3.9"
+version = "0.3.10"
 dependencies = [
  "egui",
  "serde",
@@ -4797,7 +4797,7 @@ dependencies = [
 
 [[package]]
 name = "vimora-update"
-version = "0.3.9"
+version = "0.3.10"
 dependencies = [
  "anyhow",
  "native-tls",
