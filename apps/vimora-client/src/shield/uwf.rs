@@ -32,6 +32,8 @@ pub struct Config {
     pub servicing_now: bool,
     pub servicing_next: bool,
     pub overlay_max_mb: Option<u32>,
+    /// Overlay in use (MB), when known.
+    pub overlay_used_mb: Option<u32>,
 }
 
 /// `uwfmgr get-config` prints a "Current Session" block followed by a "Next Session" block.
@@ -56,7 +58,58 @@ pub fn parse_config(text: &str) -> Option<Config> {
         servicing_now: flag(now, "servicing state").unwrap_or(false),
         servicing_next: flag(next, "servicing state").unwrap_or(false),
         overlay_max_mb: max,
+        overlay_used_mb: None,
     })
+}
+
+/// UWF state from WMI (`root\\standardcimv2\\embedded`). None when UWF isn't active on this
+/// boot (not installed, or installed and waiting for a restart).
+fn wmi_config() -> Option<Config> {
+    const SCRIPT: &str = r#"
+$ns='root/standardcimv2/embedded'
+$f=Get-CimInstance -Namespace $ns -ClassName UWF_Filter -ErrorAction Stop
+$o=@(Get-CimInstance -Namespace $ns -ClassName UWF_OverlayConfig -ErrorAction SilentlyContinue)
+$s=@(Get-CimInstance -Namespace $ns -ClassName UWF_Servicing -ErrorAction SilentlyContinue)
+$ov=Get-CimInstance -Namespace $ns -ClassName UWF_Overlay -ErrorAction SilentlyContinue
+@{now=[bool]$f.CurrentEnabled; next=[bool]$f.NextEnabled;
+  max=[int](($o | ? { $_.CurrentSession }) | Select-Object -First 1).MaximumSize;
+  svcNow=[bool](($s | ? { $_.CurrentSession }) | Select-Object -First 1).ServicingEnabled;
+  svcNext=[bool](($s | ? { -not $_.CurrentSession }) | Select-Object -First 1).ServicingEnabled;
+  used=[int]($ov | Select-Object -First 1).OverlayConsumption} | ConvertTo-Json -Compress
+"#;
+    let (ok, out) = sh::script(SCRIPT).ok()?;
+    if !ok {
+        return None;
+    }
+    let v: serde_json::Value = out
+        .lines()
+        .find(|l| l.trim_start().starts_with('{'))
+        .and_then(|l| serde_json::from_str(l).ok())?;
+    let b = |k: &str| v.get(k).and_then(|x| x.as_bool()).unwrap_or(false);
+    let n = |k: &str| {
+        v.get(k)
+            .and_then(|x| x.as_u64())
+            .filter(|n| *n > 0)
+            .map(|n| n as u32)
+    };
+    Some(Config {
+        filter_now: b("now"),
+        filter_next: b("next"),
+        servicing_now: b("svcNow"),
+        servicing_next: b("svcNext"),
+        overlay_max_mb: n("max"),
+        overlay_used_mb: n("used"),
+    })
+}
+
+/// Whether the UWF optional feature is turned on (maybe still waiting for a restart).
+fn feature_state() -> Option<String> {
+    let (_, out) = sh::script(
+        "(Get-WindowsOptionalFeature -Online -FeatureName Client-UnifiedWriteFilter -ErrorAction SilentlyContinue).State",
+    )
+    .ok()?;
+    let s = out.trim().to_string();
+    (!s.is_empty()).then_some(s)
 }
 
 pub fn first_number(s: &str) -> Option<u32> {
@@ -145,9 +198,13 @@ fn free_mb(drive: &str) -> u64 {
 }
 
 impl Uwf {
+    /// UWF's state. Read through WMI first: it doesn't depend on the Windows display
+    /// language or on how uwfmgr prints; `uwfmgr get-config` is the fallback.
     fn config(&self) -> Option<Config> {
-        let (_, out) = sh::run("uwfmgr.exe", &["get-config"]).ok()?;
-        parse_config(&out)
+        wmi_config().or_else(|| {
+            let (_, out) = sh::run("uwfmgr.exe", &["get-config"]).ok()?;
+            parse_config(&out)
+        })
     }
 
     /// Settings UWF needs: no hibernation / fast startup (a resumed session would skip the
@@ -233,18 +290,28 @@ impl Uwf {
 impl Backend for Uwf {
     fn probe(&self) -> Probe {
         let Some(cfg) = self.config() else {
+            // Not active on this boot: installed and waiting for a restart, or not installed.
+            let pending = feature_state().is_some_and(|s| s.contains("Enable"));
             return Probe {
-                state: FreezeState::Unsupported,
+                state: if pending {
+                    FreezeState::Thawed
+                } else {
+                    FreezeState::Unsupported
+                },
                 usage: None,
-                note: Some(
-                    "UWF yoqilmagan yoki bu nashrda yo'q (Enterprise / Education kerak)".into(),
-                ),
+                note: Some(if pending {
+                    "UWF o'rnatilgan — qayta yuklangach ishga tushadi (Muzlatishni yoqsangiz, Vimora o'zi qayta yuklaydi)".into()
+                } else {
+                    "UWF yo'q: Windows 10/11 Education yoki Enterprise kerak (Muzlatish yoqilsa, Vimora o'zi o'rnatadi)".into()
+                }),
             };
         };
         let usage = if cfg.filter_now {
-            let used = sh::run("uwfmgr.exe", &["overlay", "get-consumption"])
-                .ok()
-                .and_then(|(_, o)| first_number(&o));
+            let used = cfg.overlay_used_mb.or_else(|| {
+                sh::run("uwfmgr.exe", &["overlay", "get-consumption"])
+                    .ok()
+                    .and_then(|(_, o)| first_number(&o))
+            });
             used.zip(cfg.overlay_max_mb)
                 .map(|(used_mb, max_mb)| ShieldUsage { used_mb, max_mb })
         } else {
@@ -375,7 +442,8 @@ mod tests {
                 filter_next: false,
                 servicing_now: false,
                 servicing_next: false,
-                overlay_max_mb: Some(8192)
+                overlay_max_mb: Some(8192),
+                overlay_used_mb: None,
             }
         );
         assert_eq!(state_of(&c), FreezeState::ThawPending);
