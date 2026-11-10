@@ -267,10 +267,20 @@ impl eframe::App for OverlayApp {
         if ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
         }
-        if self.last_focus.elapsed() > Duration::from_secs(2) {
+        // Only repair what was actually lost: re-sending fullscreen/focus on a timer made the
+        // screen flash (the window was re-laid out every time).
+        if self.last_focus.elapsed() > Duration::from_secs(1) {
             self.last_focus = Instant::now();
-            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            let (full, focused) = ctx.input(|i| {
+                let v = i.viewport();
+                (v.fullscreen.unwrap_or(true), v.focused.unwrap_or(true))
+            });
+            if !full {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+            }
+            if !focused {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            }
         }
         ctx.request_repaint_after(Duration::from_millis(500));
 
@@ -686,6 +696,7 @@ mod input_block {
         let mut pid = 0u32;
         GetWindowThreadProcessId(hwnd, &mut pid);
         if pid == GetCurrentProcessId() && IsWindowVisible(hwnd) != 0 {
+            // Z-order only: no show/activate, so nothing is redrawn (that was the flashing).
             SetWindowPos(
                 hwnd,
                 HWND_TOPMOST,
@@ -693,25 +704,48 @@ mod input_block {
                 0,
                 0,
                 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOREDRAW,
             );
         }
         1
     }
 
+    unsafe fn hook_all() -> (HHOOK, HHOOK) {
+        let module = GetModuleHandleW(null());
+        (
+            SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard), module, 0),
+            SetWindowsHookExW(WH_MOUSE_LL, Some(swallow), module, 0),
+        )
+    }
+
     pub fn install() {
         std::thread::spawn(|| unsafe {
-            let module = GetModuleHandleW(null());
-            SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard), module, 0);
-            SetWindowsHookExW(WH_MOUSE_LL, Some(swallow), module, 0);
+            let mut hooks = hook_all();
+            let mut renewed = std::time::Instant::now();
             let mut msg: MSG = std::mem::zeroed();
-            while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
-                TranslateMessage(&msg);
-                DispatchMessageW(&msg);
+            loop {
+                MsgWaitForMultipleObjects(0, null(), 0, 200, QS_ALLINPUT);
+                while PeekMessageW(&mut msg, null_mut(), 0, 0, PM_REMOVE) != 0 {
+                    if msg.message == WM_QUIT {
+                        return;
+                    }
+                    TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+                // Windows silently drops a low-level hook that once answered too slowly, and a
+                // hook installed later by another program runs before ours. Re-hook every few
+                // seconds: new hooks first, then the old ones go, so there is never a gap.
+                if renewed.elapsed() > std::time::Duration::from_secs(3) {
+                    renewed = std::time::Instant::now();
+                    let fresh = hook_all();
+                    UnhookWindowsHookEx(hooks.0);
+                    UnhookWindowsHookEx(hooks.1);
+                    hooks = fresh;
+                }
             }
         });
         std::thread::spawn(|| loop {
-            std::thread::sleep(std::time::Duration::from_millis(250));
+            std::thread::sleep(std::time::Duration::from_millis(1000));
             unsafe {
                 EnumWindows(Some(raise), 0);
             }

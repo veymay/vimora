@@ -404,8 +404,8 @@ fn general(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig, out: &mut Setti
     row(
         ui,
         p,
-        tr("Oynani to'liq ochish"),
-        Some(tr("Yoqilsa, konsol to'liq ekranda ochiladi. Aks holda oyna o'lchami doim bir xil (1280 × 760).")),
+        tr("To'liq ekranda ochish"),
+        Some(tr("Yoqilsa, konsol to'liq ekranda ochiladi. Aks holda oyna o'lchami doim bir xil (1280 × 760) va uni o'zgartirib bo'lmaydi. To'liq ekranga istalgan vaqtda F11 bilan o'tasiz.")),
         |ui| {
             ui_kit::toggle(ui, &mut c.start_maximized);
         },

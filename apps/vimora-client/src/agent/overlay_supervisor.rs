@@ -66,6 +66,9 @@ pub(super) async fn overlay_task(state: Shared, mut rx: mpsc::Receiver<OverlayRe
     let mut born = Instant::now();
     let mut quick_deaths = 0u32;
     let mut tick = tokio::time::interval(Duration::from_secs(1));
+    // System lockdown (Windows policies via the service) while the lock screen is up;
+    // re-asserted every 30 s in case the service restarted.
+    let mut kiosk: Option<(bool, Instant)> = None;
     loop {
         let req = tokio::select! {
             r = rx.recv() => match r { Some(r) => Some(r), None => break },
@@ -88,6 +91,24 @@ pub(super) async fn overlay_task(state: Shared, mut rx: mpsc::Receiver<OverlayRe
                 })
             }
         };
+        let locked = {
+            let s = state.lock().unwrap();
+            s.lock.is_some() && !s.show
+        };
+        let due = match kiosk {
+            None => locked,
+            Some((on, at)) => on != locked || (locked && at.elapsed() > Duration::from_secs(30)),
+        };
+        if due {
+            kiosk = Some((locked, Instant::now()));
+            tokio::spawn(async move {
+                match service::call(IpcReq::Kiosk(locked)).await {
+                    Ok(IpcResp::Done { ok: false, message }) => warn!("kiosk: {message}"),
+                    Err(e) => warn!("kiosk: no service ({e:#})"),
+                    _ => {}
+                }
+            });
+        }
         // Reap an overlay that died (or was killed by the student) so it gets respawned.
         if let Some((c, _)) = &mut child {
             if let Ok(Some(_)) = c.try_wait() {

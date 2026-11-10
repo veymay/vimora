@@ -57,6 +57,11 @@ const CARD_PAD: f32 = 6.0;
 const GAP: f32 = 8.0;
 
 pub struct ConsoleApp {
+    /// Notification-area icon (keeps the console reachable while its window is minimized).
+    tray: Option<vimora_tray::Tray>,
+    /// Set by the tray's "Quit": the only way to really close the console.
+    quit: Arc<std::sync::atomic::AtomicBool>,
+    tray_tip: (usize, Instant),
     hub: SharedHub,
     cfg: SharedConfig,
     show: Arc<Show>,
@@ -129,7 +134,12 @@ impl ConsoleApp {
         ui_kit::apply_theme(&cc.egui_ctx, theme);
         // We implement Ctrl +/-/0 and Ctrl+wheel ourselves (grid zoom, not UI scale).
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        let quit = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let tray = console_tray(&cc.egui_ctx, quit.clone());
         let mut app = Self {
+            tray,
+            quit,
+            tray_tip: (usize::MAX, Instant::now()),
             hub,
             cfg,
             show,
@@ -505,6 +515,12 @@ impl ConsoleApp {
 
     /// The window is either maximized / fullscreen or exactly [`crate::MIN_WINDOW`]: a
     /// half-resized console would squeeze the navbar. Dragging an edge snaps back.
+    /// The only way to change the window's size: fullscreen on / off (F11 or the status bar).
+    pub(super) fn toggle_fullscreen(&mut self, ctx: &egui::Context) {
+        let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
+    }
+
     fn keep_window_size(&mut self, ctx: &egui::Context) {
         let (max, full, size) = ctx.input(|i| {
             let v = i.viewport();
@@ -841,6 +857,10 @@ impl ConsoleApp {
 impl eframe::App for ConsoleApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.now_frame += 1;
+        self.stay_running(ctx);
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::F11)) {
+            self.toggle_fullscreen(ctx);
+        }
         self.keep_window_size(ctx);
         self.play_sounds();
         self.snapshots(ctx);
@@ -849,7 +869,7 @@ impl eframe::App for ConsoleApp {
         if self.updater.take_exit() {
             // Windows: the installer is replacing the console.
             config::save(&self.cfg.read().unwrap());
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            self.quit_now(ctx);
         }
         self.sync_textures(ctx);
         let all = self.snapshot();
@@ -954,4 +974,72 @@ pub(super) enum FileResult {
     BackupSaved(Result<String, String>),
     /// Content of a backup file to restore.
     BackupLoaded(Result<String, String>),
+}
+
+/// The console's tray icon: click or "Open" brings the window back, "Quit" really exits.
+fn console_tray(
+    ctx: &egui::Context,
+    quit: Arc<std::sync::atomic::AtomicBool>,
+) -> Option<vimora_tray::Tray> {
+    use vimora_tray::{Event, Item, Spec, Tray};
+    let png = include_bytes!("../../../../assets/brand/vimora-64.png");
+    let img = image::load_from_memory(png).ok()?.to_rgba8();
+    let icon = vimora_tray::rgba(img.width(), img.height(), img.into_raw());
+    let ctx = ctx.clone();
+    Tray::spawn(
+        Spec {
+            id: "vimora-console",
+            title: "Vimora".into(),
+            tooltip: vimora_ui::tr("Vimora — O'qituvchi konsoli").into(),
+            icon,
+            items: vec![
+                Item::new("open", vimora_ui::tr("Konsolni ochish")),
+                Item::new("quit", vimora_ui::tr("Chiqish")),
+            ],
+        },
+        move |ev| {
+            match ev {
+                Event::Open | Event::Menu("open") => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                }
+                Event::Menu("quit") => {
+                    quit.store(true, Ordering::Relaxed);
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                _ => {}
+            }
+            ctx.request_repaint();
+        },
+    )
+}
+
+impl ConsoleApp {
+    /// Really exit (update, restart, dev screenshot) — not just minimize.
+    pub(super) fn quit_now(&self, ctx: &egui::Context) {
+        self.quit.store(true, Ordering::Relaxed);
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+
+    /// Closing the window doesn't stop the console (students stay managed): it goes to the
+    /// taskbar. Only the tray's "Quit" exits. The tray tooltip shows who is online.
+    fn stay_running(&mut self, ctx: &egui::Context) {
+        if ctx.input(|i| i.viewport().close_requested()) && !self.quit.load(Ordering::Relaxed) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+        }
+        if let Some(t) = &self.tray {
+            let online = self.hub.lock().unwrap().students.len();
+            if online != self.tray_tip.0 || self.tray_tip.1.elapsed() > Duration::from_secs(30) {
+                self.tray_tip = (online, Instant::now());
+                let total = self.cfg.read().unwrap().known.len().max(online);
+                t.set_tooltip(vimora_ui::tf!(
+                    "Vimora — {on} / {all} onlayn",
+                    on = online,
+                    all = total
+                ));
+            }
+        }
+    }
 }

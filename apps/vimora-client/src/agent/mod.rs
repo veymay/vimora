@@ -5,6 +5,7 @@ mod chat_supervisor;
 mod overlay_supervisor;
 mod session;
 mod tasks;
+mod tray;
 
 use crate::config::Config;
 
@@ -208,6 +209,7 @@ pub async fn run(cfg: Config) -> Result<()> {
         chat: Arc::default(),
     };
     restore_lock(&state);
+    tray::start(state.clone());
     probe_ui().await;
     let (ov_tx, ov_rx) = mpsc::channel(16);
     tokio::spawn(overlay_task(state.clone(), ov_rx));

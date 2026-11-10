@@ -43,6 +43,8 @@ pub enum IpcReq {
     // Append-only: an older service must keep understanding the requests it knows.
     /// Shadow overlay content found by the last list / commit.
     Changes,
+    /// The lock screen is up (`true`) or gone: switch the system's ways out off / back on.
+    Kiosk(bool),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -195,6 +197,13 @@ async fn serve(pairing: Pairing) -> Result<()> {
     info!("Vimora service listening on 127.0.0.1:{}", port());
     cleanup_old_binaries();
     crate::power::keep_awake();
+    // A lock left over from before a crash or restart: release it; a still-locked agent
+    // asks again within seconds.
+    std::thread::spawn(|| {
+        if let Err(e) = crate::kiosk::set(false) {
+            tracing::warn!("kiosk release: {e:#}");
+        }
+    });
     let engine = Engine::new();
     {
         let e = engine.clone();
@@ -333,6 +342,22 @@ async fn handle(
             }
         }
         IpcReq::Changes => IpcResp::Changes(engine.changes()),
+        IpcReq::Kiosk(on) => {
+            match tokio::task::spawn_blocking(move || crate::kiosk::set(on)).await {
+                Ok(Ok(())) => IpcResp::Done {
+                    ok: true,
+                    message: String::new(),
+                },
+                Ok(Err(e)) => IpcResp::Done {
+                    ok: false,
+                    message: format!("{e:#}"),
+                },
+                Err(e) => IpcResp::Done {
+                    ok: false,
+                    message: e.to_string(),
+                },
+            }
+        }
         IpcReq::Status => {
             let e = engine.clone();
             IpcResp::Status(

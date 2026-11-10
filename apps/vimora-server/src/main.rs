@@ -6,6 +6,7 @@ mod app;
 mod config;
 mod i18n_table;
 mod net;
+mod single;
 mod sound;
 mod update;
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -13,7 +14,7 @@ mod wayland_cast;
 
 use std::sync::{Arc, Mutex, RwLock};
 
-/// The window has exactly this size, unless it is maximized or fullscreen.
+/// The window has exactly this size and can't be resized; only fullscreen (F11) changes it.
 pub const MIN_WINDOW: [f32; 2] = [1280.0, 760.0];
 
 fn main() -> eframe::Result<()> {
@@ -24,6 +25,10 @@ fn main() -> eframe::Result<()> {
         )
         .init();
 
+    // A second start just brings the running console to the front.
+    let Some(instance) = single::claim() else {
+        return Ok(());
+    };
     let cfg = config::load();
     vimora_ui::i18n::install(i18n_table::ROWS);
     vimora_ui::i18n::set_lang(cfg.language);
@@ -43,7 +48,9 @@ fn main() -> eframe::Result<()> {
         .with_app_id("vimora-server")
         .with_inner_size(MIN_WINDOW)
         .with_min_inner_size(MIN_WINDOW)
-        .with_maximized(maximized);
+        .with_resizable(false)
+        .with_maximize_button(false)
+        .with_fullscreen(maximized);
     if let Ok(icon) =
         eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/brand/vimora-256.png"))
     {
@@ -59,6 +66,7 @@ fn main() -> eframe::Result<()> {
         opts,
         Box::new(move |cc| {
             hub.lock().unwrap().ctx = Some(cc.egui_ctx.clone());
+            single::serve(instance, cc.egui_ctx.clone());
             Ok(Box::new(app::ConsoleApp::new(cc, hub, cfg, show, updater)))
         }),
     )

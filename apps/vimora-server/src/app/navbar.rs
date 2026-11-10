@@ -433,6 +433,16 @@ impl ConsoleApp {
                             self.open_dialog(Dialog::Settings(SettingsTab::General));
                         }
 
+                        let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+                        let (fic, ftip) = if full {
+                            (icons::MINIMIZE_2, tr("To'liq ekrandan chiqish (F11)"))
+                        } else {
+                            (icons::MAXIMIZE_2, tr("To'liq ekran (F11)"))
+                        };
+                        if btn(fic, "", full).show(ui, p).tip(ftip).clicked() {
+                            self.toggle_fullscreen(ctx);
+                        }
+
                         let (ic, tip) = match self.theme {
                             ThemeMode::Dark => (icons::SUN, tr("Yorug' rejim")),
                             ThemeMode::Light => (icons::MOON, tr("Qorong'i rejim")),

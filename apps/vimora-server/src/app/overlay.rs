@@ -128,7 +128,7 @@ impl ConsoleApp {
                         );
                     }
                 }
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                self.quit_now(ctx);
             } else if let Some((d, _)) = self.pending.take() {
                 self.backdrop =
                     Some(ctx.load_texture("backdrop", blur(&img), TextureOptions::LINEAR));
@@ -1153,7 +1153,7 @@ impl ConsoleApp {
         if out.restart {
             config::save(&self.cfg.read().unwrap());
             crate::update::relaunch();
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            self.quit_now(ctx);
         }
         let everyone: Vec<u64> = self.hub.lock().unwrap().students.keys().copied().collect();
         if out.push_policy {

@@ -1,0 +1,16 @@
+[package]
+name = "vimora-tray"
+description = "Vimora notification-area (tray) icon for Windows and Linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tracing.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+tray-icon = "0.26"
+windows-sys.workspace = true
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+ksni = { version = "0.3", default-features = false, features = ["blocking", "async-io"] }

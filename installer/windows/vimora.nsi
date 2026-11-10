@@ -170,6 +170,8 @@ Section "Vimora"
     Pop $0
     CreateShortcut "$SMPROGRAMS\Vimora.lnk" "$INSTDIR\vimora-server.exe"
     CreateShortcut "$DESKTOP\Vimora.lnk" "$INSTDIR\vimora-server.exe"
+    ; The console starts with Windows: it keeps running (in the taskbar / tray) all the time.
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "VimoraConsole" '"$INSTDIR\vimora-server.exe"'
   ${Else}
     File "${BINDIR}\vimora-client.exe"
     ; The agent starts in every user's session at logon (it needs the desktop).
@@ -238,6 +240,7 @@ Section "Uninstall"
   nsExec::Exec '"$SYSDIR\schtasks.exe" /delete /tn "Vimora Agent" /f'
   Pop $0
   DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "VimoraAgent"
+  DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "VimoraConsole"
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Vimora"
   Delete "$SMPROGRAMS\Vimora.lnk"
   Delete "$DESKTOP\Vimora.lnk"

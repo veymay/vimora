@@ -13,6 +13,7 @@ path = "src/main.rs"
 vimora-core.workspace = true
 vimora-ui.workspace = true
 vimora-update.workspace = true
+vimora-tray.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -54,6 +55,7 @@ maintainer-scripts = "../../installer/linux/deb/teacher/"
 assets = [
     ["target/release/vimora-server", "opt/vimora/bin/", "755"],
     ["../../installer/linux/deb/vimora.desktop", "usr/share/applications/vimora.desktop", "644"],
+    ["../../installer/linux/deb/vimora-autostart.desktop", "etc/xdg/autostart/vimora-server.desktop", "644"],
     ["../../assets/brand/vimora.svg", "usr/share/icons/hicolor/scalable/apps/vimora.svg", "644"],
     ["../../assets/brand/vimora-256.png", "usr/share/icons/hicolor/256x256/apps/vimora.png", "644"],
 ]

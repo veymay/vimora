@@ -12,6 +12,7 @@ mod agent;
 mod apps;
 mod chat;
 mod config;
+mod kiosk;
 mod netcontrol;
 mod overlay;
 mod popup;

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Vimora
+Comment=Vimora teacher console (starts at login and keeps running)
+Exec=/opt/vimora/bin/vimora-server
+Icon=vimora
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Phase=Applications
