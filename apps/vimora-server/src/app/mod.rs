@@ -260,6 +260,8 @@ impl ConsoleApp {
                     filter: String::new(),
                     sort: ProcSort::Cpu,
                     kill: None,
+                    script: String::new(),
+                    request: None,
                 })
             }
             Ok("settings") => app.dev_open = Some(Dialog::Settings(SettingsTab::General)),
@@ -428,6 +430,8 @@ impl ConsoleApp {
                     version: "0.3.7".into(),
                     cursor: 0,
                     sysinfo: Some((demo_sysinfo(i), Instant::now())),
+                    security: None,
+                    last_result: None,
                 },
             );
             if let (Some(r), true) = (rooms.first(), i % 2 == 0) {
@@ -627,6 +631,31 @@ impl ConsoleApp {
                 self.forget(&keys, &ids);
             }
             ConfirmAction::DeleteRoom(name) => self.delete_room(&name),
+            ConfirmAction::ServiceControl { id, name, start } => {
+                self.send_priv(
+                    &[id],
+                    PrivCommand::ServiceControl {
+                        name: name.clone(),
+                        start,
+                    },
+                    &tf!("Xizmat: {name}", name = name),
+                );
+                // The list shows the new state shortly after.
+                self.send(&[id], Command::GetSecurityInfo, "");
+            }
+            ConfirmAction::RunScript { id, code } => {
+                if let Some(s) = self.hub.lock().unwrap().students.get_mut(&id) {
+                    s.last_result = None;
+                }
+                self.send_priv(
+                    &[id],
+                    PrivCommand::RunScript(code.clone()),
+                    &tf!(
+                        "Buyruq: {code}",
+                        code = code.chars().take(80).collect::<String>()
+                    ),
+                );
+            }
             ConfirmAction::DeleteTest(name) => {
                 if let Some(d) = lesson_extra::tests_dir() {
                     let _ = std::fs::remove_file(d.join(format!("{name}.json")));

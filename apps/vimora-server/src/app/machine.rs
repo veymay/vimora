@@ -15,6 +15,18 @@ pub(super) const POLL: Duration = Duration::from_secs(2);
 pub(super) enum MachineTab {
     Overview,
     Processes,
+    Security,
+    Services,
+    Command,
+}
+
+/// What the drawer asked for (handled by the app, some after a confirmation).
+#[derive(Clone, PartialEq)]
+pub(super) enum MachineRequest {
+    RefreshSecurity,
+    /// Start (true) or stop a service.
+    Service(String, bool),
+    Run,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -32,6 +44,9 @@ pub(super) struct MachineForm<'a> {
     pub(super) sort: &'a mut ProcSort,
     /// "End task" pressed: (pid, name), asked for confirmation by the app.
     pub(super) kill: &'a mut Option<(u32, String)>,
+    /// The command typed on the "Buyruq" tab.
+    pub(super) script: &'a mut String,
+    pub(super) request: &'a mut Option<MachineRequest>,
 }
 
 fn gb(b: u64) -> String {
@@ -150,6 +165,14 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
                     tr("Jarayonlar"),
                     n_procs,
                 ),
+                (
+                    MachineTab::Security,
+                    icons::SHIELD_CHECK,
+                    tr("Xavfsizlik"),
+                    None,
+                ),
+                (MachineTab::Services, icons::SETTINGS, tr("Xizmatlar"), None),
+                (MachineTab::Command, icons::TERMINAL, tr("Buyruq"), None),
             ] {
                 if ui_kit::tab_icon(ui, Some(ic), label, n, *f.tab == t).clicked() {
                     *f.tab = t;
@@ -158,6 +181,53 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
         });
     });
     ui.add_space(12.0);
+
+    // Tabs that don't need the live report.
+    match *f.tab {
+        MachineTab::Security | MachineTab::Services => {
+            let sec = cx
+                .hub
+                .lock()
+                .unwrap()
+                .students
+                .get(&f.id)
+                .and_then(|s| s.security.clone());
+            // Asked for once when the tab opens (and with "Yangilash").
+            let asked = egui::Id::new(("sec-asked", f.id));
+            if sec.is_none() && !ui.data(|d| d.get_temp::<bool>(asked).unwrap_or(false)) {
+                ui.data_mut(|d| d.insert_temp(asked, true));
+                *f.request = Some(MachineRequest::RefreshSecurity);
+            }
+            ui.horizontal(|ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui_kit::button(ui, Some(icons::REFRESH_CW), tr("Yangilash"), Kind::Ghost)
+                        .clicked()
+                    {
+                        *f.request = Some(MachineRequest::RefreshSecurity);
+                    }
+                });
+            });
+            let Some(sec) = sec else {
+                ui.add_space(20.0);
+                ui.vertical_centered(|ui| {
+                    ui.spinner();
+                    ui.label(RichText::new(tr("Ma'lumot olinmoqda…")).color(p.muted));
+                });
+                return;
+            };
+            if *f.tab == MachineTab::Security {
+                security(ui, p, &sec);
+            } else {
+                services(ui, p, &sec, f);
+            }
+            return;
+        }
+        MachineTab::Command => {
+            command(ui, p, f, cx);
+            return;
+        }
+        _ => {}
+    }
 
     let Some((info, age)) = report else {
         let text = if online {
@@ -190,6 +260,7 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
     match f.tab {
         MachineTab::Overview => overview(ui, p, &info),
         MachineTab::Processes => processes(ui, p, &info, f),
+        _ => {}
     }
 }
 
@@ -479,4 +550,205 @@ fn processes(ui: &mut egui::Ui, p: &Palette, s: &SystemInfo, f: MachineForm<'_>)
             *f.kill = Some((pr.pid, pr.name.clone()));
         }
     }
+}
+
+fn state_cell(p: &Palette, ok: bool, yes: &str, no: &str) -> (String, Color32) {
+    if ok {
+        (yes.to_string(), p.success)
+    } else {
+        (no.to_string(), p.danger)
+    }
+}
+
+fn security(ui: &mut egui::Ui, p: &Palette, s: &vimora_core::SecurityInfo) {
+    use super::lesson_extra::table;
+    ui_kit::hud(ui, tr("Antivirus"), p.muted);
+    ui.add_space(6.0);
+    let av: Vec<Vec<(String, Color32)>> = s
+        .antivirus
+        .iter()
+        .map(|(n, on, fresh)| {
+            vec![
+                (n.clone(), p.text),
+                state_cell(p, *on, tr("Yoniq"), tr("O'chiq")),
+                state_cell(p, *fresh, tr("Bazasi yangi"), tr("Bazasi eski")),
+            ]
+        })
+        .collect();
+    table(
+        ui,
+        p,
+        &[(tr("Nomi"), 0.5), (tr("Holat"), 0.25), (tr("Baza"), 0.25)],
+        &av,
+    );
+    ui.add_space(12.0);
+    ui_kit::hud(ui, "Firewall", p.muted);
+    ui.add_space(6.0);
+    let mut fw: Vec<Vec<(String, Color32)>> = s
+        .firewall
+        .iter()
+        .map(|(n, on)| {
+            vec![
+                (n.clone(), p.text),
+                state_cell(p, *on, tr("Yoniq"), tr("O'chiq")),
+            ]
+        })
+        .collect();
+    if let Some(uac) = s.uac {
+        fw.push(vec![
+            (tr("UAC (administrator so'rovi)").to_string(), p.text),
+            state_cell(p, uac, tr("Yoniq"), tr("O'chiq")),
+        ]);
+    }
+    table(ui, p, &[(tr("Nomi"), 0.6), (tr("Holat"), 0.4)], &fw);
+    ui.add_space(12.0);
+    ui_kit::hud(ui, tr("Qurilma"), p.muted);
+    ui.add_space(6.0);
+    let mut hw: Vec<Vec<(String, Color32)>> = s
+        .hardware
+        .iter()
+        .map(|(k, v)| vec![(hw_label(k), p.muted), (v.clone(), p.text)])
+        .collect();
+    if !s.sessions.is_empty() {
+        hw.push(vec![
+            (tr("Kirgan foydalanuvchilar").to_string(), p.muted),
+            (s.sessions.join(", "), p.text),
+        ]);
+    }
+    table(ui, p, &[(tr("Nomi"), 0.35), (tr("Qiymat"), 0.65)], &hw);
+}
+
+fn services(ui: &mut egui::Ui, p: &Palette, s: &vimora_core::SecurityInfo, f: MachineForm<'_>) {
+    ui.add(
+        ui_kit::text_field(f.filter)
+            .hint_text(tr("Xizmat nomi bo'yicha qidirish"))
+            .desired_width(ui.available_width()),
+    );
+    ui.add_space(8.0);
+    let q = f.filter.trim().to_lowercase();
+    let mut list: Vec<&vimora_core::ServiceInfo> = s
+        .services
+        .iter()
+        .filter(|v| {
+            q.is_empty()
+                || v.name.to_lowercase().contains(&q)
+                || v.display.to_lowercase().contains(&q)
+        })
+        .collect();
+    list.sort_by_key(|v| (!v.running, v.display.to_lowercase()));
+    let w = ui.available_width();
+    ui.spacing_mut().item_spacing.y = 0.0;
+    for v in list.into_iter().take(300) {
+        let (r, resp) = ui.allocate_exact_size(vec2(w, 36.0), Sense::hover());
+        if !ui.is_rect_visible(r) {
+            continue;
+        }
+        if resp.hovered() {
+            ui.painter().rect_filled(r, Rounding::ZERO, p.hover);
+        }
+        ui.painter()
+            .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
+        ui.painter().circle_filled(
+            pos2(r.left() + 10.0, r.center().y),
+            4.0,
+            if v.running { p.success } else { p.faint },
+        );
+        let title = if v.display.is_empty() {
+            &v.name
+        } else {
+            &v.display
+        };
+        let g = ui_kit::truncated(
+            ui,
+            title,
+            FontId::new(13.0, ui_kit::medium()),
+            p.text,
+            w - 250.0,
+        );
+        ui.painter().galley(
+            pos2(r.left() + 24.0, r.center().y - g.size().y / 2.0),
+            g,
+            p.text,
+        );
+        ui.painter().text(
+            pos2(r.right() - 130.0, r.center().y),
+            Align2::RIGHT_CENTER,
+            &v.start,
+            FontId::new(11.5, ui_kit::mono()),
+            p.faint,
+        );
+        let mut b = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(Rect::from_min_max(pos2(r.right() - 120.0, r.top()), r.max))
+                .layout(Layout::right_to_left(Align::Center)),
+        );
+        let (label, start) = if v.running {
+            (tr("To'xtatish"), false)
+        } else {
+            (tr("Ishga tushirish"), true)
+        };
+        if ui_kit::button(&mut b, None, label, Kind::Ghost).clicked() {
+            *f.request = Some(MachineRequest::Service(v.name.clone(), start));
+        }
+    }
+}
+
+fn command(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, cx: &FormCtx<'_>) {
+    ui.label(
+        RichText::new(tr("Buyruq o'quvchi kompyuterida administrator huquqida bajariladi: Windows'da PowerShell, Ubuntu'da sh. Masalan: ipconfig, Get-Process, reg query … Har bir buyruq faollik jurnaliga yoziladi."))
+            .size(12.5)
+            .color(p.muted),
+    );
+    ui.add_space(8.0);
+    ui.add(
+        ui_kit::text_area(f.script)
+            .hint_text("ipconfig /all")
+            .desired_rows(4)
+            .desired_width(f32::INFINITY)
+            .font(egui::TextStyle::Monospace),
+    );
+    ui.add_space(8.0);
+    ui.add_enabled_ui(!f.script.trim().is_empty(), |ui| {
+        if ui_kit::button(ui, Some(icons::PLAY), tr("Bajarish"), Kind::Primary).clicked() {
+            *f.request = Some(MachineRequest::Run);
+        }
+    });
+    ui.add_space(12.0);
+    let last = cx
+        .hub
+        .lock()
+        .unwrap()
+        .students
+        .get(&f.id)
+        .and_then(|s| s.last_result.clone());
+    if let Some((ok, text)) = last {
+        ui_kit::hud(ui, tr("Oxirgi natija"), if ok { p.muted } else { p.danger });
+        ui.add_space(6.0);
+        Frame::none()
+            .fill(p.sunken)
+            .stroke(Stroke::new(1.0_f32, p.line))
+            .inner_margin(Margin::same(10.0))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    RichText::new(text)
+                        .family(ui_kit::mono())
+                        .size(12.0)
+                        .color(if ok { p.text } else { p.danger }),
+                );
+            });
+    }
+}
+
+/// The agent names hardware facts in Uzbek; show them in the console's language.
+fn hw_label(k: &str) -> String {
+    match k {
+        "Ishlab chiqaruvchi" => tr("Ishlab chiqaruvchi"),
+        "Model" => tr("Model"),
+        "Seriya raqami" => tr("Seriya raqami"),
+        "Videokarta" => tr("Videokarta"),
+        "Monitorlar" => tr("Monitorlar"),
+        other => other,
+    }
+    .to_string()
 }

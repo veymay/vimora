@@ -246,6 +246,14 @@ pub enum PrivCommand {
     /// Stricter internet rules: internet off (the local network keeps working), only listed
     /// sites allowed, blocked network ports.
     SetAccessPolicy(AccessPolicy),
+    /// Start (true) or stop a system service.
+    ServiceControl {
+        name: String,
+        start: bool,
+    },
+    /// Run a command as administrator (PowerShell on Windows, sh on Ubuntu); the output comes
+    /// back as the command result. Recorded in the console's activity log.
+    RunScript(String),
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -464,6 +472,33 @@ pub enum Command {
     StartTest(TestDef),
     /// Time is up: hand in what is answered.
     EndTest,
+    /// Report antivirus, firewall, hardware, sessions and services ([`ClientMsg::SecurityInfo`]).
+    GetSecurityInfo,
+}
+
+/// Security and inventory facts about a student PC.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct SecurityInfo {
+    /// (name, on, up to date)
+    pub antivirus: Vec<(String, bool, bool)>,
+    /// (profile, on)
+    pub firewall: Vec<(String, bool)>,
+    /// User Account Control on (None = not applicable).
+    pub uac: Option<bool>,
+    /// (what, value): maker, model, serial, graphics, monitors …
+    pub hardware: Vec<(String, String)>,
+    /// Signed-in users.
+    pub sessions: Vec<String>,
+    pub services: Vec<ServiceInfo>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ServiceInfo {
+    pub name: String,
+    pub display: String,
+    pub running: bool,
+    /// "Automatic", "Manual", "Disabled", "enabled" …
+    pub start: String,
 }
 
 /// A test the teacher made.
@@ -624,6 +659,7 @@ pub enum ClientMsg {
         id: u32,
         answers: Vec<TestAnswer>,
     },
+    SecurityInfo(SecurityInfo),
 }
 
 /// Pointer shapes carried by [`ClientMsg::Cursor`].
@@ -671,6 +707,9 @@ mod wire_tests {
         assert_eq!(tag(&PrivCommand::SetShieldEngine(0)), 15);
         assert_eq!(tag(&PrivCommand::SetDevicePolicy(Default::default())), 16);
         assert_eq!(tag(&PrivCommand::SetAccessPolicy(Default::default())), 17);
+        assert_eq!(tag(&PrivCommand::RunScript(String::new())), 19);
+        assert_eq!(tag(&ClientMsg::SecurityInfo(Default::default())), 17);
+        assert_eq!(tag(&Command::GetSecurityInfo), tag(&Command::ChatEnd) + 14);
         assert_eq!(
             tag(&Command::SetAppAllowlist(vec![])),
             tag(&Command::ChatEnd) + 5

@@ -178,6 +178,8 @@ pub(super) fn dialog_body(
             filter,
             sort,
             kill,
+            script,
+            request,
         } => machine_form(
             ui,
             p,
@@ -187,6 +189,8 @@ pub(super) fn dialog_body(
                 filter,
                 sort,
                 kill,
+                script,
+                request,
             },
             cx,
         ),

@@ -1043,10 +1043,59 @@ impl ConsoleApp {
     /// "Kompyuter holati": ask for a fresh report every few seconds while it is open, and
     /// confirm "end task".
     fn machine_requests(&mut self, ctx: &egui::Context) {
-        let Some(Dialog::Machine { id, kill, .. }) = &mut self.dialog else {
+        let Some(Dialog::Machine {
+            id,
+            request,
+            script,
+            ..
+        }) = &mut self.dialog
+        else {
             return;
         };
         let id = *id;
+        match request.take() {
+            Some(MachineRequest::RefreshSecurity) => {
+                self.send(&[id], Command::GetSecurityInfo, "");
+            }
+            Some(MachineRequest::Service(name, start)) => {
+                let text = if start {
+                    tf!("\"{name}\" xizmati ishga tushiriladi.", name = name.clone())
+                } else {
+                    tf!(
+                        "\"{name}\" xizmati to'xtatiladi. Unga bog'liq dasturlar ishlamay qolishi mumkin.",
+                        name = name.clone()
+                    )
+                };
+                self.ask(
+                    tr("Xizmat o'zgartirilsinmi?"),
+                    text,
+                    if start {
+                        tr("Ishga tushirish")
+                    } else {
+                        tr("To'xtatish")
+                    },
+                    ConfirmAction::ServiceControl { id, name, start },
+                );
+                return;
+            }
+            Some(MachineRequest::Run) => {
+                let code = script.trim().to_string();
+                self.ask(
+                    tr("Buyruq bajarilsinmi?"),
+                    tf!(
+                        "Bu buyruq o'quvchi kompyuterida administrator huquqida bajariladi:\n{code}",
+                        code = code.chars().take(300).collect::<String>()
+                    ),
+                    tr("Bajarish"),
+                    ConfirmAction::RunScript { id, code },
+                );
+                return;
+            }
+            None => {}
+        }
+        let Some(Dialog::Machine { kill, .. }) = &mut self.dialog else {
+            return;
+        };
         if let Some((pid, name)) = kill.take() {
             self.ask(
                 tr("Jarayon yopilsinmi?"),

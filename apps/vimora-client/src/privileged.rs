@@ -273,6 +273,10 @@ impl Engine {
                 self.shield.set_password(&pw)?;
                 String::new()
             }
+            PrivCommand::ServiceControl { name, start } => {
+                crate::secinfo::service_control(&name, start)?
+            }
+            PrivCommand::RunScript(code) => crate::secinfo::run_script(&code)?,
             PrivCommand::SetAccessPolicy(a) => {
                 let sites = {
                     let mut net = self.net.lock().unwrap();

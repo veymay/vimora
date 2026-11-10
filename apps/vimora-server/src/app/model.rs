@@ -143,6 +143,9 @@ pub(super) enum Dialog {
         sort: ProcSort,
         /// "End task" pressed: (pid, name), confirmed by the app.
         kill: Option<(u32, String)>,
+        /// The "Buyruq" tab's command.
+        script: String,
+        request: Option<MachineRequest>,
     },
     Updates {
         tab: UpdateTab,
@@ -170,6 +173,17 @@ pub(crate) enum ConfirmAction {
     DeleteRoom(String),
     /// Delete a saved test.
     DeleteTest(String),
+    /// Start / stop a service on a student PC.
+    ServiceControl {
+        id: u64,
+        name: String,
+        start: bool,
+    },
+    /// Run an administrator command on a student PC.
+    RunScript {
+        id: u64,
+        code: String,
+    },
     /// End a process on a student PC.
     KillProcess {
         id: u64,

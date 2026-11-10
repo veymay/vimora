@@ -161,6 +161,15 @@ pub(super) async fn session(
                 ServerMsg::ShowFrame { jpeg, .. } => {
                     let _ = ov_tx.try_send(OverlayReq::Frame(jpeg));
                 }
+                ServerMsg::Command(Command::GetSecurityInfo) => {
+                    let tx = tx.clone();
+                    tokio::spawn(async move {
+                        if let Ok(info) = tokio::task::spawn_blocking(crate::secinfo::collect).await
+                        {
+                            let _ = tx.send(ClientMsg::SecurityInfo(info)).await;
+                        }
+                    });
+                }
                 ServerMsg::Command(Command::CollectFiles) => {
                     let tx = tx.clone();
                     tokio::spawn(async move {
@@ -337,7 +346,7 @@ pub(super) async fn handle_command(
             None
         }
         // Answered in the session loop (it needs the outgoing channel).
-        Command::CollectFiles => None,
+        Command::CollectFiles | Command::GetSecurityInfo => None,
         // Answered in the session loop (it needs the outgoing channel).
         Command::GetSystemInfo => None,
         Command::OpenUrl(url) => Some(system::open_url(&url).map(|_| format!("ochildi: {url}"))),

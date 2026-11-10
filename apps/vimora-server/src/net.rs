@@ -46,6 +46,10 @@ pub struct Student {
     pub cursor: u8,
     /// Last technical report ("Kompyuter holati" drawer) and when it arrived.
     pub sysinfo: Option<(vimora_core::SystemInfo, Instant)>,
+    /// Antivirus, firewall, hardware, services (asked for when the drawer's tab opens).
+    pub security: Option<vimora_core::SecurityInfo>,
+    /// Last command result from this computer (ok, text).
+    pub last_result: Option<(bool, String)>,
 }
 
 pub fn unix_now() -> u64 {
@@ -496,6 +500,8 @@ async fn session(
                 apps: None,
                 changes: None,
                 sysinfo: None,
+                security: None,
+                last_result: None,
                 version: String::new(),
                 cursor: 0,
             },
@@ -636,6 +642,9 @@ async fn session(
                     }
                     let label = info.label().to_string();
                     let mut h = hub.lock().unwrap();
+                    if let Some(s) = h.students.get_mut(&id) {
+                        s.last_result = Some((ok, message.clone()));
+                    }
                     h.log(
                         if ok { Level::Info } else { Level::Warn },
                         format!("{label}: {message}"),
@@ -713,6 +722,13 @@ async fn session(
                             Level::Warn,
                             tf!("Topshiriqni saqlab bo'lmadi: {e}", e = e.to_string()),
                         ),
+                    }
+                    h.repaint();
+                }
+                ClientMsg::SecurityInfo(sec) => {
+                    let mut h = hub.lock().unwrap();
+                    if let Some(s) = h.students.get_mut(&id) {
+                        s.security = Some(sec);
                     }
                     h.repaint();
                 }
