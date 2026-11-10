@@ -1026,6 +1026,12 @@ impl ConsoleApp {
                             Action::Message(id),
                             None,
                         ));
+                        rows.push((
+                            icons::GAUGE,
+                            tr("Kompyuter holati"),
+                            Action::Machine(id),
+                            None,
+                        ));
                     }
                     if !many {
                         rows.push((
@@ -1251,6 +1257,16 @@ impl ConsoleApp {
                     frame: self.now_frame,
                     rooms_open: false,
                 });
+            }
+            Action::Machine(id) => {
+                self.open_dialog(Dialog::Machine {
+                    id,
+                    tab: MachineTab::Overview,
+                    filter: String::new(),
+                    sort: ProcSort::Cpu,
+                    kill: None,
+                });
+                self.send(&[id], Command::GetSystemInfo, "");
             }
             Action::Rename(id) => {
                 if let Some(v) = all.iter().find(|v| v.id == id) {

@@ -77,6 +77,8 @@ pub struct ServerConfig {
     /// Program categories.
     pub app_categories: Vec<crate::blockcat::BlockCategory>,
     pub safe_search: bool,
+    /// What students may use: USB, CD/DVD, printer, camera, microphone, Bluetooth, sound.
+    pub device_policy: vimora_core::DevicePolicy,
     pub update_policy: vimora_core::UpdatePolicy,
 }
 
@@ -137,6 +139,7 @@ impl Default for ServerConfig {
             site_categories: vec![],
             app_categories: vec![],
             safe_search: true,
+            device_policy: Default::default(),
             update_policy: vimora_core::UpdatePolicy {
                 os: vimora_core::OsUpdateMode::Manual,
                 apps_auto: false,

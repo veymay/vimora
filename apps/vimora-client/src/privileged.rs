@@ -273,6 +273,11 @@ impl Engine {
                 self.shield.set_password(&pw)?;
                 String::new()
             }
+            PrivCommand::SetDevicePolicy(p) => {
+                let msg = crate::devices::apply(&p)?;
+                self.commit(&crate::devices::touched());
+                msg
+            }
             PrivCommand::SetShieldEngine(e) => {
                 let msg = self.shield.set_engine(e);
                 self.refresh_freeze();

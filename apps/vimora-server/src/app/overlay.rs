@@ -364,6 +364,7 @@ impl ConsoleApp {
             Dialog::Freeze { .. } => (tr("Muzlatish"), 520.0),
             Dialog::Rename { .. } => (tr("Nomini o'zgartirish"), 460.0),
             Dialog::Updates { .. } => (tr("Yangilanishlar"), 600.0),
+            Dialog::Machine { .. } => (tr("Kompyuter holati"), 600.0),
         };
         // Every drawer has the same width, wide enough for its widest content (four tabs),
         // so the frame never grows past the header and ✕ always sits on the right edge.
@@ -377,6 +378,7 @@ impl ConsoleApp {
                 | Dialog::Activity
                 | Dialog::Rename { .. }
                 | Dialog::Message { .. }
+                | Dialog::Machine { .. }
         ) {
             None
         } else {
@@ -399,6 +401,7 @@ impl ConsoleApp {
             Dialog::Freeze { .. } => icons::SNOWFLAKE,
             Dialog::Rename { .. } => icons::SETTINGS,
             Dialog::Updates { .. } => icons::DOWNLOAD,
+            Dialog::Machine { .. } => icons::GAUGE,
         };
         // Drawers slide in from the right; modals fade in at the centre.
         // Drawers hang flush on the right edge of the window, full height; modals drop
@@ -518,6 +521,7 @@ impl ConsoleApp {
                         | Dialog::Settings(_)
                         | Dialog::Freeze { .. }
                         | Dialog::Updates { .. }
+                        | Dialog::Machine { .. }
                 );
                 let body_max = if drawer {
                     // Full window height: the drawer hangs on the right edge, top to bottom.
@@ -651,7 +655,9 @@ impl ConsoleApp {
                                         | Dialog::Activity => (icons::CHECK, tr("Saqlash")),
                                         Dialog::Freeze { .. } => (icons::CHECK, tr("Saqlash")),
                                         Dialog::Rename { .. } => (icons::CHECK, tr("Saqlash")),
-                                        Dialog::Updates { .. } => (icons::CHECK, tr("Saqlash")),
+                                        Dialog::Updates { .. } | Dialog::Machine { .. } => {
+                                            (icons::CHECK, tr("Saqlash"))
+                                        }
                                     };
                                     let kind = if matches!(dialog, Dialog::Power(_)) {
                                         Kind::Danger
@@ -741,6 +747,7 @@ impl ConsoleApp {
             }
         }
         self.shadow_requests(&targets);
+        self.machine_requests(ctx);
         if let Some(Dialog::Updates {
             policy,
             restart,
@@ -1009,6 +1016,42 @@ impl ConsoleApp {
     }
 
     /// Inline actions of the Shadow drawer: they run at once and the drawer stays open.
+    /// "Kompyuter holati": ask for a fresh report every few seconds while it is open, and
+    /// confirm "end task".
+    fn machine_requests(&mut self, ctx: &egui::Context) {
+        let Some(Dialog::Machine { id, kill, .. }) = &mut self.dialog else {
+            return;
+        };
+        let id = *id;
+        if let Some((pid, name)) = kill.take() {
+            self.ask(
+                tr("Jarayon yopilsinmi?"),
+                tf!(
+                    "\"{name}\" (PID {pid}) yopiladi. Saqlanmagan ish yo'qolishi mumkin.",
+                    name = name.clone(),
+                    pid = pid
+                ),
+                tr("Yopish"),
+                ConfirmAction::KillProcess { id, pid, name },
+            );
+        }
+        let poll = egui::Id::new("machine-poll");
+        let now = ctx.input(|i| i.time);
+        let last: f64 = ctx.data(|d| d.get_temp(poll)).unwrap_or(-100.0);
+        if now - last >= POLL.as_secs_f64() {
+            ctx.data_mut(|d| d.insert_temp(poll, now));
+            let mut h = self.hub.lock().unwrap();
+            let sent = h.send(&[id], &ServerMsg::Command(Command::GetSystemInfo));
+            if sent == 0 {
+                // Demo computers have no agent: keep their made-up report fresh.
+                if let Some((_, t)) = h.students.get_mut(&id).and_then(|s| s.sysinfo.as_mut()) {
+                    *t = Instant::now();
+                }
+            }
+        }
+        ctx.request_repaint_after(POLL);
+    }
+
     fn shadow_requests(&mut self, targets: &[u64]) {
         let Some(Dialog::Freeze {
             tab,
@@ -1143,9 +1186,13 @@ impl ConsoleApp {
                 apps,
                 site_cats,
                 app_cats,
+                devices,
                 safe,
                 ..
             } => {
+                let devices = if clear { Default::default() } else { devices };
+                self.cfg.write().unwrap().device_policy = devices;
+                self.send_priv(t, PrivCommand::SetDevicePolicy(devices), "");
                 // Programs go to the agent (it closes them), the rest to the service.
                 let programs = if clear {
                     vec![]
@@ -1200,7 +1247,7 @@ impl ConsoleApp {
                 return;
             }
             Dialog::Activity => return,
-            Dialog::Freeze { .. } => return,
+            Dialog::Freeze { .. } | Dialog::Machine { .. } => return,
             Dialog::Rename {
                 id,
                 key,

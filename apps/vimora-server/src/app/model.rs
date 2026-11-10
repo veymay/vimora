@@ -58,6 +58,8 @@ pub(super) enum NetTab {
     /// Programs closed as soon as they start.
     Apps,
     Search,
+    /// USB, CD/DVD, printer, camera, microphone, Bluetooth, sound.
+    Devices,
 }
 
 #[derive(Clone)]
@@ -90,6 +92,7 @@ pub(super) enum Dialog {
         app_cats: Vec<crate::blockcat::BlockCategory>,
         /// The category opened in the accordion.
         open_cat: Option<String>,
+        devices: vimora_core::DevicePolicy,
         safe: bool,
         /// The "add" box.
         entry: String,
@@ -128,6 +131,15 @@ pub(super) enum Dialog {
         /// Shadow Defender password for the Windows student PCs.
         password: String,
     },
+    /// "Kompyuter holati": one computer's load, battery, disks and processes.
+    Machine {
+        id: u64,
+        tab: MachineTab,
+        filter: String,
+        sort: ProcSort,
+        /// "End task" pressed: (pid, name), confirmed by the app.
+        kill: Option<(u32, String)>,
+    },
     Updates {
         tab: UpdateTab,
         policy: UpdatePolicy,
@@ -152,6 +164,12 @@ pub(crate) enum ConfirmAction {
         ids: Vec<u64>,
     },
     DeleteRoom(String),
+    /// End a process on a student PC.
+    KillProcess {
+        id: u64,
+        pid: u32,
+        name: String,
+    },
     #[allow(dead_code)]
     RestoreRemoved,
 }
@@ -194,6 +212,8 @@ pub(super) enum Action {
     Message(u64),
     ClearHelp(u64),
     Rename(u64),
+    /// Open the "Kompyuter holati" drawer.
+    Machine(u64),
     /// Right click: open the context menu for this computer (anchor rect, pointer x).
     OpenMenu(u64, Rect, f32),
     /// Remove an offline computer from the list.

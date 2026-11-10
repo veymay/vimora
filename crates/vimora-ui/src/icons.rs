@@ -122,3 +122,13 @@ pub const DOWNLOAD_DRIVE: &str = "\u{e4ea}";
 pub const MASK: &str = "\u{e2aa}";
 pub const MUSIC: &str = "\u{e126}";
 pub const CART: &str = "\u{e160}";
+// Computer state ("Kompyuter holati").
+pub const CPU: &str = "\u{e0ad}";
+pub const MEMORY: &str = "\u{e44a}";
+pub const BATTERY: &str = "\u{e057}";
+pub const BATTERY_CHARGING: &str = "\u{e058}";
+pub const BATTERY_LOW: &str = "\u{e05a}";
+pub const ARROW_DOWN: &str = "\u{e046}";
+pub const ARROW_UP: &str = "\u{e04e}";
+pub const GAUGE: &str = "\u{e1bf}";
+pub const USB: &str = "\u{e35a}";

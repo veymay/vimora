@@ -5,6 +5,7 @@
 
 mod forms;
 mod grid;
+mod machine;
 mod model;
 mod navbar;
 pub(super) mod overlay;
@@ -38,6 +39,7 @@ use vimora_core::{
 };
 
 use forms::*;
+use machine::*;
 use model::*;
 use selection::*;
 use settings::*;
@@ -195,6 +197,7 @@ impl ConsoleApp {
         match std::env::var("VIMORA_OPEN").as_deref() {
             Ok("net") => app.dev_open = Some(app.net_dialog(NetTab::Domains)),
             Ok("net:apps") => app.dev_open = Some(app.net_dialog(NetTab::Apps)),
+            Ok("net:devices") => app.dev_open = Some(app.net_dialog(NetTab::Devices)),
             Ok("net:cats") => {
                 // An opened category with some sites picked, another one blocked whole.
                 let mut d = app.net_dialog(NetTab::Domains);
@@ -212,6 +215,19 @@ impl ConsoleApp {
                 app.dev_open = Some(d);
             }
             Ok("activity") => app.dev_open = Some(Dialog::Activity),
+            Ok(m @ ("machine" | "machine:procs")) => {
+                app.dev_open = Some(Dialog::Machine {
+                    id: 1001,
+                    tab: if m == "machine" {
+                        MachineTab::Overview
+                    } else {
+                        MachineTab::Processes
+                    },
+                    filter: String::new(),
+                    sort: ProcSort::Cpu,
+                    kill: None,
+                })
+            }
             Ok("settings") => app.dev_open = Some(Dialog::Settings(SettingsTab::General)),
             Ok(s) if s.starts_with("settings:") => {
                 let tab = match &s[9..] {
@@ -377,6 +393,7 @@ impl ConsoleApp {
                     changes: demo_changes,
                     version: "0.3.7".into(),
                     cursor: 0,
+                    sysinfo: Some((demo_sysinfo(i), Instant::now())),
                 },
             );
             if let (Some(r), true) = (rooms.first(), i % 2 == 0) {
@@ -576,6 +593,15 @@ impl ConsoleApp {
                 self.forget(&keys, &ids);
             }
             ConfirmAction::DeleteRoom(name) => self.delete_room(&name),
+            ConfirmAction::KillProcess { id, pid, name } => {
+                self.send(
+                    &[id],
+                    Command::KillProcess(pid),
+                    &tf!("Jarayon yopildi: {name}", name = name),
+                );
+                // A fresh report shows it gone.
+                self.send(&[id], Command::GetSystemInfo, "");
+            }
             ConfirmAction::RestoreRemoved => {
                 let mut c = self.cfg.write().unwrap();
                 c.removed.clear();
@@ -816,6 +842,7 @@ impl ConsoleApp {
             site_cats: crate::blockcat::merged(crate::blockcat::SITES, &c.site_categories),
             app_cats: crate::blockcat::merged(crate::blockcat::APPS, &c.app_categories),
             open_cat: None,
+            devices: c.device_policy,
             safe: c.safe_search,
             entry: String::new(),
             import: false,
@@ -1148,5 +1175,61 @@ impl ConsoleApp {
                 ));
             }
         }
+    }
+}
+
+/// Made-up technical report for the demo computers (`VIMORA_DEMO`).
+fn demo_sysinfo(i: usize) -> vimora_core::SystemInfo {
+    use vimora_core::{BatteryInfo, DiskInfo, ProcInfo, SystemInfo};
+    let procs = [
+        ("chrome.exe", 18.4, 912),
+        ("Code.exe", 6.2, 640),
+        ("explorer.exe", 1.1, 96),
+        ("Telegram.exe", 0.8, 210),
+        ("vimora-client.exe", 0.6, 42),
+        ("svchost.exe", 0.3, 28),
+        ("MsMpEng.exe", 2.4, 180),
+        ("dwm.exe", 1.9, 74),
+        ("System", 0.2, 4),
+        ("spoolsv.exe", 0.0, 12),
+    ];
+    SystemInfo {
+        os: "Windows 11 Education 24H2".into(),
+        cpu_name: "Intel Core i5-1135G7".into(),
+        cores: 8,
+        cpu: 12.0 + (i * 7 % 70) as f32,
+        ram_used: (3 + i as u64 % 5) << 30,
+        ram_total: 8 << 30,
+        disks: vec![
+            DiskInfo {
+                mount: "C:\\".into(),
+                used: 141 << 30,
+                total: 237 << 30,
+            },
+            DiskInfo {
+                mount: "D:\\".into(),
+                used: 60 << 30,
+                total: 465 << 30,
+            },
+        ],
+        battery: (!i.is_multiple_of(3)).then_some(BatteryInfo {
+            percent: (95 - i * 9 % 90) as u8,
+            charging: i % 3 == 1,
+            plugged: i % 3 == 1,
+            secs_left: Some(5400),
+        }),
+        net_rx: 412_000,
+        net_tx: 38_000,
+        uptime_secs: 3600 * 3 + 600 * i as u64,
+        processes: procs
+            .iter()
+            .enumerate()
+            .map(|(k, (n, cpu, mb))| ProcInfo {
+                pid: 1200 + 337 * k as u32,
+                name: (*n).into(),
+                cpu: *cpu,
+                mem: mb << 20,
+            })
+            .collect(),
     }
 }

@@ -161,6 +161,16 @@ pub(super) async fn session(
                 ServerMsg::ShowFrame { jpeg, .. } => {
                     let _ = ov_tx.try_send(OverlayReq::Frame(jpeg));
                 }
+                ServerMsg::Command(Command::GetSystemInfo) => {
+                    // Sampled off the async threads (the first sample waits a moment).
+                    let tx = tx.clone();
+                    tokio::spawn(async move {
+                        if let Ok(info) = tokio::task::spawn_blocking(crate::sysmon::snapshot).await
+                        {
+                            let _ = tx.send(ClientMsg::SystemInfo(info)).await;
+                        }
+                    });
+                }
                 ServerMsg::Command(cmd) => {
                     if let Some(res) = handle_command(cmd, ctx, ov_tx, &stream_cfg).await {
                         let (ok, message) = match res {
@@ -273,6 +283,9 @@ pub(super) async fn handle_command(
             chat_supervisor::end(ctx);
             None
         }
+        Command::KillProcess(pid) => Some(crate::sysmon::kill(pid)),
+        // Answered in the session loop (it needs the outgoing channel).
+        Command::GetSystemInfo => None,
         Command::OpenUrl(url) => Some(system::open_url(&url).map(|_| format!("ochildi: {url}"))),
         Command::Run { program, args } => {
             Some(system::run_program(&program, &args).map(|_| format!("ishga tushdi: {program}")))
@@ -296,6 +309,19 @@ pub(super) async fn privileged(
     sig: Vec<u8>,
 ) -> Result<String> {
     let cmd: PrivCommand = bincode::deserialize(&payload)?;
+    // Sound belongs to the user's session: the agent mutes it, the service does the rest.
+    // (Only the signature is checked here; the counter is checked where the command runs.)
+    if let PrivCommand::SetDevicePolicy(p) = &cmd {
+        let genuine = {
+            let key = *ctx.pin.lock().unwrap();
+            let s = ctx.session.lock().unwrap();
+            key.is_some_and(|k| auth::verify_priv(&k, &s.0, counter, &payload, &sig))
+        };
+        if genuine {
+            let off = p.sound_off;
+            let _ = tokio::task::spawn_blocking(move || crate::audio::set_off(off)).await;
+        }
+    }
     // Logging off has to happen in the user's own session.
     if cmd == PrivCommand::Power(PowerAction::Logoff) {
         verify_locally(ctx, counter, &payload, &sig)?;

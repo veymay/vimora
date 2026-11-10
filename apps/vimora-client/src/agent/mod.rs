@@ -227,6 +227,14 @@ pub async fn run(cfg: Config) -> Result<()> {
         keep_alive("blocker", move || blocker_task(s.clone()));
     }
     keep_alive("update-restart", restart_on_update);
+    // Sound off by the teacher ("Qurilmalar"): kept muted.
+    crate::audio::load();
+    tokio::spawn(async {
+        loop {
+            let _ = tokio::task::spawn_blocking(crate::audio::enforce).await;
+            tokio::time::sleep(Duration::from_secs(8)).await;
+        }
+    });
     {
         let e = ctx.engine.clone();
         keep_alive("net-enforce", move || net_enforce_task(e.clone()));

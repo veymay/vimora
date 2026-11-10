@@ -44,6 +44,8 @@ pub struct Student {
     pub version: String,
     /// Pointer shape on the student's screen (live view).
     pub cursor: u8,
+    /// Last technical report ("Kompyuter holati" drawer) and when it arrived.
+    pub sysinfo: Option<(vimora_core::SystemInfo, Instant)>,
 }
 
 pub fn unix_now() -> u64 {
@@ -472,6 +474,7 @@ async fn session(
                 priv_counter: 0,
                 apps: None,
                 changes: None,
+                sysinfo: None,
                 version: String::new(),
                 cursor: 0,
             },
@@ -618,6 +621,13 @@ async fn session(
                     }
                     h.sounds.push(crate::sound::Sound::Alert);
                     h.log(Level::Warn, format!("{}: {text}", info.label()));
+                }
+                ClientMsg::SystemInfo(info) => {
+                    let mut h = hub.lock().unwrap();
+                    if let Some(s) = h.students.get_mut(&id) {
+                        s.sysinfo = Some((info, Instant::now()));
+                    }
+                    h.repaint();
                 }
                 ClientMsg::Apps(list) => {
                     let mut h = hub.lock().unwrap();

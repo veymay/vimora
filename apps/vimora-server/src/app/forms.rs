@@ -171,6 +171,24 @@ pub(super) fn dialog_body(
             restart,
             request,
         } => updates_form(ui, p, tab, policy, restart, request, cx),
+        Dialog::Machine {
+            id,
+            tab,
+            filter,
+            sort,
+            kill,
+        } => machine_form(
+            ui,
+            p,
+            MachineForm {
+                id: *id,
+                tab,
+                filter,
+                sort,
+                kill,
+            },
+            cx,
+        ),
         Dialog::Message { .. } => {} // laid out by chat_form
         Dialog::Launch {
             web,
@@ -224,11 +242,13 @@ pub(super) fn dialog_body(
             site_cats,
             app_cats,
             open_cat,
+            devices,
             safe,
             entry,
             import,
         } => net_form(
-            ui, p, tab, domains, keywords, apps, site_cats, app_cats, open_cat, safe, entry, import,
+            ui, p, tab, domains, keywords, apps, site_cats, app_cats, open_cat, devices, safe,
+            entry, import,
         ),
         Dialog::Power(a) => {
             ui.horizontal(|ui| {
@@ -2081,6 +2101,7 @@ pub(super) fn net_form(
     site_cats: &mut Vec<crate::blockcat::BlockCategory>,
     app_cats: &mut Vec<crate::blockcat::BlockCategory>,
     open_cat: &mut Option<String>,
+    devices: &mut vimora_core::DevicePolicy,
     safe: &mut bool,
     entry: &mut String,
     import: &mut bool,
@@ -2109,11 +2130,12 @@ pub(super) fn net_form(
                     Some(crate::blockcat::effective(apps, app_cats).len()),
                 ),
                 (
-                    NetTab::Search,
-                    icons::SHIELD_CHECK,
-                    tr("Xavfsiz qidiruv"),
-                    None,
+                    NetTab::Devices,
+                    icons::USB,
+                    tr("Qurilmalar"),
+                    Some(devices_blocked(devices)),
                 ),
+                (NetTab::Search, icons::SHIELD_CHECK, tr("Qidiruv"), None),
             ] {
                 if ui_kit::tab_icon(ui, Some(ic), label, n, *tab == t).clicked() {
                     *tab = t;
@@ -2187,6 +2209,7 @@ pub(super) fn net_form(
             &[],
             |ui| categories(ui, p, app_cats, crate::blockcat::APPS, open_cat),
         ),
+        NetTab::Devices => devices_form(ui, p, devices),
         NetTab::Search => {
             sgroup(ui, p, |ui| {
                 srow(
@@ -2429,4 +2452,81 @@ fn chat_bubble(ui: &mut egui::Ui, p: &Palette, m: &crate::net::ChatMsg, max_w: f
                 });
             });
     });
+}
+
+/// How many kinds of device are restricted (the tab's counter).
+fn devices_blocked(d: &vimora_core::DevicePolicy) -> usize {
+    (d.usb != vimora_core::UsbMode::Allow) as usize
+        + [
+            d.cd,
+            d.printer,
+            d.camera,
+            d.microphone,
+            d.bluetooth,
+            d.sound_off,
+        ]
+        .iter()
+        .filter(|b| **b)
+        .count()
+}
+
+/// "Qurilmalar": one row per device; a switch that is on means "ruxsat".
+fn devices_form(ui: &mut egui::Ui, p: &Palette, d: &mut vimora_core::DevicePolicy) {
+    use vimora_core::UsbMode;
+    sgroup(ui, p, |ui| {
+        srow(
+            ui,
+            p,
+            true,
+            tr("USB fleshka"),
+            Some(tr("\"Faqat o'qish\" — fayllarni ochish mumkin, yozish va nusxa ko'chirish mumkin emas. Yangi sozlama fleshka qayta ulanganda kuchga kiradi.")),
+            |ui| {
+                ui_kit::segmented(p).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    // Right-to-left row: last first, so they read in order.
+                    for (m, label) in [
+                        (UsbMode::Block, tr("Taqiqlangan")),
+                        (UsbMode::ReadOnly, tr("Faqat o'qish")),
+                        (UsbMode::Allow, tr("Ruxsat")),
+                    ] {
+                        if ui_kit::tab(ui, label, None, d.usb == m).clicked() {
+                            d.usb = m;
+                        }
+                    }
+                });
+            },
+        );
+        for (blocked, title, help) in [
+            (&mut d.cd, "CD/DVD", None),
+            (
+                &mut d.printer,
+                tr("Printer"),
+                Some(tr("O'chirilsa, chop etib bo'lmaydi.")),
+            ),
+            (&mut d.camera, tr("Kamera"), None),
+            (&mut d.microphone, tr("Mikrofon"), None),
+            (&mut d.bluetooth, "Bluetooth", None),
+            (
+                &mut d.sound_off,
+                tr("Ovoz"),
+                Some(tr(
+                    "O'chirilsa, kompyuter ovozi o'chiriladi va o'quvchi qayta yoqa olmaydi.",
+                )),
+            ),
+        ] {
+            srow(ui, p, false, title, help, |ui| {
+                // On = allowed.
+                let mut allowed = !*blocked;
+                if ui_kit::toggle(ui, &mut allowed).changed() {
+                    *blocked = !allowed;
+                }
+            });
+        }
+    });
+    ui.add_space(8.0);
+    ui.label(
+        RichText::new(tr("Yoqilgan — ruxsat, o'chirilgan — taqiqlangan. \"Qo'llash\" bosilganda kuchga kiradi va konsol yopiq bo'lsa ham saqlanadi."))
+            .size(12.0)
+            .color(p.faint),
+    );
 }

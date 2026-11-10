@@ -240,6 +240,32 @@ pub enum PrivCommand {
     /// Which write filter "freezing" uses on Windows: 0 = automatic (Shadow Defender if it is
     /// installed, else UWF), 1 = Shadow Defender, 2 = Unified Write Filter.
     SetShieldEngine(u8),
+    /// What the student may use: USB drives, CD/DVD, printer, camera, microphone, Bluetooth,
+    /// sound. Kept until changed (also with no console connected).
+    SetDevicePolicy(DevicePolicy),
+}
+
+/// USB storage: what a plugged-in flash drive may do.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum UsbMode {
+    #[default]
+    Allow,
+    /// Files can be opened but not written.
+    ReadOnly,
+    Block,
+}
+
+/// Device restrictions (`true` = blocked / off).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DevicePolicy {
+    pub usb: UsbMode,
+    pub cd: bool,
+    pub printer: bool,
+    pub camera: bool,
+    pub microphone: bool,
+    pub bluetooth: bool,
+    /// Sound muted (kept muted while set).
+    pub sound_off: bool,
 }
 
 /// Valid computer name: 1–15 letters, digits or '-', not starting/ending with '-'.
@@ -390,6 +416,58 @@ pub enum Command {
     LockStyle {
         icon: String,
     },
+    /// Report the PC's technical state once ([`ClientMsg::SystemInfo`]); the console asks
+    /// every couple of seconds while its "Kompyuter holati" drawer is open.
+    GetSystemInfo,
+    /// End a process (Task Manager's "End task").
+    KillProcess(u32),
+}
+
+/// Technical state of a student PC, Task Manager style.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct SystemInfo {
+    pub os: String,
+    pub cpu_name: String,
+    pub cores: u32,
+    /// Whole-CPU load, 0–100.
+    pub cpu: f32,
+    pub ram_used: u64,
+    pub ram_total: u64,
+    pub disks: Vec<DiskInfo>,
+    pub battery: Option<BatteryInfo>,
+    /// Network throughput since the previous report, bytes per second.
+    pub net_rx: u64,
+    pub net_tx: u64,
+    pub uptime_secs: u64,
+    pub processes: Vec<ProcInfo>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct DiskInfo {
+    /// "C:\\" or "/".
+    pub mount: String,
+    pub used: u64,
+    pub total: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+pub struct BatteryInfo {
+    pub percent: u8,
+    pub charging: bool,
+    /// On mains power (charging or full).
+    pub plugged: bool,
+    /// Estimated time left on battery.
+    pub secs_left: Option<u32>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ProcInfo {
+    pub pid: u32,
+    pub name: String,
+    /// Share of the whole CPU, 0–100 (Task Manager style).
+    pub cpu: f32,
+    /// Memory in use, bytes.
+    pub mem: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -462,6 +540,8 @@ pub enum ClientMsg {
     Cursor(u8),
     /// The student has seen the teacher's chat messages (Telegram's second tick).
     ChatRead,
+    /// Answer to [`Command::GetSystemInfo`].
+    SystemInfo(SystemInfo),
 }
 
 /// Pointer shapes carried by [`ClientMsg::Cursor`].
@@ -507,6 +587,7 @@ mod wire_tests {
         assert_eq!(tag(&PrivCommand::CommitPaths(vec![])), 13);
         assert_eq!(tag(&PrivCommand::Unpair), 14);
         assert_eq!(tag(&PrivCommand::SetShieldEngine(0)), 15);
+        assert_eq!(tag(&PrivCommand::SetDevicePolicy(Default::default())), 16);
         assert_eq!(
             tag(&Command::LockStyle {
                 icon: String::new()
@@ -524,6 +605,9 @@ mod wire_tests {
         assert_eq!(tag(&ClientMsg::AgentVersion(String::new())), 10);
         assert_eq!(tag(&ClientMsg::Cursor(0)), 11);
         assert_eq!(tag(&ClientMsg::ChatRead), 12);
+        assert_eq!(tag(&ClientMsg::SystemInfo(Default::default())), 13);
+        assert_eq!(tag(&Command::GetSystemInfo), tag(&Command::ChatEnd) + 3);
+        assert_eq!(tag(&Command::KillProcess(0)), tag(&Command::ChatEnd) + 4);
         // Command: ChatEnd was the last one before the unlock code was added.
         assert_eq!(
             tag(&Command::UnlockCode {

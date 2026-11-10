@@ -10,10 +10,12 @@
 
 mod agent;
 mod apps;
+mod audio;
 mod blocked;
 mod chat;
 mod config;
 mod desktop;
+mod devices;
 mod kiosk;
 mod netcontrol;
 mod overlay;
@@ -24,6 +26,7 @@ mod service;
 mod sh;
 mod shield;
 mod single;
+mod sysmon;
 mod system;
 mod updates;
 
