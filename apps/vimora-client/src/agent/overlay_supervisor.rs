@@ -15,9 +15,66 @@ pub(super) async fn write_overlay(stdin: &mut ChildStdin, cmd: &OverlayCmd) -> R
     Ok(())
 }
 
+/// How the overlay is started, tried in this order until one stays up: (renderer, own desktop).
+/// On Windows the lock desktop comes first (nothing to Alt+Tab to); many OpenGL drivers don't
+/// work there, so Direct3D (wgpu) is tried first, then OpenGL, then the normal desktop with the
+/// backend that works for the other windows. A plan that worked is kept.
+fn plans() -> Vec<(&'static str, bool)> {
+    let usual = match std::env::var("VIMORA_RENDERER").as_deref() {
+        Ok("wgpu") => "wgpu",
+        _ => "glow",
+    };
+    let other = if usual == "wgpu" { "glow" } else { "wgpu" };
+    if cfg!(windows) {
+        vec![
+            ("wgpu", true),
+            ("glow", true),
+            (usual, false),
+            (other, false),
+        ]
+    } else {
+        vec![(usual, false), (other, false)]
+    }
+}
+
+/// Index into [`plans`] of the way the overlay starts now (`usize::MAX` = not loaded yet).
+static PLAN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(usize::MAX);
+
+fn plan_file() -> Option<std::path::PathBuf> {
+    dirs::config_dir().map(|d| d.join("vimora").join("overlay-plan"))
+}
+
+/// The plan to use: the one that worked last time on this PC, else the first.
+fn current_plan() -> usize {
+    use std::sync::atomic::Ordering::Relaxed;
+    let p = PLAN.load(Relaxed);
+    if p != usize::MAX {
+        return p;
+    }
+    let saved = plan_file()
+        .and_then(|f| std::fs::read_to_string(f).ok())
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .filter(|p| *p < plans().len())
+        .unwrap_or(0);
+    PLAN.store(saved, Relaxed);
+    saved
+}
+
+/// The overlay stayed up: keep this way of starting it for the next time.
+fn remember_plan() {
+    if let Some(f) = plan_file() {
+        let _ = std::fs::create_dir_all(f.parent().unwrap_or(&f));
+        let _ = std::fs::write(f, current_plan().to_string());
+    }
+}
+
 pub(super) fn spawn_overlay(state: &Shared) -> Result<(Child, ChildStdin)> {
+    let plans = plans();
+    let (renderer, own_desktop) = plans[current_plan().min(plans.len() - 1)];
     let mut child = tokio::process::Command::new(std::env::current_exe()?)
         .arg("overlay")
+        .env("VIMORA_RENDERER", renderer)
+        .env("VIMORA_LOCK_DESKTOP", if own_desktop { "1" } else { "0" })
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -31,11 +88,6 @@ pub(super) fn spawn_overlay(state: &Shared) -> Result<(Child, ChildStdin)> {
             use tokio::io::{AsyncBufReadExt, BufReader};
             let mut lines = BufReader::new(out).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                if line.trim() == "NODESKTOP" {
-                    report_fault(
-                        "Qulf ekrani alohida ish stolida ochilmadi — himoya kuchsizroq (Vimora xizmati ishlayaptimi?)",
-                    );
-                }
                 if line.trim() == "UNLOCK" {
                     info!("lock screen opened with the unlock code");
                     {
@@ -70,6 +122,8 @@ pub(super) async fn overlay_task(state: Shared, mut rx: mpsc::Receiver<OverlayRe
     let mut child: Option<(Child, ChildStdin)> = None;
     let mut born = Instant::now();
     let mut quick_deaths = 0u32;
+    // The current overlay lived long enough for its start plan to be remembered.
+    let mut plan_saved = false;
     let mut tick = tokio::time::interval(Duration::from_secs(1));
     // System lockdown (Windows policies via the service) while the lock screen is up;
     // re-asserted every 30 s in case the service restarted.
@@ -125,23 +179,43 @@ pub(super) async fn overlay_task(state: Shared, mut rx: mpsc::Receiver<OverlayRe
                 // Never leave the student on the (empty) lock desktop.
                 crate::desktop::restore();
                 // Died right after starting while it is still wanted: the window could not
-                // open. Try the other graphics backend and tell the teacher.
+                // open. Quietly try the next way to start it; the teacher hears about it only
+                // when none works.
                 let wanted = {
                     let s = state.lock().unwrap();
                     s.show || s.lock.is_some()
                 };
                 if wanted && born.elapsed() < Duration::from_secs(4) {
-                    quick_deaths += 1;
-                    if quick_deaths == 2 || quick_deaths == 6 {
-                        let next = switch_renderer();
-                        let why = LAST_ERROR.lock().unwrap().clone();
-                        report_fault(format!(
-                            "Qulf ekrani ochilmadi ({why}) — {next} bilan qayta uriniladi"
-                        ));
+                    use std::sync::atomic::Ordering::Relaxed;
+                    let last = plans().len() - 1;
+                    let plan = current_plan();
+                    if plan < last {
+                        PLAN.store(plan + 1, Relaxed);
+                        warn!(
+                            "overlay could not start ({}); trying {:?}",
+                            LAST_ERROR.lock().unwrap(),
+                            plans()[plan + 1]
+                        );
+                    } else {
+                        quick_deaths += 1;
+                        if quick_deaths == 1 {
+                            let why = LAST_ERROR.lock().unwrap().clone();
+                            report_fault(format!(
+                                "Qulf ekrani bu kompyuterda ochilmayapti: grafik drayverni yangilang ({why})"
+                            ));
+                        }
+                        // Start the round again later (a driver may come up after login).
+                        if quick_deaths >= 10 {
+                            PLAN.store(0, Relaxed);
+                            quick_deaths = 0;
+                        }
                     }
                 } else {
                     quick_deaths = 0;
                 }
+            } else if born.elapsed() > Duration::from_secs(5) && !plan_saved {
+                plan_saved = true;
+                remember_plan();
             }
         }
         match desired {
@@ -165,6 +239,7 @@ pub(super) async fn overlay_task(state: Shared, mut rx: mpsc::Receiver<OverlayRe
                         Ok(c) => {
                             child = Some(c);
                             born = Instant::now();
+                            plan_saved = false;
                         }
                         Err(e) => {
                             warn!("cannot start overlay: {e:#}");

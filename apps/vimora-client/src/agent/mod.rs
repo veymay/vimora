@@ -145,16 +145,6 @@ pub(crate) fn report_fault(text: impl Into<String>) {
     }
 }
 
-/// The other graphics backend (see `crate::ui_renderer`).
-pub(crate) fn switch_renderer() -> &'static str {
-    let next = match std::env::var("VIMORA_RENDERER").as_deref() {
-        Ok("wgpu") => "glow",
-        _ => "wgpu",
-    };
-    std::env::set_var("VIMORA_RENDERER", next);
-    next
-}
-
 /// Finds a graphics backend that can actually draw on this PC before any window is needed:
 /// runs `vimora-client ui-probe` with each one and keeps the first that works.
 async fn probe_ui() {

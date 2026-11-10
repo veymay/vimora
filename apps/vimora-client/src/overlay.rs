@@ -66,12 +66,10 @@ pub fn run() -> anyhow::Result<()> {
 
     // Windows: a desktop of its own — nothing to Alt+Tab or Start-menu to (see `desktop`).
     // Must come before any window or hook is created on this thread.
-    let own_desktop = crate::desktop::enter();
+    // The agent turns it off (VIMORA_LOCK_DESKTOP=0) when no graphics backend can draw there.
+    let own_desktop =
+        std::env::var("VIMORA_LOCK_DESKTOP").as_deref() != Ok("0") && crate::desktop::enter();
     tracing::info!("overlay on its own desktop: {own_desktop}");
-    if cfg!(windows) && !own_desktop && std::env::var_os("VIMORA_OVERLAY_DEMO").is_none() {
-        // The agent passes this on to the console: the lock is weaker on the shared desktop.
-        println!("NODESKTOP");
-    }
     #[cfg(windows)]
     input_block::install();
 
