@@ -88,6 +88,15 @@ impl ServiceConfig {
 struct Pairing(Mutex<ServiceConfig>);
 
 impl Pairing {
+    /// Forgets the console: the next one found is paired.
+    fn clear(&self) {
+        let mut c = self.0.lock().unwrap();
+        c.console_key = None;
+        if let Err(e) = c.save() {
+            warn!("cannot save pairing: {e:#}");
+        }
+    }
+
     fn get(&self) -> Option<ConsoleKey> {
         self.0.lock().unwrap().pinned()
     }
@@ -325,6 +334,14 @@ async fn handle(
                 }
             };
             info!("privileged: {cmd:?}");
+            if cmd == PrivCommand::Unpair {
+                pairing.clear();
+                session.lock().unwrap().map.clear();
+                return IpcResp::Done {
+                    ok: true,
+                    message: "Kompyuter konsoldan ajratildi".into(),
+                };
+            }
             let e = engine.clone();
             match tokio::task::spawn_blocking(move || e.execute(cmd)).await {
                 Ok(Ok(m)) => IpcResp::Done {

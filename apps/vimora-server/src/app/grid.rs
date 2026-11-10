@@ -92,9 +92,9 @@ pub(super) fn status_badges(ui: &egui::Ui, p: &Palette, s: &ClientStatus) -> Vec
                 p.accent_ink
             };
             let label = if pct >= 75 {
-                tf!("Shadow {pct}%", pct = pct)
+                tf!("Muzlatilgan {pct}%", pct = pct)
             } else {
-                tr("Shadow").into()
+                tr("Muzlatilgan").into()
             };
             Some((icons::SNOWFLAKE, label, col))
         }
@@ -399,8 +399,8 @@ impl ConsoleApp {
                         Col::Shadow => {
                             for (v, label) in [
                                 (ShadowFilter::Any, tr("Hammasi")),
-                                (ShadowFilter::On, tr("Shadow yoqilgan")),
-                                (ShadowFilter::Off, tr("Shadow o'chiq")),
+                                (ShadowFilter::On, tr("Muzlatilgan")),
+                                (ShadowFilter::Off, tr("Muzlatilmagan")),
                             ] {
                                 if ui.selectable_label(f.shadow == v, label).clicked() {
                                     f.shadow = v;
@@ -976,27 +976,78 @@ impl ConsoleApp {
                         return;
                     };
                     let id = *id;
-                    if !v.online {
-                        if menu_row(
+                    let group = self.group_of(id, all);
+                    let many = group.len() > 1;
+                    if many {
+                        // Says what the menu applies to.
+                        let (r, _) = ui
+                            .allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::hover());
+                        let t = ui_kit::caps(
                             ui,
-                            p,
+                            &tf!("{n} ta tanlangan", n = group.len()),
+                            9.5,
+                            ui_kit::mono(),
+                            p.faint,
+                        );
+                        ui.painter().galley(
+                            pos2(r.left() + 14.0, r.center().y - t.size().y / 2.0),
+                            t,
+                            p.faint,
+                        );
+                    }
+                    let online: Vec<&&View> = group.iter().filter(|v| v.online).collect();
+                    let mut rows: Vec<(&str, &str, Action, Option<Color32>)> = vec![];
+                    if !many && v.online {
+                        rows.push((icons::EYE, tr("Ko'rish"), Action::View(id, false), None));
+                        rows.push((
+                            icons::MOUSE_POINTER_2,
+                            tr("Boshqarish"),
+                            Action::View(id, true),
+                            None,
+                        ));
+                    }
+                    // Only what makes sense: "lock" when something is unlocked, "unlock" when
+                    // something is locked (both only for a mixed selection).
+                    if online.iter().any(|v| !v.status.locked) {
+                        rows.push((icons::LOCK, tr("Qulflash"), Action::Lock(id), None));
+                    }
+                    if online.iter().any(|v| v.status.locked) {
+                        rows.push((
+                            icons::LOCK_OPEN,
+                            tr("unlock|Ochish"),
+                            Action::Unlock(id),
+                            None,
+                        ));
+                    }
+                    if !many && v.online {
+                        rows.push((
+                            icons::MESSAGE_SQUARE_TEXT,
+                            tr("Xabar"),
+                            Action::Message(id),
+                            None,
+                        ));
+                    }
+                    if !many {
+                        rows.push((
                             icons::SETTINGS,
                             tr("Nomini o'zgartirish"),
+                            Action::Rename(id),
                             None,
-                            None,
-                            false,
-                        )
-                        .clicked()
-                        {
-                            actions.push(Action::Rename(id));
+                        ));
+                    }
+                    for (ic, label, a, ink) in rows {
+                        if menu_row(ui, p, ic, label, None, ink, false).clicked() {
+                            actions.push(a);
                             close = true;
                         }
+                    }
+                    if !v.online && !many {
                         menu_sep(ui, p);
                         if menu_row(
                             ui,
                             p,
                             icons::TRASH_2,
-                            tr("Ro'yxatdan o'chirish"),
+                            tr("Olib tashlash"),
                             None,
                             Some(p.danger),
                             false,
@@ -1007,27 +1058,6 @@ impl ConsoleApp {
                             close = true;
                         }
                         return;
-                    }
-                    for (ic, label, a) in [
-                        (icons::EYE, tr("Ko'rish"), Action::View(id, false)),
-                        (
-                            icons::MOUSE_POINTER_2,
-                            tr("Boshqarish"),
-                            Action::View(id, true),
-                        ),
-                        (icons::LOCK, tr("Qulflash"), Action::Lock(id)),
-                        (icons::LOCK_OPEN, tr("unlock|Ochish"), Action::Unlock(id)),
-                        (icons::MESSAGE_SQUARE_TEXT, tr("Xabar"), Action::Message(id)),
-                        (
-                            icons::SETTINGS,
-                            tr("Nomini o'zgartirish"),
-                            Action::Rename(id),
-                        ),
-                    ] {
-                        if menu_row(ui, p, ic, label, None, None, false).clicked() {
-                            actions.push(a);
-                            close = true;
-                        }
                     }
                     menu_sep(ui, p);
                     let arrow = if m.rooms_open {
@@ -1087,6 +1117,21 @@ impl ConsoleApp {
                             close = true;
                         }
                     }
+                    menu_sep(ui, p);
+                    if menu_row(
+                        ui,
+                        p,
+                        icons::TRASH_2,
+                        tr("Olib tashlash"),
+                        None,
+                        Some(p.danger),
+                        false,
+                    )
+                    .clicked()
+                    {
+                        actions.push(Action::Forget(id));
+                        close = true;
+                    }
                 }
                 CtxTarget::Room(name) => {
                     if menu_row(
@@ -1145,7 +1190,15 @@ impl ConsoleApp {
         }
         if let Some((delete, name)) = room_cmd {
             if delete {
-                self.delete_room(&name);
+                self.ask(
+                    tr("Xona o'chirilsinmi?"),
+                    tf!(
+                        "\"{name}\" xonasi o'chiriladi. Kompyuterlar o'chmaydi, faqat xonasiz qoladi.",
+                        name = name.clone()
+                    ),
+                    tr("O'chirish"),
+                    ConfirmAction::DeleteRoom(name.clone()),
+                );
             } else {
                 self.open_dialog(Dialog::Room {
                     name: name.clone(),
@@ -1161,6 +1214,18 @@ impl ConsoleApp {
 }
 
 impl ConsoleApp {
+    /// What a context-menu action applies to: the whole selection when the computer is part
+    /// of it, else only that computer.
+    pub(super) fn group_of<'a>(&self, id: u64, all: &'a [View]) -> Vec<&'a View> {
+        if self.selected.contains(&id) && self.selected.len() > 1 {
+            all.iter()
+                .filter(|v| self.selected.contains(&v.id))
+                .collect()
+        } else {
+            all.iter().filter(|v| v.id == id).collect()
+        }
+    }
+
     pub(super) fn apply(&mut self, a: Action, all: &[View]) {
         match a {
             Action::Click(id, mods) => {
@@ -1208,15 +1273,49 @@ impl ConsoleApp {
                 }
             }
             Action::Forget(id) => {
-                if let Some(v) = all.iter().find(|v| v.id == id && !v.online) {
-                    let key = v.key.clone();
-                    self.selected.remove(&id);
-                    self.forget(&[key]);
+                // The whole selection when the computer is part of it, else just this one.
+                let picked: Vec<&View> = self.group_of(id, all);
+                if !picked.is_empty() {
+                    let keys: Vec<String> = picked.iter().map(|v| v.key.clone()).collect();
+                    let ids: Vec<u64> = picked.iter().filter(|v| v.online).map(|v| v.id).collect();
+                    let text = if picked.len() == 1 {
+                        tf!(
+                            "\"{name}\" bu konsoldan olib tashlanadi. Keyin uni boshqa konsol o'ziga ulab olishi mumkin.",
+                            name = picked[0].label.clone()
+                        )
+                    } else {
+                        tf!(
+                            "{n} ta kompyuter bu konsoldan olib tashlanadi. Keyin ularni boshqa konsol o'ziga ulab olishi mumkin.",
+                            n = picked.len()
+                        )
+                    };
+                    self.ask(
+                        tr("Olib tashlansinmi?"),
+                        text,
+                        tr("Olib tashlash"),
+                        ConfirmAction::Forget { keys, ids },
+                    );
                 }
             }
             Action::View(id, control) => self.open_viewer(id, control),
-            Action::Lock(id) => self.lock(&[id]),
-            Action::Unlock(id) => self.send(&[id], Command::Unlock, tr("Qulfdan chiqarish")),
+            Action::Lock(id) => {
+                let ids: Vec<u64> = self
+                    .group_of(id, all)
+                    .iter()
+                    .filter(|v| v.online)
+                    .map(|v| v.id)
+                    .collect();
+                self.lock(&ids);
+            }
+            Action::Unlock(id) => {
+                let ids: Vec<u64> = self
+                    .group_of(id, all)
+                    .iter()
+                    .filter(|v| v.online)
+                    .map(|v| v.id)
+                    .collect();
+                self.send(&ids, Command::Unlock, tr("Qulfdan chiqarish"));
+            }
             Action::Message(id) => {
                 self.selected = [id].into();
                 self.open_dialog(Dialog::Message {

@@ -55,6 +55,8 @@ struct State {
     lock: Option<(String, String)>,
     /// Offline unlock code of the current lock: (salt, hash, digits).
     unlock: Option<(Vec<u8>, Vec<u8>, u8)>,
+    /// Icon for the lock screen (empty = default).
+    lock_icon: String,
     show: bool,
     apps: Vec<String>,
     net: NetPolicy,
@@ -122,6 +124,10 @@ pub fn now_secs() -> u64 {
         .map(|d| d.as_secs())
         .unwrap_or(0)
 }
+
+/// Set when the console removed this PC (`PrivCommand::Unpair`): the session ends and that
+/// console is left alone for a while.
+pub(crate) static UNPAIRED: Mutex<bool> = Mutex::new(false);
 
 /// Things the teacher should hear about (a window that cannot open…); sent as alerts by
 /// `service_status_task` once a console is connected.
@@ -254,20 +260,25 @@ pub async fn run(cfg: Config) -> Result<()> {
     });
 
     let mut failures = 0u32;
+    // Consoles that turned this PC away (or that it was just removed from): left alone for a
+    // while, so another console on the network gets its turn.
+    let mut ignored: std::collections::HashMap<String, Instant> = Default::default();
     loop {
         let pin = refresh_pin(&ctx).await;
+        ignored.retain(|_, t| t.elapsed() < Duration::from_secs(90));
+        let skip: Vec<String> = ignored.keys().cloned().collect();
         // Where to connect: a fixed address from the config, else the console that worked last
         // time (tried first), else whatever announces itself on the network.
         let mut targets: Vec<String> = vec![];
         match &cfg.server {
             Some(s) => targets.push(s.clone()),
             None => {
-                if let Some(last) = crate::config::last_console() {
+                if let Some(last) = crate::config::last_console().filter(|l| !skip.contains(l)) {
                     targets.push(last);
                 }
                 if let Ok(found) = tokio::time::timeout(
                     Duration::from_secs(if targets.is_empty() { 3600 } else { 6 }),
-                    discover(pin),
+                    discover(pin, skip.clone()),
                 )
                 .await
                 {
@@ -288,7 +299,12 @@ pub async fn run(cfg: Config) -> Result<()> {
                 Ok(Err(e)) => warn!("session ended: {e:#}"),
                 Err(e) => warn!("session crashed: {e}"),
             }
-            connected |= started.elapsed() > Duration::from_secs(10);
+            let real = started.elapsed() > Duration::from_secs(10);
+            connected |= real;
+            // Turned away at the door, or unpaired during the session: give others a chance.
+            if !real || std::mem::take(&mut *UNPAIRED.lock().unwrap()) {
+                ignored.insert(addr.clone(), Instant::now());
+            }
             *ctx.uplink.lock().unwrap() = None;
             {
                 let mut s = state.lock().unwrap();
@@ -321,7 +337,7 @@ async fn refresh_pin(ctx: &Ctx) -> Option<vimora_core::auth::ConsoleKey> {
 }
 
 /// Waits for a console beacon; once paired, only the paired console's beacon counts.
-async fn discover(pin: Option<vimora_core::auth::ConsoleKey>) -> String {
+async fn discover(pin: Option<vimora_core::auth::ConsoleKey>, skip: Vec<String>) -> String {
     loop {
         let sock = match UdpSocket::bind(("0.0.0.0", DISCOVERY_PORT)).await {
             Ok(s) => s,
@@ -340,6 +356,9 @@ async fn discover(pin: Option<vimora_core::auth::ConsoleKey>) -> String {
                 continue;
             };
             if b.version < MIN_PROTOCOL_VERSION || pin.is_some_and(|k| k != b.console_key) {
+                continue;
+            }
+            if skip.contains(&format!("{}:{}", src.ip(), b.tcp_port)) {
                 continue;
             }
             info!(
@@ -388,6 +407,8 @@ struct SavedLock {
     title: String,
     message: String,
     code: Option<(Vec<u8>, Vec<u8>, u8)>,
+    #[serde(default)]
+    icon: String,
     /// Unix seconds when it was saved.
     at: u64,
 }
@@ -407,6 +428,7 @@ fn save_lock(state: &Shared) {
                 title: title.clone(),
                 message: message.clone(),
                 code: s.unlock.clone(),
+                icon: s.lock_icon.clone(),
                 at: now_secs(),
             };
             if let Some(d) = path.parent() {
@@ -435,5 +457,6 @@ fn restore_lock(state: &Shared) {
     info!("restoring the lock screen after a restart");
     s.lock = Some((rec.title, rec.message));
     s.unlock = rec.code;
+    s.lock_icon = rec.icon;
     s.disconnected_at = Some(Instant::now());
 }

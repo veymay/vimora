@@ -129,18 +129,51 @@ pub(super) enum Dialog {
         password: String,
     },
     Updates {
+        tab: UpdateTab,
         policy: UpdatePolicy,
-        os: bool,
-        apps: bool,
         restart: bool,
         request: Option<UpdateRequest>,
     },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum UpdateTab {
+    Vimora,
+    System,
+    Apps,
+}
+
+/// Something only done after the teacher said "yes" in the confirmation window.
+#[derive(Clone)]
+pub(crate) enum ConfirmAction {
+    /// Remove computers (keys) from this console; `ids` are the connected ones to unpair.
+    Forget {
+        keys: Vec<String>,
+        ids: Vec<u64>,
+    },
+    DeleteRoom(String),
+    #[allow(dead_code)]
+    RestoreRemoved,
+}
+
+#[derive(Clone)]
+pub(crate) struct Confirm {
+    pub(super) title: String,
+    pub(super) text: String,
+    /// Label of the "yes" button.
+    pub(super) yes: String,
+    pub(super) action: ConfirmAction,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum UpdateRequest {
+    /// The policy switches changed: send them.
+    Policy,
+    /// Update the Vimora agent now.
+    Vimora,
     Check,
-    Install,
+    InstallSystem,
+    InstallApps,
 }
 
 pub(super) struct Viewer {
@@ -169,9 +202,22 @@ pub(super) enum Action {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ShadowTab {
+    /// Shadow Defender (Windows) / overlayroot (Ubuntu).
     Protection,
     Commit,
     Settings,
+    /// Unified Write Filter (Windows 10/11 Enterprise and Education).
+    Uwf,
+}
+
+/// Which write filter a computer uses right now, from the tag the agent puts at the start of
+/// its note: 1 = Shadow Defender, 2 = UWF, 0 = untagged (Ubuntu, older agents).
+pub(super) fn engine_of(v: &View) -> u8 {
+    match v.status.shield_note.as_deref() {
+        Some(n) if n.starts_with("[UWF]") => 2,
+        Some(n) if n.starts_with("[SD]") => 1,
+        _ => 0,
+    }
 }
 
 /// Inline actions inside the Shadow drawer (they don't close it).
@@ -304,7 +350,7 @@ impl Col {
             Col::Thumb => "",
             Col::Name => tr("Kompyuter"),
             Col::Status => tr("Holat"),
-            Col::Shadow => tr("Shadow"),
+            Col::Shadow => tr("Muzlatish"),
             Col::Flags => tr("Belgilar"),
             Col::Room => tr("Xona"),
             Col::User => tr("Foydalanuvchi"),

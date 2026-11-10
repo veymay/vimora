@@ -28,6 +28,10 @@ pub enum OverlayCmd {
     },
     /// Fade out and exit (the agent kills it anyway shortly after).
     Bye,
+    /// The icon in the middle of the lock screen (one glyph of the icon font; empty = lock).
+    Style {
+        icon: String,
+    },
 }
 
 #[derive(Clone)]
@@ -37,6 +41,8 @@ enum Mode {
 }
 
 struct Shared {
+    /// Icon the teacher chose for the lock screen.
+    icon: Option<String>,
     code: Option<(Vec<u8>, Vec<u8>, u8)>,
     mode: Mode,
     frame: Option<egui::ColorImage>,
@@ -47,6 +53,7 @@ struct Shared {
 
 pub fn run() -> anyhow::Result<()> {
     let shared = Arc::new(Mutex::new(Shared {
+        icon: None,
         code: None,
         mode: Mode::Lock {
             title: String::new(),
@@ -151,6 +158,14 @@ fn spawn_stdin_reader(shared: Arc<Mutex<Shared>>, ctx: egui::Context) {
                 OverlayCmd::Lock { title, message } => s.mode = Mode::Lock { title, message },
                 OverlayCmd::Show => s.mode = Mode::Show,
                 OverlayCmd::Bye => s.closing = Some(std::time::Instant::now()),
+                OverlayCmd::Style { icon } => {
+                    // Only a single glyph of the icon font is accepted.
+                    let mut ch = icon.chars();
+                    s.icon = match (ch.next(), ch.next()) {
+                        (Some(c), None) if ('\u{e000}'..='\u{f8ff}').contains(&c) => Some(icon),
+                        _ => None,
+                    };
+                }
                 OverlayCmd::Code { salt, hash, digits } => {
                     s.code = (!hash.is_empty()).then_some((salt, hash, digits.clamp(4, 8)))
                 }
@@ -344,6 +359,7 @@ impl eframe::App for OverlayApp {
             Mode::Lock { title, message } => {
                 let now = Instant::now();
                 let view = LockView {
+                    icon: self.shared.lock().unwrap().icon.clone(),
                     digits: self.shared.lock().unwrap().code.as_ref().map(|c| c.2),
                     filled: self.entered.len(),
                     wrong_age: self
@@ -409,6 +425,8 @@ impl eframe::App for OverlayApp {
 
 /// Everything the lock screen draws besides the texts.
 struct LockView {
+    /// The teacher's icon (None = the lock).
+    icon: Option<String>,
     /// Length of the unlock code (None = no code set, nothing to type).
     digits: Option<u8>,
     filled: usize,
@@ -500,7 +518,7 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
         if v.unlocked {
             icons::LOCK_OPEN
         } else {
-            icons::LOCK
+            v.icon.as_deref().unwrap_or(icons::LOCK)
         },
         // Grows into place as it fades in.
         FontId::proportional(84.0 * (0.86 + 0.14 * fade)),

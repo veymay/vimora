@@ -95,6 +95,8 @@ pub struct ConsoleApp {
     file_job: Option<std::sync::mpsc::Receiver<FileResult>>,
     /// Last time the window was snapped back to its fixed size.
     last_resize: Option<Instant>,
+    /// A question waiting for the teacher's yes / no.
+    pub(super) confirm: Option<Confirm>,
     /// Fullscreen as the teacher asked for it (the window manager's report lags behind).
     pub(super) fullscreen: bool,
     /// A fullscreen switch is half done (see `toggle_fullscreen`).
@@ -165,6 +167,7 @@ impl ConsoleApp {
             pending_assign: vec![],
             file_job: None,
             last_resize: None,
+            confirm: None,
             fullscreen: false,
             fs_step: None,
             textures: HashMap::new(),
@@ -212,11 +215,8 @@ impl ConsoleApp {
             Ok("settings") => app.dev_open = Some(Dialog::Settings(SettingsTab::General)),
             Ok(s) if s.starts_with("settings:") => {
                 let tab = match &s[9..] {
-                    "appearance" => SettingsTab::Appearance,
                     "lock" => SettingsTab::LockScreen,
-                    "students" => SettingsTab::Students,
-                    "updates" => SettingsTab::Updates,
-                    "about" => SettingsTab::About,
+                    "updates" | "about" => SettingsTab::Updates,
                     _ => SettingsTab::General,
                 };
                 app.dev_open = Some(Dialog::Settings(tab));
@@ -229,13 +229,13 @@ impl ConsoleApp {
                 })
             }
             Ok("freeze") => app.dev_open = Some(app.shadow_dialog()),
-            Ok(o @ ("shadow-commit" | "shadow-settings")) => {
+            Ok(o @ ("shadow-commit" | "shadow-settings" | "uwf")) => {
                 let mut d = app.shadow_dialog();
                 if let Dialog::Freeze { tab, .. } = &mut d {
-                    *tab = if o == "shadow-commit" {
-                        ShadowTab::Commit
-                    } else {
-                        ShadowTab::Settings
+                    *tab = match o {
+                        "shadow-commit" => ShadowTab::Commit,
+                        "uwf" => ShadowTab::Uwf,
+                        _ => ShadowTab::Settings,
                     };
                 }
                 app.dev_open = Some(d);
@@ -243,9 +243,8 @@ impl ConsoleApp {
             Ok("updates") => {
                 let policy = app.cfg.read().unwrap().update_policy;
                 app.dev_open = Some(Dialog::Updates {
+                    tab: UpdateTab::Vimora,
                     policy,
-                    os: true,
-                    apps: true,
                     restart: false,
                     request: None,
                 });
@@ -525,15 +524,64 @@ impl ConsoleApp {
     }
 
     /// Removes computers from the list for good (they come back only if they connect again).
-    fn forget(&mut self, keys: &[String]) {
-        let mut c = self.cfg.write().unwrap();
-        for k in keys {
-            c.known.remove(k);
-            c.known_pcs.remove(k);
-            c.aliases.remove(k);
-            c.assignments.remove(k);
+    /// Removes computers from this console. Connected ones are told to forget the console (so
+    /// another console can pair with them) and are not let back in until restored in the
+    /// settings.
+    pub(super) fn forget(&mut self, keys: &[String], ids: &[u64]) {
+        if !ids.is_empty() {
+            self.send_priv(ids, PrivCommand::Unpair, tr("Konsoldan olib tashlash"));
         }
-        config::save(&c);
+        {
+            let mut c = self.cfg.write().unwrap();
+            for k in keys {
+                c.known.remove(k);
+                c.known_pcs.remove(k);
+                c.aliases.remove(k);
+                c.assignments.remove(k);
+            }
+            config::save(&c);
+        }
+        // Turn them away from now on — a moment later, so the "forget me" command above still
+        // reaches the connected ones before their session is closed.
+        let (cfg, keys) = (self.cfg.clone(), keys.to_vec());
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(1500));
+            let mut c = cfg.write().unwrap();
+            for k in &keys {
+                c.known.remove(k);
+                c.known_pcs.remove(k);
+                c.removed.insert(k.clone());
+            }
+            config::save(&c);
+        });
+    }
+
+    /// Asks "are you sure?" before `action` runs.
+    pub(super) fn ask(&mut self, title: &str, text: String, yes: &str, action: ConfirmAction) {
+        self.confirm = Some(Confirm {
+            title: title.to_string(),
+            text,
+            yes: yes.to_string(),
+            action,
+        });
+    }
+
+    /// The teacher said yes.
+    pub(super) fn confirmed(&mut self, action: ConfirmAction) {
+        match action {
+            ConfirmAction::Forget { keys, ids } => {
+                for id in &ids {
+                    self.selected.remove(id);
+                }
+                self.forget(&keys, &ids);
+            }
+            ConfirmAction::DeleteRoom(name) => self.delete_room(&name),
+            ConfirmAction::RestoreRemoved => {
+                let mut c = self.cfg.write().unwrap();
+                c.removed.clear();
+                config::save(&c);
+            }
+        }
     }
 
     /// The window is either maximized / fullscreen or exactly [`crate::MIN_WINDOW`]: a
@@ -659,6 +707,8 @@ impl ConsoleApp {
         // The offline unlock code goes first, so the lock screen already knows it.
         let (salt, hash, digits) = self.unlock_code();
         self.send(ids, Command::UnlockCode { salt, hash, digits }, "");
+        let icon = self.cfg.read().unwrap().lock_icon.clone();
+        self.send(ids, Command::LockStyle { icon }, "");
         self.send(ids, Command::Lock { title, message }, tr("Qulflash"));
     }
 
@@ -813,9 +863,8 @@ impl ConsoleApp {
             Menu::Updates => {
                 let policy = self.cfg.read().unwrap().update_policy;
                 self.open_dialog(Dialog::Updates {
+                    tab: UpdateTab::Apps,
                     policy,
-                    os: true,
-                    apps: true,
                     restart: false,
                     request: None,
                 });
@@ -857,13 +906,8 @@ impl ConsoleApp {
             && self.dialog.is_none()
             && ctx.input_mut(|i| i.consume_key(M::NONE, Key::Delete))
         {
-            let ids: Vec<u64> = all
-                .iter()
-                .filter(|v| !v.online && self.selected.contains(&v.id))
-                .map(|v| v.id)
-                .collect();
-            for id in ids {
-                self.apply(Action::Forget(id), all);
+            if let Some(first) = self.selected.iter().next().copied() {
+                self.apply(Action::Forget(first), all);
             }
         }
         if l {
@@ -976,6 +1020,7 @@ impl eframe::App for ConsoleApp {
         }
         self.context_menu(ctx, &p, &all);
         self.dialogs(ctx, &p, &all);
+        self.confirm_modal(ctx, &p);
         self.toasts(ctx, &p);
         self.autosave();
         self.dev_screenshot(ctx);

@@ -21,6 +21,8 @@
 mod overlayroot;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod sd;
+#[cfg_attr(not(windows), allow(dead_code))]
+mod uwf;
 
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -37,6 +39,91 @@ pub struct Probe {
     pub usage: Option<ShieldUsage>,
     /// Why it is unsupported, or other detail for the teacher.
     pub note: Option<String>,
+}
+
+/// Which Windows write filter the teacher chose (0 = automatic).
+static ENGINE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Windows: Shadow Defender or the Unified Write Filter, whichever is chosen (or, on
+/// "automatic", Shadow Defender when it is installed and UWF otherwise). Every answer carries
+/// a tag — `[SD]` / `[UWF]` — at the start of its note, so the console can show which one a
+/// computer uses.
+#[cfg_attr(not(windows), allow(dead_code))]
+#[derive(Default)]
+struct Windows {
+    sd: sd::ShadowDefender,
+    uwf: uwf::Uwf,
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+impl Windows {
+    fn uses_uwf(&self) -> bool {
+        match ENGINE.load(std::sync::atomic::Ordering::Relaxed) {
+            1 => false,
+            2 => true,
+            _ => !sd::installed(),
+        }
+    }
+
+    fn pick(&self) -> &dyn Backend {
+        if self.uses_uwf() {
+            &self.uwf
+        } else {
+            &self.sd
+        }
+    }
+}
+
+impl Backend for Windows {
+    fn probe(&self) -> Probe {
+        let mut p = self.pick().probe();
+        let tag = if self.uses_uwf() { "[UWF]" } else { "[SD]" };
+        p.note = Some(match p.note {
+            Some(n) => format!("{tag} {n}"),
+            None => tag.to_string(),
+        });
+        p
+    }
+    fn enable(&self, persistent: &[String]) -> Result<String> {
+        self.pick().enable(persistent)
+    }
+    fn disable(&self) -> Result<String> {
+        self.pick().disable()
+    }
+    fn commit_file(&self, path: &Path) -> Result<()> {
+        self.pick().commit_file(path)
+    }
+    fn commit_path(&self, path: &Path) -> Result<()> {
+        self.pick().commit_path(path)
+    }
+    fn changes(&self) -> Option<Vec<ChangeInfo>> {
+        self.pick().changes()
+    }
+    fn set_password(&self, pw: &str) -> Result<()> {
+        self.sd.set_password(pw)
+    }
+    fn commit_registry(&self, key: &str, value: &str) -> Result<()> {
+        self.pick().commit_registry(key, value)
+    }
+    fn set_persistent(&self, new: &[String], old: &[String]) -> Result<String> {
+        self.pick().set_persistent(new, old)
+    }
+    fn mount_persistent(&self, folders: &[String]) {
+        self.pick().mount_persistent(folders)
+    }
+    // Vimora's own state lives in %ProgramData%\Vimora whichever filter is used.
+    fn persist(&self, name: &str, contents: &str) -> Result<()> {
+        self.sd.persist(name, contents)
+    }
+    fn read_persistent(&self, name: &str) -> Option<String> {
+        self.sd.read_persistent(name)
+    }
+}
+
+/// Shared helper: a percentage of free space, clamped, in MB.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn overlay_size_mb(free_mb: u64) -> u32 {
+    (free_mb * 40 / 100).clamp(2048, 32768) as u32
 }
 
 /// A platform write filter. `enable`/`disable` take effect on the next restart.
@@ -102,6 +189,8 @@ pub struct Store {
     pub vimora_manual: bool,
     /// Paths to commit as soon as Shadow is active (an update installed under protection).
     pub pending_commit: Vec<String>,
+    /// Windows write filter: 0 = automatic, 1 = Shadow Defender, 2 = UWF.
+    pub engine: u8,
 }
 
 const STORE: &str = "shield.json";
@@ -125,13 +214,15 @@ impl Default for Shield {
 impl Shield {
     pub fn new() -> Self {
         #[cfg(windows)]
-        let backend: Box<dyn Backend> = Box::new(sd::ShadowDefender);
+        let backend: Box<dyn Backend> = Box::new(Windows::default());
         #[cfg(not(windows))]
         let backend: Box<dyn Backend> = Box::new(overlayroot::Overlayroot);
         let store = backend
             .read_persistent(STORE)
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
+        let store: Store = store;
+        ENGINE.store(store.engine, std::sync::atomic::Ordering::Relaxed);
         Self {
             backend,
             store: Mutex::new(store),
@@ -280,6 +371,18 @@ impl Shield {
         let msg = self.backend.set_persistent(&clean, &old)?;
         self.update(|s| s.persistent = clean);
         Ok(msg)
+    }
+
+    /// Chooses the Windows write filter (see [`Store::engine`]).
+    pub fn set_engine(&self, engine: u8) -> String {
+        let engine = engine.min(2);
+        ENGINE.store(engine, std::sync::atomic::Ordering::Relaxed);
+        self.update(|s| s.engine = engine);
+        match engine {
+            1 => "Muzlatish usuli: Shadow Defender".into(),
+            2 => "Muzlatish usuli: UWF (Windows)".into(),
+            _ => "Muzlatish usuli: avtomatik".into(),
+        }
     }
 
     pub fn set_password(&self, pw: &str) -> Result<()> {

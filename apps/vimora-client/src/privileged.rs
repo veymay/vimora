@@ -273,6 +273,13 @@ impl Engine {
                 self.shield.set_password(&pw)?;
                 String::new()
             }
+            PrivCommand::SetShieldEngine(e) => {
+                let msg = self.shield.set_engine(e);
+                self.refresh_freeze();
+                msg
+            }
+            // Handled by the service itself (it owns the pairing); nothing to do in the engine.
+            PrivCommand::Unpair => "Konsoldan ajratildi".into(),
             PrivCommand::ListChanges => self.refresh_changes()?,
             PrivCommand::CommitPaths(paths) => {
                 let msg = self.shield.commit_paths(&paths)?;

@@ -302,15 +302,6 @@ impl ConsoleApp {
             } else {
                 Default::default()
             },
-            online: all.iter().filter(|v| v.online).count(),
-            students: if settings_open {
-                all.iter()
-                    .filter(|v| v.online)
-                    .map(|v| (v.label.clone(), v.version.clone(), v.status.busy.clone()))
-                    .collect()
-            } else {
-                vec![]
-            },
             latest: match self.updater.phase() {
                 crate::update::Phase::Available(r) => r.version,
                 _ => vimora_update::current().to_string(),
@@ -319,6 +310,7 @@ impl ConsoleApp {
                 .saved_at
                 .is_some_and(|t| t.elapsed() < Duration::from_secs(2)),
         };
+        let latest = scx.latest.clone();
         let mut settings_out = SettingsOut::default();
         let mut settings_before: Option<ServerConfig> = None;
 
@@ -369,7 +361,7 @@ impl ConsoleApp {
             Dialog::Room { rename: None, .. } => (tr("Yangi xona"), 440.0),
             Dialog::Room { .. } => (tr("Xona nomini o'zgartirish"), 440.0),
             Dialog::Activity => (tr("Faollik"), 440.0),
-            Dialog::Freeze { .. } => (tr("Shadow rejim"), 520.0),
+            Dialog::Freeze { .. } => (tr("Muzlatish"), 520.0),
             Dialog::Rename { .. } => (tr("Nomini o'zgartirish"), 460.0),
             Dialog::Updates { .. } => (tr("Yangilanishlar"), 600.0),
         };
@@ -525,6 +517,7 @@ impl ConsoleApp {
                         | Dialog::Message { .. }
                         | Dialog::Settings(_)
                         | Dialog::Freeze { .. }
+                        | Dialog::Updates { .. }
                 );
                 let body_max = if drawer {
                     // Full window height: the drawer hangs on the right edge, top to bottom.
@@ -553,6 +546,7 @@ impl ConsoleApp {
                                 confirm,
                                 clear_help,
                                 &FormCtx {
+                                    latest: &latest,
                                     offline,
                                     offline_with_mac,
                                     hub: &hub,
@@ -589,6 +583,7 @@ impl ConsoleApp {
                             text,
                             send,
                             &FormCtx {
+                                latest: &latest,
                                 offline,
                                 offline_with_mac,
                                 hub: &hub,
@@ -747,35 +742,51 @@ impl ConsoleApp {
         }
         self.shadow_requests(&targets);
         if let Some(Dialog::Updates {
-            os,
-            apps,
+            policy,
             restart,
             request,
             ..
         }) = &mut self.dialog
         {
             if let Some(r) = request.take() {
-                let cmd = match r {
-                    UpdateRequest::Check => PrivCommand::CheckUpdates,
-                    UpdateRequest::Install => PrivCommand::InstallUpdates {
-                        os: *os,
-                        apps: *apps,
-                        restart: *restart,
-                    },
-                };
-                let what = if r == UpdateRequest::Check {
-                    tr("Yangilanishlarni tekshirish")
-                } else {
-                    tr("Yangilanishlarni o'rnatish")
-                };
-                self.send_priv(&targets, cmd, what);
+                let (policy, restart) = (*policy, *restart);
+                match r {
+                    UpdateRequest::Policy => {
+                        self.cfg.write().unwrap().update_policy = policy;
+                        config::save(&self.cfg.read().unwrap());
+                        // The policy is one for the whole class, not only the targets.
+                        let everyone: Vec<u64> =
+                            self.hub.lock().unwrap().students.keys().copied().collect();
+                        self.send_priv(&everyone, PrivCommand::SetUpdatePolicy(policy), "");
+                    }
+                    UpdateRequest::Vimora => self.send_priv(
+                        &targets,
+                        PrivCommand::UpdateVimora,
+                        tr("Vimora yangilanishi"),
+                    ),
+                    UpdateRequest::Check => self.send_priv(
+                        &targets,
+                        PrivCommand::CheckUpdates,
+                        tr("Yangilanishlarni tekshirish"),
+                    ),
+                    UpdateRequest::InstallSystem | UpdateRequest::InstallApps => self.send_priv(
+                        &targets,
+                        PrivCommand::InstallUpdates {
+                            os: r == UpdateRequest::InstallSystem,
+                            apps: r == UpdateRequest::InstallApps,
+                            restart,
+                        },
+                        tr("Yangilanishlarni o'rnatish"),
+                    ),
+                }
             }
         }
         if !live {
             ctx.request_repaint();
             return;
         }
-        if backdrop_clicked || ctx.input(|i| i.key_pressed(Key::Escape)) {
+        if self.confirm.is_none() && (backdrop_clicked || ctx.input(|i| i.key_pressed(Key::Escape)))
+        {
             cancel = true;
         }
         if let Some(id) = clear_help {
@@ -790,6 +801,84 @@ impl ConsoleApp {
             let d = self.dialog.take().unwrap();
             self.closing = Some(d.clone());
             self.run_dialog(d, &targets, clear);
+        }
+    }
+
+    /// "Are you sure?" — a small window in the middle, above everything. Enter = yes,
+    /// Esc / a click outside = no.
+    pub(super) fn confirm_modal(&mut self, ctx: &egui::Context, p: &Palette) {
+        let Some(c) = self.confirm.clone() else {
+            return;
+        };
+        let screen = ctx.screen_rect();
+        let mut answer: Option<bool> = None;
+        egui::Area::new(egui::Id::new("confirm-dim"))
+            .order(egui::Order::Tooltip)
+            .fixed_pos(screen.min)
+            .show(ctx, |ui| {
+                let (r, resp) = ui.allocate_exact_size(screen.size(), Sense::click());
+                ui.painter()
+                    .rect_filled(r, Rounding::ZERO, Color32::from_black_alpha(150));
+                if resp.clicked() {
+                    answer = Some(false);
+                }
+            });
+        let w = 420.0_f32.min(screen.width() - 32.0);
+        egui::Area::new(egui::Id::new("confirm"))
+            .order(egui::Order::Tooltip)
+            .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                Frame::none()
+                    .fill(p.card)
+                    .stroke(Stroke::new(1.0_f32, p.line_strong))
+                    .inner_margin(Margin::same(22.0))
+                    .show(ui, |ui| {
+                        ui.set_width(w - 44.0);
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(icons::TRIANGLE_ALERT)
+                                    .size(20.0)
+                                    .color(p.danger),
+                            );
+                            ui.add_space(4.0);
+                            ui.label(
+                                RichText::new(c.title.to_uppercase())
+                                    .family(ui_kit::mono_bold())
+                                    .size(13.5)
+                                    .color(p.strong),
+                            );
+                        });
+                        ui.add_space(10.0);
+                        ui.label(RichText::new(&c.text).size(13.5).color(p.text));
+                        ui.add_space(18.0);
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if ui_kit::button(ui, Some(icons::CHECK), &c.yes, Kind::Danger)
+                                .clicked()
+                            {
+                                answer = Some(true);
+                            }
+                            ui.add_space(6.0);
+                            if ui_kit::button(ui, Some(icons::X), tr("Bekor qilish"), Kind::Outline)
+                                .clicked()
+                            {
+                                answer = Some(false);
+                            }
+                        });
+                    });
+            });
+        if ctx.input(|i| i.key_pressed(Key::Enter)) {
+            answer = Some(true);
+        }
+        if ctx.input(|i| i.key_pressed(Key::Escape)) {
+            answer = Some(false);
+        }
+        match answer {
+            Some(true) => {
+                self.confirm = None;
+                self.confirmed(c.action);
+            }
+            Some(false) => self.confirm = None,
+            None => {}
         }
     }
 
@@ -922,6 +1011,7 @@ impl ConsoleApp {
     /// Inline actions of the Shadow drawer: they run at once and the drawer stays open.
     fn shadow_requests(&mut self, targets: &[u64]) {
         let Some(Dialog::Freeze {
+            tab,
             restart,
             folders,
             request,
@@ -932,6 +1022,7 @@ impl ConsoleApp {
         else {
             return;
         };
+        let engine: u8 = if *tab == ShadowTab::Uwf { 2 } else { 1 };
         let Some(r) = request.take() else {
             return;
         };
@@ -948,10 +1039,14 @@ impl ConsoleApp {
         match r {
             ShadowRequest::Apply(action) => {
                 let what = match action {
-                    FreezeAction::Freeze => tr("Shadow yoqish"),
-                    FreezeAction::Thaw => tr("Shadow o'chirish"),
+                    FreezeAction::Freeze => tr("Muzlatishni yoqish"),
+                    FreezeAction::Thaw => tr("Muzlatishni o'chirish"),
                     FreezeAction::Maintenance => tr("Yangilab, qayta yoqish"),
                 };
+                // Switching on picks the filter of the tab (Windows; Ubuntu ignores it).
+                if action == FreezeAction::Freeze {
+                    self.send_priv(targets, PrivCommand::SetShieldEngine(engine), "");
+                }
                 self.send_priv(targets, PrivCommand::Freeze { action, restart }, what);
             }
             ShadowRequest::ListChanges => {
@@ -1222,22 +1317,6 @@ impl ConsoleApp {
             config::save(&self.cfg.read().unwrap());
             crate::update::relaunch();
             self.quit_now(ctx);
-        }
-        let everyone: Vec<u64> = self.hub.lock().unwrap().students.keys().copied().collect();
-        if out.push_policy {
-            let policy = self.cfg.read().unwrap().update_policy;
-            self.send_priv(
-                &everyone,
-                PrivCommand::SetUpdatePolicy(policy),
-                tr("Yangilanish siyosati"),
-            );
-        }
-        if out.update_students {
-            self.send_priv(
-                &everyone,
-                PrivCommand::UpdateVimora,
-                tr("Vimora yangilanishi"),
-            );
         }
     }
 }

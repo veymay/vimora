@@ -261,6 +261,8 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
     ctx.style_mut(|s| {
         // Tooltips appear at once, even while the pointer is still moving.
         s.interaction.tooltip_delay = 0.0;
+        // Texts are not selectable: a row or a title behaves like the button it is.
+        s.interaction.selectable_labels = false;
         s.interaction.show_tooltips_only_when_still = false;
         s.spacing.item_spacing = vec2(8.0, 6.0);
         s.spacing.icon_spacing = 8.0;

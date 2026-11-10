@@ -614,7 +614,7 @@ impl ConsoleApp {
             active,
             tint,
         };
-        // Grouped: [lock, unlock, present] · [site, internet, block] · [shadow, update, power]
+        // Grouped: [lock, unlock, present] · [site, block] · [power, updates, freeze]
         // Lock and unlock are two fixed buttons: they never change with what is selected.
         let groups: Vec<Vec<Act>> = vec![
             vec![
@@ -665,28 +665,29 @@ impl ConsoleApp {
                     None,
                 ),
             ],
+            // Daily first (power on/off at the start and end of the day), set-up work last.
             vec![
                 a(
-                    icons::SNOWFLAKE,
-                    tr("Shadow"),
-                    tr("Qayta yuklashda toza holat"),
-                    Menu::Freeze,
+                    icons::POWER,
+                    tr("Quvvat"),
+                    tr("Yoqish, o'chirish, qayta yuklash"),
+                    Menu::Power,
                     false,
                     None,
                 ),
                 a(
                     icons::DOWNLOAD,
-                    tr("Yangilash"),
-                    tr("Windows, dasturlar, Vimora"),
+                    tr("Yangilanish"),
+                    tr("Dasturlar, Windows va Vimora yangilanishlari"),
                     Menu::Updates,
                     false,
                     None,
                 ),
                 a(
-                    icons::POWER,
-                    tr("Quvvat"),
-                    tr("O'chirish, qayta yuklash"),
-                    Menu::Power,
+                    icons::SNOWFLAKE,
+                    tr("Muzlatish"),
+                    tr("Qayta yuklanganda kompyuter toza holatga qaytadi (Shadow Defender, UWF)"),
+                    Menu::Freeze,
                     false,
                     None,
                 ),

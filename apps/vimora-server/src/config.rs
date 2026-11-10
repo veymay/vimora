@@ -54,6 +54,11 @@ pub struct ServerConfig {
     pub known_pcs: BTreeMap<String, KnownPc>,
     /// Sites opened recently (newest first), offered again in the "Sayt" window.
     pub recent_urls: Vec<String>,
+    /// Computers the teacher removed from this console: they are turned away if they come
+    /// back, so another console can take them.
+    pub removed: std::collections::BTreeSet<String>,
+    /// Icon shown on the lock screen (a glyph of the icon font; empty = lock).
+    pub lock_icon: String,
     /// Sites the teacher saved as favourites in the "Sayt" window.
     pub bookmarks: Vec<String>,
     /// Shadow mode: folders kept across restarts (one per line).
@@ -118,6 +123,8 @@ impl Default for ServerConfig {
             known: BTreeMap::new(),
             known_pcs: BTreeMap::new(),
             recent_urls: vec![],
+            removed: Default::default(),
+            lock_icon: String::new(),
             bookmarks: vec![],
             persistent_folders: String::new(),
             shadow_password: String::new(),

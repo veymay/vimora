@@ -107,6 +107,8 @@ pub struct Hub {
     /// Student replies not seen yet (badge on the "Xabar" menu item).
     pub unread: usize,
     pub ctx: Option<egui::Context>,
+    /// Removed computers already told (this run) to forget this console.
+    pub unpaired: std::collections::HashSet<String>,
     next_id: u64,
 }
 
@@ -122,6 +124,7 @@ impl Hub {
             chat_members: Default::default(),
             unread: 0,
             ctx: None,
+            unpaired: Default::default(),
             next_id: 0,
         }
     }
@@ -397,6 +400,44 @@ async fn session(
         );
         bail!("version mismatch");
     }
+    // A computer the teacher removed from this console is not let back in (it stays free for
+    // another console) until it is restored in the settings.
+    let removed = cfg.read().unwrap().removed.contains(&info.key());
+    if removed {
+        // It was removed while offline and may still be paired with us: once per run, let it
+        // in just long enough to receive a signed "forget this console", so that another
+        // console can take it. Afterwards it is turned away.
+        let first = hub.lock().unwrap().unpaired.insert(info.key());
+        if first {
+            let payload = bincode::serialize(&vimora_core::PrivCommand::Unpair)?;
+            let stream = thumb_stream(&cfg.read().unwrap());
+            write_msg(
+                &mut wr,
+                &ServerMsg::Welcome {
+                    sig: identity.sign_welcome(&client_nonce, &server_nonce),
+                    stream,
+                },
+            )
+            .await?;
+            write_msg(
+                &mut wr,
+                &ServerMsg::Privileged {
+                    counter: 1,
+                    sig: identity.sign_priv(&client_nonce, 1, &payload),
+                    payload,
+                },
+            )
+            .await?;
+            // Give the agent a moment to act on it before the connection closes.
+            let _ = tokio::time::timeout(Duration::from_secs(3), read_msg::<_, ClientMsg>(&mut rd))
+                .await;
+            hub.lock().unwrap().log(
+                Level::Info,
+                tf!("{v0} konsoldan ajratildi", v0 = info.label()),
+            );
+        }
+        bail!("removed computer {} turned away", info.label());
+    }
     // Any agent on the network may join; the agent checks *our* signature and refuses to
     // be controlled by a console other than the one it paired with.
     let stream_cfg = thumb_stream(&cfg.read().unwrap());
@@ -506,6 +547,9 @@ async fn session(
                     Err(e) if vimora_core::net::is_undecodable(&e) => continue,
                     Err(e) => return Err(e),
                 };
+            if cfg.read().unwrap().removed.contains(&info.key()) {
+                return Ok(()); // removed while connected
+            }
             match msg {
                 ClientMsg::Frame {
                     width,

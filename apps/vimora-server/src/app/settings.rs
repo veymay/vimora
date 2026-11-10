@@ -9,41 +9,31 @@ use vimora_ui::{tf, tr, Lang};
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum SettingsTab {
     General,
-    Appearance,
     LockScreen,
-    Students,
+    /// "Dastur haqida": version, console updates and where things are.
     Updates,
-    About,
 }
 
 impl SettingsTab {
-    const ALL: [SettingsTab; 5] = [
+    const ALL: [SettingsTab; 3] = [
         SettingsTab::General,
         SettingsTab::LockScreen,
-        SettingsTab::Students,
         SettingsTab::Updates,
-        SettingsTab::About,
     ];
 
     fn label(self) -> &'static str {
         match self {
             SettingsTab::General => tr("Umumiy"),
-            SettingsTab::Appearance => tr("Ko'rinish"),
             SettingsTab::LockScreen => tr("Qulf ekrani"),
-            SettingsTab::Students => tr("O'quvchilar"),
-            SettingsTab::Updates => tr("Yangilanish"),
-            SettingsTab::About => tr("Dastur haqida"),
+            SettingsTab::Updates => tr("Dastur haqida"),
         }
     }
 
     fn icon(self) -> &'static str {
         match self {
             SettingsTab::General => icons::SLIDERS_HORIZONTAL,
-            SettingsTab::Appearance => icons::PALETTE,
             SettingsTab::LockScreen => icons::LOCK,
-            SettingsTab::Students => icons::MONITOR_COG,
-            SettingsTab::Updates => icons::CLOUD_DOWNLOAD,
-            SettingsTab::About => icons::BADGE_INFO,
+            SettingsTab::Updates => icons::BADGE_INFO,
         }
     }
 }
@@ -54,8 +44,6 @@ pub(super) struct SettingsOut {
     pub(super) check_update: bool,
     pub(super) install_update: bool,
     pub(super) restart: bool,
-    pub(super) update_students: bool,
-    pub(super) push_policy: bool,
     pub(super) backup_save: bool,
     pub(super) backup_load: bool,
 }
@@ -69,11 +57,8 @@ const NAV_ITEM_H: f32 = 46.0;
 pub(super) struct SettingsCtx<'a> {
     pub(super) fingerprint: &'a str,
     pub(super) phase: Phase,
-    pub(super) online: usize,
     /// Last automatic save, for the "saved" hint.
     pub(super) saved: bool,
-    /// Online computers: (name, Vimora version, what the service is busy with).
-    pub(super) students: Vec<(String, String, Option<String>)>,
     /// Newest version known (an available release, else this console's own).
     pub(super) latest: String,
 }
@@ -195,11 +180,12 @@ pub(super) fn settings_page(
                                 ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
                                 match tab {
                                     SettingsTab::General => general(ui, p, c, out),
-                                    SettingsTab::Appearance => general(ui, p, c, out),
                                     SettingsTab::LockScreen => lock_screen(ui, p, c),
-                                    SettingsTab::Students => students(ui, p, c, cx, out),
-                                    SettingsTab::Updates => updates(ui, p, c, cx, out),
-                                    SettingsTab::About => about(ui, p, cx),
+                                    SettingsTab::Updates => {
+                                        about(ui, p);
+                                        updates(ui, p, c, cx, out);
+                                        about_rows(ui, p, cx);
+                                    }
                                 }
                             });
                     });
@@ -391,7 +377,7 @@ fn note(ui: &mut egui::Ui, p: &Palette, text: &str) {
 // Sections
 
 fn general(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig, out: &mut SettingsOut) {
-    heading(ui, p, tr("Umumiy"));
+    heading(ui, p, tr("Asosiy"));
     row(ui, p, tr("Til"), None, |ui| {
         let items: Vec<(Lang, &str)> = Lang::ALL.iter().map(|l| (*l, l.native_name())).collect();
         dropdown(ui, p, "language", &mut c.language, &items);
@@ -418,10 +404,12 @@ fn general(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig, out: &mut Setti
             }
         },
     );
+    appearance(ui, p, c);
+    heading(ui, p, tr("Zaxira nusxa"));
     row(
         ui,
         p,
-        tr("Zaxira nusxa"),
+        tr("Sozlamalar fayli"),
         Some(tr(
             "Barcha sozlamalar, xonalar va ro'yxatlar bitta faylga saqlanadi yoki undan tiklanadi.",
         )),
@@ -429,12 +417,12 @@ fn general(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig, out: &mut Setti
             if ui_kit::button(ui, Some(icons::FILE_UP), tr("Tiklash"), Kind::Outline).clicked() {
                 out.backup_load = true;
             }
+            ui.add_space(6.0);
             if ui_kit::button(ui, Some(icons::DOWNLOAD), tr("Saqlash"), Kind::Outline).clicked() {
                 out.backup_save = true;
             }
         },
     );
-    appearance(ui, p, c);
 }
 
 fn appearance(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
@@ -477,7 +465,8 @@ fn appearance(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
             }
         },
     );
-    row(ui, p, tr("Kompyuterlar"), None, |ui| {
+    heading(ui, p, tr("Kompyuterlar"));
+    row(ui, p, tr("Ko'rinishi"), None, |ui| {
         choice(
             ui,
             p,
@@ -512,8 +501,81 @@ fn appearance(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
     );
 }
 
+/// Icons the teacher can put in the middle of the lock screen (glyph, name).
+const LOCK_ICONS: &[(&str, &str)] = &[
+    ("\u{e10f}", "Qulf"),
+    ("\u{e15c}", "Qalqon"),
+    ("\u{e234}", "Bitiruv qalpoqchasi"),
+    ("\u{e063}", "Kitob"),
+    ("\u{e4b3}", "Taqdimot"),
+    ("\u{e235}", "Karnay"),
+    ("\u{e1d7}", "Qo'l"),
+    ("\u{e132}", "Pauza"),
+    ("\u{e09a}", "Tanaffus"),
+    ("\u{e3ca}", "Miya"),
+];
+
 fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
     heading(ui, p, tr("Qulf ekrani"));
+    let current = if c.lock_icon.is_empty() {
+        LOCK_ICONS[0].0
+    } else {
+        c.lock_icon.as_str()
+    }
+    .to_string();
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(tr("Ikonka")).size(13.5).color(p.text));
+        ui_kit::info(ui, tr("Qulflanganda o'quvchi ekranining o'rtasida chiqadigan belgi. Keyingi qulflashda ko'rinadi."));
+    });
+    ui.add_space(6.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+        for (glyph, name) in LOCK_ICONS {
+            let on = current == *glyph;
+            let (r, resp) = ui.allocate_exact_size(vec2(38.0, 38.0), Sense::click());
+            let hov = resp.hovered();
+            ui.painter().rect(
+                r,
+                Rounding::ZERO,
+                if on {
+                    p.card
+                } else if hov {
+                    p.hover
+                } else {
+                    p.sunken
+                },
+                Stroke::new(
+                    1.0_f32,
+                    if on {
+                        p.accent
+                    } else if hov {
+                        p.line_strong
+                    } else {
+                        p.line
+                    },
+                ),
+            );
+            ui.painter().text(
+                r.center(),
+                Align2::CENTER_CENTER,
+                *glyph,
+                FontId::proportional(19.0),
+                if on { p.accent_ink } else { p.muted },
+            );
+            if hov {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            if resp.tip(tr(name)).clicked() {
+                c.lock_icon = if *glyph == LOCK_ICONS[0].0 {
+                    String::new()
+                } else {
+                    glyph.to_string()
+                };
+            }
+        }
+    });
+    ui.add_space(8.0);
     row(
         ui,
         p,
@@ -603,17 +665,13 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
         }
         painter.add(egui::Shape::mesh(mesh));
     }
-    painter.rect_filled(
-        Rect::from_center_size(centre, vec2(48.0, 48.0)),
-        Rounding::ZERO,
-        d.accent,
-    );
+    // The icon on its own (no tile), as on the real lock screen.
     painter.text(
         centre,
         Align2::CENTER_CENTER,
-        icons::LOCK,
-        FontId::proportional(22.0),
-        d.on_accent,
+        current.as_str(),
+        FontId::proportional(40.0),
+        d.accent,
     );
     y += 62.0;
     if !c.lock_title.trim().is_empty() {
@@ -654,57 +712,6 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
     }
 }
 
-fn students(
-    ui: &mut egui::Ui,
-    p: &Palette,
-    c: &mut ServerConfig,
-    cx: &SettingsCtx<'_>,
-    out: &mut SettingsOut,
-) {
-    heading(ui, p, tr("Vimora yangilanishi"));
-    row(
-        ui,
-        p,
-        tr("Avtomatik yangilansin"),
-        Some(tr("O'quvchi kompyuterlari har 6 soatda GitHub'dagi yangi versiyani tekshiradi va o'zi, so'rovsiz o'rnatadi. Shadow yoqilgan kompyuterlar o'tkazib yuboriladi. O'zgarish hozir onlayn bo'lgan kompyuterlarga yuboriladi.")),
-        |ui| {
-            if ui_kit::toggle(ui, &mut c.update_policy.vimora).changed() {
-                out.push_policy = true;
-            }
-        },
-    );
-    row(
-        ui,
-        p,
-        tr("Hozir yangilash"),
-        Some(tr("Onlayn kompyuterlar so'nggi versiyani hozir yuklab oladi va o'rnatadi. Agent o'zi qayta ishga tushadi.")),
-        |ui| {
-            let r = ui.add_enabled_ui(cx.online > 0, |ui| {
-                ui_kit::button(ui, Some(icons::CLOUD_DOWNLOAD), &tf!("{n} ta kompyuter", n = cx.online), Kind::Outline)
-            });
-            if r.inner.clicked() {
-                out.update_students = true;
-            }
-        },
-    );
-    student_versions(ui, p, cx);
-    heading(ui, p, tr("Ulanish"));
-    row(
-        ui,
-        p,
-        tr("Konsol identifikatori"),
-        Some(tr("Vimora o'rnatilgan kompyuterlar tarmoqda o'zi paydo bo'ladi. Har bir kompyuter birinchi ulangan konsolni eslab qoladi va faqat unga bo'ysunadi — boshqa birov o'z konsolini ochib boshqara olmaydi. Konsolni almashtirish uchun o'quvchi kompyuterida: vimora-client unpair")),
-        |ui| {
-            ui.label(RichText::new(cx.fingerprint).family(ui_kit::mono()).size(14.0).color(p.strong));
-        },
-    );
-    note(
-        ui,
-        p,
-        tr("Kompyuterlarni xonalarga kompyuterlar sahifasida o'ng tugma orqali taqsimlaysiz."),
-    );
-}
-
 fn updates(
     ui: &mut egui::Ui,
     p: &Palette,
@@ -712,7 +719,7 @@ fn updates(
     cx: &SettingsCtx<'_>,
     out: &mut SettingsOut,
 ) {
-    heading(ui, p, tr("Konsol versiyasi"));
+    heading(ui, p, tr("Yangilanish"));
     // Status card: what's installed, what's available, one action.
     let w = ui.available_width();
     ui_kit::card(p, false, false).fill(p.bg).show(ui, |ui| {
@@ -895,7 +902,7 @@ fn updates(
     );
 }
 
-fn about(ui: &mut egui::Ui, p: &Palette, cx: &SettingsCtx<'_>) {
+fn about(ui: &mut egui::Ui, p: &Palette) {
     ui.add_space(14.0);
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(vec2(64.0, 64.0), Sense::hover());
@@ -921,9 +928,12 @@ fn about(ui: &mut egui::Ui, p: &Palette, cx: &SettingsCtx<'_>) {
         });
     });
     ui.add_space(12.0);
-    ui.label(RichText::new(tr("Kompyuter xonalarini boshqarish uchun ochiq kodli dastur: ekranlarni kuzatish, qulflash, namoyish, chat, internet nazorati va Shadow rejim.")).size(13.0).color(p.text));
-    ui.add_space(8.0);
-    row(ui, p, tr("Konsol identifikatori"), None, |ui| {
+    ui.label(RichText::new(tr("Kompyuter xonalarini boshqarish uchun ochiq kodli dastur: ekranlarni kuzatish, qulflash, namoyish, chat, internet nazorati va muzlatish (Shadow Defender, UWF).")).size(13.0).color(p.text));
+}
+
+fn about_rows(ui: &mut egui::Ui, p: &Palette, cx: &SettingsCtx<'_>) {
+    heading(ui, p, tr("Ma'lumot"));
+    row(ui, p, tr("Konsol identifikatori"), Some(tr("Vimora o'rnatilgan kompyuterlar tarmoqda o'zi paydo bo'ladi. Har bir kompyuter birinchi ulangan konsolni eslab qoladi va faqat unga bo'ysunadi. Kompyuterni konsoldan olib tashlasangiz, uni boshqa konsol ulab olishi mumkin.")), |ui| {
         ui.label(
             RichText::new(cx.fingerprint)
                 .family(ui_kit::mono())
@@ -968,100 +978,4 @@ pub(super) fn download_line(version: &str, done: u64, total: u64, speed: u64) ->
         }
     }
     s
-}
-
-/// One line per online computer: name, version and its update state (with a bar while it
-/// downloads: the service reports "Vimora 0.3.9 yuklanmoqda 45%").
-fn student_versions(ui: &mut egui::Ui, p: &Palette, cx: &SettingsCtx<'_>) {
-    if cx.students.is_empty() {
-        return;
-    }
-    ui.add_space(8.0);
-    ui.spacing_mut().item_spacing.y = 0.0;
-    let w = ui.available_width();
-    for (name, version, busy) in &cx.students {
-        let (r, _) = ui.allocate_exact_size(vec2(w, 34.0), Sense::hover());
-        ui.painter()
-            .hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0_f32, p.line));
-        let y = r.center().y;
-        let n = ui_kit::truncated(
-            ui,
-            name,
-            FontId::new(13.0, ui_kit::medium()),
-            p.text,
-            w * 0.32,
-        );
-        ui.painter()
-            .galley(pos2(r.left() + 4.0, y - n.size().y / 2.0), n, p.text);
-        let v = if version.is_empty() {
-            "—"
-        } else {
-            version.as_str()
-        };
-        ui.painter().text(
-            pos2(r.left() + w * 0.36, y),
-            Align2::LEFT_CENTER,
-            v,
-            FontId::new(12.0, ui_kit::mono()),
-            p.muted,
-        );
-        let right = Rect::from_min_max(pos2(r.left() + w * 0.5, r.top()), r.max);
-        let pct = busy.as_deref().and_then(|b| {
-            b.strip_suffix('%')
-                .and_then(|s| s.rsplit(' ').next())
-                .and_then(|n| n.parse::<f32>().ok())
-        });
-        match (busy, pct) {
-            (Some(b), Some(pct)) if b.contains("Vimora") => {
-                let bar = Rect::from_min_size(
-                    pos2(right.left(), y - 3.0),
-                    vec2(right.width() - 50.0, 6.0),
-                );
-                ui.painter().rect_filled(bar, Rounding::ZERO, p.sunken);
-                ui.painter().rect_filled(
-                    Rect::from_min_size(bar.min, vec2(bar.width() * pct / 100.0, 6.0)),
-                    Rounding::ZERO,
-                    p.accent,
-                );
-                ui.painter().text(
-                    pos2(right.right() - 4.0, y),
-                    Align2::RIGHT_CENTER,
-                    format!("{pct:.0}%"),
-                    FontId::new(12.0, ui_kit::mono()),
-                    p.accent_ink,
-                );
-                ui.ctx()
-                    .request_repaint_after(std::time::Duration::from_millis(500));
-            }
-            (Some(b), _) => {
-                let t = ui_kit::truncated(
-                    ui,
-                    &with_icon(icons::REFRESH_CW, b),
-                    FontId::proportional(12.0),
-                    p.accent_ink,
-                    right.width(),
-                );
-                ui.painter()
-                    .galley(pos2(right.left(), y - t.size().y / 2.0), t, p.accent_ink);
-            }
-            (None, _) => {
-                let current = !version.is_empty() && !vimora_update::is_newer(&cx.latest, version);
-                let (text, col) = if current {
-                    (with_icon(icons::CIRCLE_CHECK, tr("eng so'nggi")), p.success)
-                } else {
-                    (
-                        with_icon(icons::CIRCLE_ARROW_UP, tr("yangilash kerak")),
-                        p.warning,
-                    )
-                };
-                ui.painter().text(
-                    pos2(right.left(), y),
-                    Align2::LEFT_CENTER,
-                    text,
-                    FontId::proportional(12.0),
-                    col,
-                );
-            }
-        }
-    }
 }

@@ -87,6 +87,9 @@ pub(super) async fn overlay_task(state: Shared, mut rx: mpsc::Receiver<OverlayRe
                 s.lock.as_ref().map(|(t, m)| {
                     let (salt, hash, digits) = s.unlock.clone().unwrap_or_default();
                     vec![
+                        OverlayCmd::Style {
+                            icon: s.lock_icon.clone(),
+                        },
                         OverlayCmd::Code { salt, hash, digits },
                         OverlayCmd::Lock {
                             title: t.clone(),

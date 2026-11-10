@@ -14,7 +14,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use vimora_core::FreezeState;
 
+#[derive(Default)]
 pub struct ShadowDefender;
+
+/// Is Shadow Defender installed on this PC?
+pub fn installed() -> bool {
+    find_tool().is_some()
+}
 
 static FOUND: Mutex<Option<PathBuf>> = Mutex::new(None);
 

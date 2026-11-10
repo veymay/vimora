@@ -182,6 +182,11 @@ pub(super) async fn session(
                     };
                     let _ = tx.send(ClientMsg::CommandResult { ok, message }).await;
                     send_status(&tx);
+                    // Removed from this console: say goodbye (the result above still goes out).
+                    if *UNPAIRED.lock().unwrap() {
+                        tokio::time::sleep(Duration::from_millis(400)).await;
+                        bail!("konsoldan ajratildi");
+                    }
                 }
                 ServerMsg::Hello { .. } | ServerMsg::Welcome { .. } => {}
             }
@@ -218,6 +223,12 @@ pub(super) async fn handle_command(
                 s.lock = None;
                 s.unlock = None;
             }
+            save_lock(state);
+            sync().await;
+            None
+        }
+        Command::LockStyle { icon } => {
+            state.lock().unwrap().lock_icon = icon;
             save_lock(state);
             sync().await;
             None
@@ -312,6 +323,17 @@ pub(super) async fn privileged(
                 .map_err(|err| anyhow::anyhow!("{err:#} (Vimora xizmati o'rnatilmagan: {e:#})"))
         }
     };
+    if cmd == PrivCommand::Unpair {
+        // With or without a service: forget the console on the agent side too.
+        if res.is_err() {
+            verify_locally(ctx, counter, &payload, &sig)?;
+        }
+        let _ = crate::config::forget_pin();
+        crate::config::save_last_console("");
+        *ctx.pin.lock().unwrap() = None;
+        *UNPAIRED.lock().unwrap() = true;
+        return Ok("Kompyuter konsoldan ajratildi".into());
+    }
     if res.is_ok() && matches!(cmd, PrivCommand::ListChanges | PrivCommand::CommitPaths(_)) {
         // The overlay content changed: report it to the console.
         let list = match service::call(IpcReq::Changes).await {

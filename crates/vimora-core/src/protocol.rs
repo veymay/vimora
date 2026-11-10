@@ -235,6 +235,11 @@ pub enum PrivCommand {
     ListChanges,
     /// Make these paths survive restarts (a "commit" in the Shadow overlay).
     CommitPaths(Vec<String>),
+    /// Forget the paired console: the next console found may pair with this PC.
+    Unpair,
+    /// Which write filter "freezing" uses on Windows: 0 = automatic (Shadow Defender if it is
+    /// installed, else UWF), 1 = Shadow Defender, 2 = Unified Write Filter.
+    SetShieldEngine(u8),
 }
 
 /// Valid computer name: 1–15 letters, digits or '-', not starting/ending with '-'.
@@ -380,6 +385,11 @@ pub enum Command {
         hash: Vec<u8>,
         digits: u8,
     },
+    /// How the lock screen looks: the icon in its tile (one glyph of the icon font; empty =
+    /// the default lock). Sent before `Lock`.
+    LockStyle {
+        icon: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -494,6 +504,15 @@ mod wire_tests {
             10
         );
         assert_eq!(tag(&PrivCommand::SetShadowPassword(String::new())), 11);
+        assert_eq!(tag(&PrivCommand::CommitPaths(vec![])), 13);
+        assert_eq!(tag(&PrivCommand::Unpair), 14);
+        assert_eq!(tag(&PrivCommand::SetShieldEngine(0)), 15);
+        assert_eq!(
+            tag(&Command::LockStyle {
+                icon: String::new()
+            }),
+            tag(&Command::ChatEnd) + 2
+        );
         assert_eq!(
             tag(&ClientMsg::Chat {
                 text: String::new()

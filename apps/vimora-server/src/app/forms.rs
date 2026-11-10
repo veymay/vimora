@@ -105,6 +105,8 @@ pub(super) fn activity_body(
 /// Body of every modal / drawer.
 /// Read-only context the forms need besides the dialog itself.
 pub(super) struct FormCtx<'a> {
+    /// Newest Vimora version known.
+    pub(super) latest: &'a str,
     /// Offline computers the power window would wake, and how many have a known address.
     pub(super) offline: usize,
     pub(super) offline_with_mac: usize,
@@ -121,7 +123,7 @@ pub(super) fn dialog_body(
     clear_help: &mut Option<u64>,
     cx: &FormCtx<'_>,
 ) {
-    let (hub, all, targets) = (cx.hub, cx.all, cx.targets);
+    let (hub, all) = (cx.hub, cx.all);
     let wide = |ui: &mut egui::Ui, s: &mut String, hint: &str| {
         ui.add(
             ui_kit::text_field(s)
@@ -164,12 +166,11 @@ pub(super) fn dialog_body(
             ..
         } => rename_form(ui, p, alias, system, system_name, restart, key),
         Dialog::Updates {
+            tab,
             policy,
-            os,
-            apps,
             restart,
             request,
-        } => updates_form(ui, p, policy, os, apps, restart, request, all, targets),
+        } => updates_form(ui, p, tab, policy, restart, request, cx),
         Dialog::Message { .. } => {} // laid out by chat_form
         Dialog::Launch {
             web,
@@ -716,6 +717,7 @@ fn pick_rows(
 }
 
 /// One row per target PC: name on the left, a status chip on the right.
+#[allow(dead_code)]
 pub(super) fn target_rows(
     ui: &mut egui::Ui,
     p: &Palette,
@@ -789,34 +791,45 @@ fn titled(ui: &mut egui::Ui, p: &Palette, title: &str, help: &str) {
 }
 
 pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>, cx: &FormCtx<'_>) {
+    // The protection tabs: Shadow Defender (1) or UWF (2). A computer counts here when it uses
+    // this filter, or is not tied to one (Ubuntu, older agents).
+    let engine: u8 = if *f.tab == ShadowTab::Uwf { 2 } else { 1 };
+    let mine = |v: &View| {
+        let e = engine_of(v);
+        e == 0 || e == engine
+    };
     let views: Vec<&View> = cx.all.iter().filter(|v| f.chosen.contains(&v.id)).collect();
     let usable = views
         .iter()
         .filter(|v| {
             v.status.service
-                && !matches!(
-                    v.status.freeze,
-                    FreezeState::Unsupported | FreezeState::Unknown
-                )
+                && (engine == 2
+                    || !matches!(
+                        v.status.freeze,
+                        FreezeState::Unsupported | FreezeState::Unknown
+                    ))
         })
         .count();
     let want_on = |v: &View| {
-        matches!(
-            v.status.freeze,
-            FreezeState::Frozen | FreezeState::FreezePending | FreezeState::Maintenance
-        )
+        mine(v)
+            && matches!(
+                v.status.freeze,
+                FreezeState::Frozen | FreezeState::FreezePending | FreezeState::Maintenance
+            )
     };
     let mut on = usable > 0
         && views.iter().all(|v| {
             !v.status.service
-                || matches!(
-                    v.status.freeze,
-                    FreezeState::Unsupported | FreezeState::Unknown
-                )
+                || (mine(v)
+                    && matches!(
+                        v.status.freeze,
+                        FreezeState::Unsupported | FreezeState::Unknown
+                    ))
                 || want_on(v)
         });
     let pending = views.iter().any(|v| {
         v.status.service
+            && mine(v)
             && matches!(
                 v.status.freeze,
                 FreezeState::FreezePending | FreezeState::ThawPending | FreezeState::Maintenance
@@ -827,6 +840,7 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
         .iter()
         .filter(|v| {
             v.status.service
+                && mine(v)
                 && matches!(
                     v.status.freeze,
                     FreezeState::Unsupported | FreezeState::Unknown
@@ -841,8 +855,9 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             for (t, ic, label) in [
-                (ShadowTab::Protection, icons::SHIELD, tr("Himoya")),
-                (ShadowTab::Commit, icons::GIT_COMMIT, "Commit"),
+                (ShadowTab::Protection, icons::SNOWFLAKE, "Shadow Defender"),
+                (ShadowTab::Uwf, icons::SHIELD, "UWF"),
+                (ShadowTab::Commit, icons::GIT_COMMIT, tr("Saqlab qolish")),
                 (ShadowTab::Settings, icons::SETTINGS, tr("Sozlama")),
             ] {
                 if ui_kit::tab_icon(ui, Some(ic), label, None, *f.tab == t).clicked() {
@@ -853,7 +868,7 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
     });
     ui.add_space(12.0);
 
-    if *f.tab == ShadowTab::Protection {
+    if matches!(*f.tab, ShadowTab::Protection | ShadowTab::Uwf) {
         // A switch flipped a moment ago: show where it is going until the computers report
         // back (Shadow changes take a few seconds and often only finish at the next restart).
         let wait_id = egui::Id::new("shadow-switch-wait");
@@ -887,13 +902,22 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
         ui.painter().text(
             pos2(card.left() + 30.0, cy),
             Align2::CENTER_CENTER,
-            icons::SNOWFLAKE,
+            if engine == 2 {
+                icons::SHIELD
+            } else {
+                icons::SNOWFLAKE
+            },
             FontId::proportional(26.0),
             if on { p.accent_ink } else { p.faint },
         );
         let text_x = card.left() + 58.0;
         let title = ui.painter().layout_no_wrap(
-            "Shadow".into(),
+            if engine == 2 {
+                "UWF"
+            } else {
+                "Shadow Defender"
+            }
+            .into(),
             FontId::new(15.0, ui_kit::bold()),
             p.strong,
         );
@@ -910,7 +934,11 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
         );
         ui_kit::info(
             &mut help_ui,
-            tr("Yoniqda qayta yuklanganda barcha o'zgarishlar o'chadi, kompyuter toza qaytadi. Konsoldan qilganingiz saqlanadi."),
+            if engine == 2 {
+                tr("Windows 10/11 Education va Enterprise'dagi o'rnatilgan himoya (Unified Write Filter). Yoniqda qayta yuklanganda barcha o'zgarishlar o'chadi. Birinchi yoqishda komponent o'rnatiladi va kompyuter bir marta qayta yuklanadi.")
+            } else {
+                tr("Yoniqda qayta yuklanganda barcha o'zgarishlar o'chadi, kompyuter toza qaytadi. Konsoldan qilganingiz saqlanadi. Windows'da Shadow Defender o'rnatilgan bo'lishi kerak; Ubuntu'da o'zi ishlaydi.")
+            },
         );
         let (txt, col) = if let Some((target, _)) = waiting {
             (
@@ -964,7 +992,11 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
             (no_service, tr("{n} ta kompyuterda Vimora xizmati yo'q")),
             (
                 unsupported,
-                tr("{n} ta kompyuterda Shadow yo'q (Windows: Shadow Defender kerak)"),
+                if engine == 2 {
+                    tr("{n} ta kompyuterda UWF yo'q (Windows Education yoki Enterprise kerak)")
+                } else {
+                    tr("{n} ta kompyuterda Shadow yo'q (Windows: Shadow Defender kerak)")
+                },
             ),
         ] {
             if n > 0 {
@@ -989,6 +1021,15 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
         pick_rows(ui, p, cx.all, f.chosen, |v| {
             if !v.status.service {
                 return (tr("Xizmat yo'q").into(), p.danger);
+            }
+            if !mine(v) {
+                // Protected by the other filter: say which.
+                let other = if engine == 2 {
+                    "Shadow Defender"
+                } else {
+                    "UWF"
+                };
+                return (other.into(), p.faint);
             }
             if v.status.freeze == FreezeState::Unsupported {
                 return (tr("Mavjud emas").into(), p.faint);
@@ -1362,110 +1403,332 @@ fn sgroup(ui: &mut egui::Ui, p: &Palette, add: impl FnOnce(&mut egui::Ui)) {
         });
 }
 
-#[allow(clippy::too_many_arguments)]
+/// "…45%" at the end of a status line → 45.
+fn percent_of(s: &str) -> Option<f32> {
+    s.strip_suffix('%')
+        .and_then(|s| s.rsplit(' ').next())
+        .and_then(|n| n.parse::<f32>().ok())
+}
+
+/// The computers of the Updates drawer as a table: name, a value (version / pending count) and
+/// the state, with a progress bar while something is running.
+fn update_table(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    views: &[&View],
+    head: [&str; 3],
+    cell: impl Fn(&View) -> (String, String, Color32),
+    // Is this computer's running job part of this tab?
+    mine: impl Fn(&str) -> bool,
+) {
+    let w = ui.available_width();
+    let (c1, c2) = (w * 0.34, w * 0.2);
+    Frame::none()
+        .stroke(Stroke::new(1.0_f32, p.line))
+        .show(ui, |ui| {
+            ui.set_width(w);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let (hr, _) = ui.allocate_exact_size(vec2(w, 28.0), Sense::hover());
+            ui.painter().rect_filled(hr, Rounding::ZERO, p.bg);
+            for (x, t) in [(0.0, head[0]), (c1, head[1]), (c1 + c2, head[2])] {
+                let g = ui_kit::caps(ui, t, 9.5, ui_kit::mono(), p.faint);
+                ui.painter().galley(
+                    pos2(hr.left() + 12.0 + x, hr.center().y - g.size().y / 2.0),
+                    g,
+                    p.faint,
+                );
+            }
+            if views.is_empty() {
+                let (r, _) = ui.allocate_exact_size(vec2(w, 40.0), Sense::hover());
+                ui.painter().text(
+                    r.center(),
+                    Align2::CENTER_CENTER,
+                    tr("Onlayn kompyuter yo'q"),
+                    FontId::proportional(12.5),
+                    p.faint,
+                );
+            }
+            for v in views {
+                let (r, _) = ui.allocate_exact_size(vec2(w, 36.0), Sense::hover());
+                ui.painter()
+                    .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
+                let y = r.center().y;
+                let name = ui_kit::truncated(
+                    ui,
+                    &v.label,
+                    FontId::new(13.0, ui_kit::bold()),
+                    p.text,
+                    c1 - 20.0,
+                );
+                ui.painter()
+                    .galley(pos2(r.left() + 12.0, y - name.size().y / 2.0), name, p.text);
+                let (value, state, col) = cell(v);
+                ui.painter().text(
+                    pos2(r.left() + 12.0 + c1, y),
+                    Align2::LEFT_CENTER,
+                    value,
+                    FontId::new(12.0, ui_kit::mono()),
+                    p.muted,
+                );
+                let right = Rect::from_min_max(pos2(r.left() + 12.0 + c1 + c2, r.top()), r.max);
+                match v.status.busy.as_deref().filter(|b| mine(b)) {
+                    Some(b) => {
+                        // Running: a bar (exact when the agent reports a percent).
+                        let bar = Rect::from_min_size(
+                            pos2(right.left(), y - 3.0),
+                            vec2(right.width() - 58.0, 6.0),
+                        );
+                        ui.painter().rect_filled(bar, Rounding::ZERO, p.sunken);
+                        match percent_of(b) {
+                            Some(pct) => {
+                                ui.painter().rect_filled(
+                                    Rect::from_min_size(
+                                        bar.min,
+                                        vec2(bar.width() * pct / 100.0, 6.0),
+                                    ),
+                                    Rounding::ZERO,
+                                    p.accent,
+                                );
+                                ui.painter().text(
+                                    pos2(right.right() - 12.0, y),
+                                    Align2::RIGHT_CENTER,
+                                    format!("{pct:.0}%"),
+                                    FontId::new(12.0, ui_kit::mono()),
+                                    p.accent_ink,
+                                );
+                            }
+                            None => {
+                                // No percent known: a block sliding along the bar.
+                                let t = (ui.input(|i| i.time) as f32 * 0.7).fract();
+                                let bw = bar.width() * 0.3;
+                                let x = bar.left() + (bar.width() - bw) * t;
+                                ui.painter().rect_filled(
+                                    Rect::from_min_size(pos2(x, bar.top()), vec2(bw, 6.0)),
+                                    Rounding::ZERO,
+                                    p.accent,
+                                );
+                            }
+                        }
+                        ui.ctx()
+                            .request_repaint_after(std::time::Duration::from_millis(60));
+                    }
+                    None => {
+                        let g = ui_kit::truncated(
+                            ui,
+                            &state,
+                            FontId::proportional(12.5),
+                            col,
+                            right.width() - 12.0,
+                        );
+                        ui.painter()
+                            .galley(pos2(right.left(), y - g.size().y / 2.0), g, col);
+                    }
+                }
+            }
+        });
+}
+
+/// Every kind of update in one place, one tab each: the Vimora agent, the system, applications.
 pub(super) fn updates_form(
     ui: &mut egui::Ui,
     p: &Palette,
+    tab: &mut UpdateTab,
     policy: &mut UpdatePolicy,
-    os: &mut bool,
-    apps: &mut bool,
     restart: &mut bool,
     request: &mut Option<UpdateRequest>,
-    all: &[View],
-    targets: &[u64],
+    cx: &FormCtx<'_>,
 ) {
-    section(ui, p, tr("Avtomatik"));
-    sgroup(ui, p, |ui| {
-        srow(
-            ui,
-            p,
-            true,
-            tr("Tizim"),
-            Some(tr("Avtomatik: tizim o'zi o'rnatadi. Qo'lda: faqat siz shu yerdan o'rnatasiz. O'chiq: yangilanmaydi.")),
-            |ui| {
-                ui_kit::segmented(p).show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    // Right-to-left row: add last-first so they read in order.
-                    for (m, label) in [
-                        (OsUpdateMode::Disabled, tr("O'chiq")),
-                        (OsUpdateMode::Manual, tr("Qo'lda")),
-                        (OsUpdateMode::Auto, tr("Avto")),
-                    ] {
-                        if ui_kit::tab(ui, label, None, policy.os == m).clicked() {
-                            policy.os = m;
-                        }
-                    }
-                });
-            },
-        );
-        srow(
-            ui,
-            p,
-            false,
-            tr("Dasturlar"),
-            Some(tr("Store, Chrome, Edge, snap dasturlari o'zi yangilanadi.")),
-            |ui| {
-                ui_kit::toggle(ui, &mut policy.apps_auto);
-            },
-        );
-        srow(
-            ui,
-            p,
-            false,
-            "Vimora",
-            Some(tr("O'quvchi agenti yangi versiyani o'zi o'rnatadi.")),
-            |ui| {
-                ui_kit::toggle(ui, &mut policy.vimora);
-            },
-        );
-    });
-
-    section(ui, p, tr("Hozir o'rnatish"));
-    sgroup(ui, p, |ui| {
-        srow(ui, p, true, tr("Tizim"), None, |ui| {
-            ui_kit::toggle(ui, os);
-        });
-        srow(ui, p, false, tr("Dasturlar"), None, |ui| {
-            ui_kit::toggle(ui, apps);
-        });
-        srow(
-            ui,
-            p,
-            false,
-            tr("Qayta yuklash"),
-            Some(tr("Kerak bo'lsa, o'rnatgach kompyuter qayta yuklanadi.")),
-            |ui| {
-                ui_kit::toggle(ui, restart);
-            },
-        );
-    });
-    ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        if ui_kit::button(ui, Some(icons::REFRESH_CW), tr("Tekshirish"), Kind::Outline).clicked() {
-            *request = Some(UpdateRequest::Check);
-        }
-        ui.add_enabled_ui(*os || *apps, |ui| {
-            if ui_kit::button(ui, Some(icons::DOWNLOAD), tr("O'rnatish"), Kind::Primary).clicked() {
-                *request = Some(UpdateRequest::Install);
+    let views: Vec<&View> = cx
+        .all
+        .iter()
+        .filter(|v| v.online && cx.targets.contains(&v.id))
+        .collect();
+    let before = *policy;
+    ui_kit::segmented(p).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            for (t, ic, label) in [
+                (UpdateTab::Apps, icons::LAYOUT_GRID, tr("Dasturlar")),
+                (UpdateTab::System, icons::MONITOR, "Windows"),
+                (UpdateTab::Vimora, icons::CLOUD_DOWNLOAD, "Vimora"),
+            ] {
+                if ui_kit::tab_icon(ui, Some(ic), label, None, *tab == t).clicked() {
+                    *tab = t;
+                }
             }
         });
     });
-
-    section(ui, p, tr("Kompyuterlar"));
-    target_rows(ui, p, all, targets, |v| {
-        let col = if v.status.busy.is_some() {
-            p.warning
-        } else if v.status.os_updates.unwrap_or(0) + v.status.app_updates.unwrap_or(0) > 0 {
-            p.accent_ink
-        } else {
-            p.muted
-        };
-        let mut t = updates_label(&v.status);
-        if v.status.freeze.is_frozen() {
-            t.push_str(" · Shadow");
+    ui.add_space(12.0);
+    match tab {
+        UpdateTab::Vimora => {
+            sgroup(ui, p, |ui| {
+                srow(
+                    ui,
+                    p,
+                    true,
+                    tr("Avtomatik yangilanish"),
+                    Some(tr(
+                        "O'quvchi kompyuterlari yangi Vimora versiyasini o'zi topib o'rnatadi.",
+                    )),
+                    |ui| {
+                        ui_kit::toggle(ui, &mut policy.vimora);
+                    },
+                );
+            });
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.add_enabled_ui(!views.is_empty(), |ui| {
+                    if ui_kit::button(
+                        ui,
+                        Some(icons::CLOUD_DOWNLOAD),
+                        tr("Hozir yangilash"),
+                        Kind::Primary,
+                    )
+                    .clicked()
+                    {
+                        *request = Some(UpdateRequest::Vimora);
+                    }
+                });
+                ui.label(
+                    RichText::new(tf!("Eng so'nggi: {v}", v = cx.latest))
+                        .size(12.5)
+                        .color(p.muted),
+                );
+            });
+            ui.add_space(10.0);
+            update_table(
+                ui,
+                p,
+                &views,
+                [tr("Kompyuter"), tr("Versiya"), tr("Holat")],
+                |v| {
+                    let ver = if v.version.is_empty() {
+                        "—".to_string()
+                    } else {
+                        v.version.clone()
+                    };
+                    let current =
+                        !v.version.is_empty() && !vimora_update::is_newer(cx.latest, &v.version);
+                    if current {
+                        (ver, tr("eng so'nggi").to_string(), p.success)
+                    } else {
+                        (ver, tr("yangilash kerak").to_string(), p.warning)
+                    }
+                },
+                |b| b.contains("Vimora"),
+            );
         }
-        (t, col)
-    });
+        UpdateTab::System => {
+            sgroup(ui, p, |ui| {
+                srow(
+                    ui,
+                    p,
+                    true,
+                    tr("Rejim"),
+                    Some(tr("Avto: tizim o'zi o'rnatadi. Qo'lda: faqat siz shu yerdan. O'chiq: yangilanmaydi.")),
+                    |ui| {
+                        ui_kit::segmented(p).show(ui, |ui| {
+                            ui.spacing_mut().item_spacing.x = 0.0;
+                            // Right-to-left row: add last-first so they read in order.
+                            for (m, label) in [
+                                (OsUpdateMode::Disabled, tr("O'chiq")),
+                                (OsUpdateMode::Manual, tr("Qo'lda")),
+                                (OsUpdateMode::Auto, tr("Avto")),
+                            ] {
+                                if ui_kit::tab(ui, label, None, policy.os == m).clicked() {
+                                    policy.os = m;
+                                }
+                            }
+                        });
+                    },
+                );
+                srow(
+                    ui,
+                    p,
+                    false,
+                    tr("O'rnatgach qayta yuklash"),
+                    Some(tr("Kerak bo'lsa, kompyuter o'zi qayta yuklanadi.")),
+                    |ui| {
+                        ui_kit::toggle(ui, restart);
+                    },
+                );
+            });
+            ui.add_space(8.0);
+            ui.add_enabled_ui(!views.is_empty(), |ui| {
+                ui.horizontal(|ui| {
+                    if ui_kit::button(ui, Some(icons::REFRESH_CW), tr("Tekshirish"), Kind::Outline)
+                        .clicked()
+                    {
+                        *request = Some(UpdateRequest::Check);
+                    }
+                    if ui_kit::button(ui, Some(icons::DOWNLOAD), tr("O'rnatish"), Kind::Primary)
+                        .clicked()
+                    {
+                        *request = Some(UpdateRequest::InstallSystem);
+                    }
+                });
+            });
+            ui.add_space(10.0);
+            update_table(
+                ui,
+                p,
+                &views,
+                [tr("Kompyuter"), tr("Kutmoqda"), tr("Holat")],
+                |v| match v.status.os_updates {
+                    None => ("—".into(), tr("tekshirilmagan").to_string(), p.faint),
+                    Some(0) => ("0".into(), tr("yangi").to_string(), p.success),
+                    Some(n) => (n.to_string(), tr("yangilash kerak").to_string(), p.warning),
+                },
+                |b| !b.contains("Vimora"),
+            );
+        }
+        UpdateTab::Apps => {
+            sgroup(ui, p, |ui| {
+                srow(
+                    ui,
+                    p,
+                    true,
+                    tr("Avtomatik yangilanish"),
+                    Some(tr("Store, Chrome, Edge, snap dasturlari o'zi yangilanadi.")),
+                    |ui| {
+                        ui_kit::toggle(ui, &mut policy.apps_auto);
+                    },
+                );
+            });
+            ui.add_space(8.0);
+            ui.add_enabled_ui(!views.is_empty(), |ui| {
+                ui.horizontal(|ui| {
+                    if ui_kit::button(ui, Some(icons::REFRESH_CW), tr("Tekshirish"), Kind::Outline)
+                        .clicked()
+                    {
+                        *request = Some(UpdateRequest::Check);
+                    }
+                    if ui_kit::button(ui, Some(icons::DOWNLOAD), tr("O'rnatish"), Kind::Primary)
+                        .clicked()
+                    {
+                        *request = Some(UpdateRequest::InstallApps);
+                    }
+                });
+            });
+            ui.add_space(10.0);
+            update_table(
+                ui,
+                p,
+                &views,
+                [tr("Kompyuter"), tr("Kutmoqda"), tr("Holat")],
+                |v| match v.status.app_updates {
+                    None => ("—".into(), tr("tekshirilmagan").to_string(), p.faint),
+                    Some(0) => ("0".into(), tr("yangi").to_string(), p.success),
+                    Some(n) => (n.to_string(), tr("yangilash kerak").to_string(), p.warning),
+                },
+                |b| !b.contains("Vimora"),
+            );
+        }
+    }
+    // Switches apply at once: no "Save" button in this drawer.
+    if *policy != before {
+        *request = Some(UpdateRequest::Policy);
+    }
 }
 
 /// Block-list text ⇄ items. A leading `#` keeps an item in the list but switched off.
