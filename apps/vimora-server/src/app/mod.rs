@@ -843,6 +843,13 @@ impl ConsoleApp {
             app_cats: crate::blockcat::merged(crate::blockcat::APPS, &c.app_categories),
             open_cat: None,
             devices: c.device_policy,
+            extra: NetExtra {
+                web_mode: c.web_mode,
+                allow_sites: c.allow_sites.clone(),
+                app_mode: c.app_mode,
+                allow_apps: c.allow_apps.clone(),
+                ports: c.blocked_ports.clone(),
+            },
             safe: c.safe_search,
             entry: String::new(),
             import: false,

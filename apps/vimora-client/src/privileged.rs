@@ -273,6 +273,16 @@ impl Engine {
                 self.shield.set_password(&pw)?;
                 String::new()
             }
+            PrivCommand::SetAccessPolicy(a) => {
+                let sites = {
+                    let mut net = self.net.lock().unwrap();
+                    let m = net.set_allow(&a.allow_sites)?;
+                    self.commit(&net.touched());
+                    m
+                };
+                let fw = crate::firewall::apply(a.internet_off, &a.ports)?;
+                format!("{sites}; {fw}")
+            }
             PrivCommand::SetDevicePolicy(p) => {
                 let msg = crate::devices::apply(&p)?;
                 self.commit(&crate::devices::touched());

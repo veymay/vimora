@@ -6,6 +6,16 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Brauzerda faqat shu saytlar ochiladi, qolganlari yopiq. Masalan, dars yoki test sayti.", "Browsers open only these sites; everything else is closed. For example a lesson or test site.", "В браузере открываются только эти сайты, остальные закрыты. Например, сайт урока или теста."),
+    ("dastur: winword.exe", "program: winword.exe", "программа: winword.exe"),
+    ("Faqat ro'yxatdagilar", "Only the listed", "Только из списка"),
+    ("Faqat shu dasturlar ishlaydi, boshqalari ochilishi bilan yopiladi (Windows). Windows'ning o'z qismlari (Explorer, Sozlamalar) ishlayveradi.", "Only these programs run; any other closes as soon as it starts (Windows). Windows' own parts (Explorer, Settings) keep working.", "Работают только эти программы, остальные закрываются при запуске (Windows). Части самой Windows (Проводник, Параметры) работают."),
+    ("Internet butunlay o'chiq. Sinf tarmog'i (konsol bilan aloqa) ishlayveradi.", "No internet at all. The classroom network (the link to the console) keeps working.", "Интернет полностью выключен. Сеть класса (связь с консолью) работает."),
+    ("Internet o'chiq", "Internet off", "Интернет выключен"),
+    ("Ro'yxatdagilar yopiq", "Listed are blocked", "Из списка запрещены"),
+    ("sayt: edu.uz", "site: edu.uz", "сайт: edu.uz"),
+    ("Shu tarmoq portlari orqali chiqib bo'lmaydi. Vergul bilan: 25, 6881. Bo'sh — cheklov yo'q.", "No outgoing traffic through these ports. Separate with commas: 25, 6881. Empty means no limit.", "Исходящий трафик через эти порты закрыт. Через запятую: 25, 6881. Пусто — без ограничений."),
+    ("Yopiq portlar", "Blocked ports", "Закрытые порты"),
     ("Faqat o'qish", "Read only", "Только чтение"),
     ("\"Faqat o'qish\" — fayllarni ochish mumkin, yozish va nusxa ko'chirish mumkin emas. Yangi sozlama fleshka qayta ulanganda kuchga kiradi.", "\"Read only\": files can be opened but not written or copied onto it. A new setting applies when the drive is plugged in again.", "«Только чтение»: файлы можно открывать, но нельзя записывать. Новая настройка действует после повторного подключения флешки."),
     ("Kamera", "Camera", "Камера"),

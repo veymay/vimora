@@ -79,6 +79,14 @@ pub struct ServerConfig {
     pub safe_search: bool,
     /// What students may use: USB, CD/DVD, printer, camera, microphone, Bluetooth, sound.
     pub device_policy: vimora_core::DevicePolicy,
+    /// Sites: 0 = listed blocked, 1 = only listed allowed, 2 = internet off.
+    pub web_mode: u8,
+    pub allow_sites: String,
+    /// Programs: 0 = listed blocked, 1 = only listed allowed.
+    pub app_mode: u8,
+    pub allow_apps: String,
+    /// Blocked outgoing ports ("25, 6881").
+    pub blocked_ports: String,
     pub update_policy: vimora_core::UpdatePolicy,
 }
 
@@ -140,6 +148,11 @@ impl Default for ServerConfig {
             app_categories: vec![],
             safe_search: true,
             device_policy: Default::default(),
+            web_mode: 0,
+            allow_sites: String::new(),
+            app_mode: 0,
+            allow_apps: String::new(),
+            blocked_ports: String::new(),
             update_policy: vimora_core::UpdatePolicy {
                 os: vimora_core::OsUpdateMode::Manual,
                 apps_auto: false,

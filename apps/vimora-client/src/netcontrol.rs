@@ -72,6 +72,8 @@ pub struct NetControl {
     safe_ips: HashMap<&'static str, String>,
     /// The block we last wrote into the hosts file (re-applied if someone removes it).
     block: String,
+    /// "Faqat ruxsat etilgan saytlar": browsers open only these (empty = off).
+    allow: Vec<String>,
 }
 
 pub fn clean_domain(d: &str) -> Option<String> {
@@ -141,7 +143,7 @@ impl NetControl {
 
         self.block = self.render_block();
         let hosts = write_hosts(&self.block);
-        let browsers = set_browser_policies(&self.policy);
+        let browsers = set_browser_policies(&self.policy, &self.allow);
         flush_dns();
 
         let p = &self.policy;
@@ -173,6 +175,20 @@ impl NetControl {
         }
     }
 
+    /// Browsers open only these sites (empty = no such limit). Re-writes the policies.
+    pub fn set_allow(&mut self, sites: &[String]) -> Result<String> {
+        let mut allow: Vec<String> = sites.iter().filter_map(|d| clean_domain(d)).collect();
+        allow.sort();
+        allow.dedup();
+        self.allow = allow;
+        set_browser_policies(&self.policy, &self.allow)?;
+        Ok(if self.allow.is_empty() {
+            "Saytlar: oq ro'yxat o'chirildi".into()
+        } else {
+            format!("Saytlar: faqat {} ta saytga ruxsat", self.allow.len())
+        })
+    }
+
     /// Files / registry values the current policy wrote (for Shadow-mode commits).
     pub fn touched(&self) -> crate::sh::Touched {
         let mut t = crate::sh::Touched {
@@ -197,6 +213,14 @@ impl NetControl {
             for i in 1..=self.policy.domains.len() {
                 t.registry
                     .push((format!(r"{key}\URLBlocklist"), i.to_string()));
+            }
+            if !self.allow.is_empty() {
+                t.registry
+                    .push((format!(r"{key}\URLBlocklist"), "1000".to_string()));
+            }
+            for i in 1..=self.allow.len() {
+                t.registry
+                    .push((format!(r"{key}\URLAllowlist"), i.to_string()));
             }
         }
         t
@@ -327,16 +351,23 @@ fn flush_dns() {
 
 /// Writes Chromium-family enterprise policies. Returns how many browsers were configured.
 #[cfg(not(windows))]
-fn set_browser_policies(p: &NetPolicy) -> Result<usize> {
+fn set_browser_policies(p: &NetPolicy, allow: &[String]) -> Result<usize> {
     let mut n = 0;
     for d in DIRS {
         let file = PathBuf::from(d).join("vimora.json");
-        if p.is_empty() {
+        if p.is_empty() && allow.is_empty() {
             let _ = std::fs::remove_file(&file);
             continue;
         }
+        let _ = std::fs::create_dir_all(d);
+        // Allow-list mode: everything blocked except the listed sites.
+        let mut block = p.domains.clone();
+        if !allow.is_empty() {
+            block.push("*".into());
+        }
         let json = serde_json::json!({
-            "URLBlocklist": p.domains,
+            "URLBlocklist": block,
+            "URLAllowlist": allow,
             "ForceGoogleSafeSearch": p.safe_search,
             "ForceYouTubeRestrict": if p.safe_search { 1 } else { 0 },
             "DnsOverHttpsMode": "off",
@@ -349,7 +380,7 @@ fn set_browser_policies(p: &NetPolicy) -> Result<usize> {
 }
 
 #[cfg(windows)]
-fn set_browser_policies(p: &NetPolicy) -> Result<usize> {
+fn set_browser_policies(p: &NetPolicy, allow: &[String]) -> Result<usize> {
     let reg = |args: &[&str]| {
         quiet(Command::new("reg").args(args))
             .output()
@@ -359,7 +390,26 @@ fn set_browser_policies(p: &NetPolicy) -> Result<usize> {
     let mut n = 0;
     for key in KEYS {
         let list = format!(r"{key}\URLBlocklist");
+        let allow_key = format!(r"{key}\URLAllowlist");
         reg(&["delete", &list, "/f"]);
+        reg(&["delete", &allow_key, "/f"]);
+        // Allow-list mode: everything blocked except the listed sites.
+        for (i, d) in allow.iter().enumerate() {
+            reg(&[
+                "add",
+                &allow_key,
+                "/v",
+                &(i + 1).to_string(),
+                "/t",
+                "REG_SZ",
+                "/d",
+                d,
+                "/f",
+            ]);
+        }
+        if !allow.is_empty() {
+            reg(&["add", &list, "/v", "1000", "/t", "REG_SZ", "/d", "*", "/f"]);
+        }
         if p.is_empty() {
             for v in [
                 "ForceGoogleSafeSearch",

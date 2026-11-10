@@ -243,6 +243,19 @@ pub enum PrivCommand {
     /// What the student may use: USB drives, CD/DVD, printer, camera, microphone, Bluetooth,
     /// sound. Kept until changed (also with no console connected).
     SetDevicePolicy(DevicePolicy),
+    /// Stricter internet rules: internet off (the local network keeps working), only listed
+    /// sites allowed, blocked network ports.
+    SetAccessPolicy(AccessPolicy),
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AccessPolicy {
+    /// No internet at all; the classroom network (console) keeps working.
+    pub internet_off: bool,
+    /// Only these sites open in browsers (empty = no such limit).
+    pub allow_sites: Vec<String>,
+    /// Outgoing TCP/UDP ports that are blocked.
+    pub ports: Vec<u16>,
 }
 
 /// USB storage: what a plugged-in flash drive may do.
@@ -421,6 +434,8 @@ pub enum Command {
     GetSystemInfo,
     /// End a process (Task Manager's "End task").
     KillProcess(u32),
+    /// Only these programs may run (process names); empty = no such limit. Windows.
+    SetAppAllowlist(Vec<String>),
 }
 
 /// Technical state of a student PC, Task Manager style.
@@ -588,6 +603,11 @@ mod wire_tests {
         assert_eq!(tag(&PrivCommand::Unpair), 14);
         assert_eq!(tag(&PrivCommand::SetShieldEngine(0)), 15);
         assert_eq!(tag(&PrivCommand::SetDevicePolicy(Default::default())), 16);
+        assert_eq!(tag(&PrivCommand::SetAccessPolicy(Default::default())), 17);
+        assert_eq!(
+            tag(&Command::SetAppAllowlist(vec![])),
+            tag(&Command::ChatEnd) + 5
+        );
         assert_eq!(
             tag(&Command::LockStyle {
                 icon: String::new()

@@ -16,6 +16,7 @@ mod chat;
 mod config;
 mod desktop;
 mod devices;
+mod firewall;
 mod kiosk;
 mod netcontrol;
 mod overlay;

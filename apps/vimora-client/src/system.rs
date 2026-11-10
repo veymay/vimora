@@ -216,6 +216,69 @@ impl AppBlocker {
         }
         killed
     }
+
+    /// "Faqat ruxsat etilgan dasturlar" (Windows): ends this user's programs that are not on
+    /// the list. Windows' own components (anything under %WINDIR%), Vimora and a few shell
+    /// helpers are never touched. Returns killed names.
+    pub fn enforce_allow(&mut self, list: &[String]) -> Vec<String> {
+        if list.is_empty() || !cfg!(windows) {
+            return vec![];
+        }
+        const ALWAYS: &[&str] = &[
+            "explorer",
+            "vimora-client",
+            "vimora-server",
+            "searchhost",
+            "startmenuexperiencehost",
+            "shellexperiencehost",
+            "textinputhost",
+            "ctfmon",
+            "runtimebroker",
+            "applicationframehost",
+            "sihost",
+            "taskhostw",
+            "dllhost",
+            "conhost",
+            "securityhealthsystray",
+            "msedgewebview2",
+            "widgets",
+            "lockapp",
+        ];
+        let allowed: Vec<String> = list.iter().map(|s| norm_proc(s)).collect();
+        let windir = std::env::var("WINDIR")
+            .unwrap_or_else(|_| r"C:\Windows".into())
+            .to_lowercase();
+        self.sys.refresh_processes_specifics(
+            sysinfo::ProcessesToUpdate::All,
+            true,
+            sysinfo::ProcessRefreshKind::new()
+                .with_user(sysinfo::UpdateKind::OnlyIfNotSet)
+                .with_exe(sysinfo::UpdateKind::OnlyIfNotSet),
+        );
+        let me = std::process::id();
+        let my_user = self
+            .sys
+            .process(sysinfo::Pid::from_u32(me))
+            .and_then(|p| p.user_id().cloned());
+        let mut killed = vec![];
+        for (pid, p) in self.sys.processes() {
+            if pid.as_u32() == me || my_user.is_none() || p.user_id() != my_user.as_ref() {
+                continue;
+            }
+            let Some(exe) = p.exe() else { continue };
+            if exe.to_string_lossy().to_lowercase().starts_with(&windir) {
+                continue;
+            }
+            let name = norm_proc(&p.name().to_string_lossy());
+            if ALWAYS.contains(&name.as_str()) || allowed.contains(&name) {
+                continue;
+            }
+            if p.kill() {
+                killed.push(name);
+            }
+        }
+        killed
+    }
 }
 
 /// Shape of the mouse pointer right now ([`vimora_core::cursor_kind`]); `None` where the

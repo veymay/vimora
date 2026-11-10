@@ -59,6 +59,8 @@ struct State {
     lock_icon: String,
     show: bool,
     apps: Vec<String>,
+    /// Only these programs may run (Windows; empty = off).
+    allow_apps: Vec<String>,
     net: NetPolicy,
     help: bool,
     connected: bool,
@@ -218,6 +220,7 @@ pub async fn run(cfg: Config) -> Result<()> {
     // again right away).
     crate::desktop::restore();
     restore_lock(&state);
+    restore_apps(&state);
     tray::start(state.clone());
     probe_ui().await;
     let (ov_tx, ov_rx) = mpsc::channel(16);
@@ -467,4 +470,43 @@ fn restore_lock(state: &Shared) {
     s.unlock = rec.code;
     s.lock_icon = rec.icon;
     s.disconnected_at = Some(Instant::now());
+}
+
+/// Program block / allow lists, kept across agent restarts (they apply with no console too).
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct SavedApps {
+    block: Vec<String>,
+    allow: Vec<String>,
+}
+
+fn apps_file() -> Option<std::path::PathBuf> {
+    dirs::config_dir().map(|d| d.join("vimora").join("app-rules.json"))
+}
+
+fn save_apps(state: &Shared) {
+    let Some(path) = apps_file() else { return };
+    let rec = {
+        let s = state.lock().unwrap();
+        SavedApps {
+            block: s.apps.clone(),
+            allow: s.allow_apps.clone(),
+        }
+    };
+    if let Some(d) = path.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    if let Ok(j) = serde_json::to_string(&rec) {
+        let _ = std::fs::write(path, j);
+    }
+}
+
+fn restore_apps(state: &Shared) {
+    if let Some(rec) = apps_file()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|j| serde_json::from_str::<SavedApps>(&j).ok())
+    {
+        let mut s = state.lock().unwrap();
+        s.apps = rec.block;
+        s.allow_apps = rec.allow;
+    }
 }

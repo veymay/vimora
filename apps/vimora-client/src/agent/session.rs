@@ -268,9 +268,22 @@ pub(super) async fn handle_command(
             state.lock().unwrap().help = false;
             None
         }
+        Command::SetAppAllowlist(list) => {
+            let n = list.len();
+            state.lock().unwrap().allow_apps = list;
+            save_apps(state);
+            Some(Ok(if n == 0 {
+                "dasturlar: oq ro'yxat o'chirildi".to_string()
+            } else if cfg!(windows) {
+                format!("faqat {n} ta dasturga ruxsat")
+            } else {
+                "oq ro'yxat faqat Windows'da ishlaydi".to_string()
+            }))
+        }
         Command::SetAppBlocklist(list) => {
             let n = list.len();
             state.lock().unwrap().apps = list;
+            save_apps(state);
             Some(Ok(format!("{n} ta dastur bloklandi")))
         }
         Command::SetNetPolicy(_) => Some(Err(anyhow::anyhow!(

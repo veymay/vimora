@@ -243,12 +243,13 @@ pub(super) fn dialog_body(
             app_cats,
             open_cat,
             devices,
+            extra,
             safe,
             entry,
             import,
         } => net_form(
-            ui, p, tab, domains, keywords, apps, site_cats, app_cats, open_cat, devices, safe,
-            entry, import,
+            ui, p, tab, domains, keywords, apps, site_cats, app_cats, open_cat, devices, extra,
+            safe, entry, import,
         ),
         Dialog::Power(a) => {
             ui.horizontal(|ui| {
@@ -2102,6 +2103,7 @@ pub(super) fn net_form(
     app_cats: &mut Vec<crate::blockcat::BlockCategory>,
     open_cat: &mut Option<String>,
     devices: &mut vimora_core::DevicePolicy,
+    extra: &mut NetExtra,
     safe: &mut bool,
     entry: &mut String,
     import: &mut bool,
@@ -2135,7 +2137,7 @@ pub(super) fn net_form(
                     tr("Qurilmalar"),
                     Some(devices_blocked(devices)),
                 ),
-                (NetTab::Search, icons::SHIELD_CHECK, tr("Qidiruv"), None),
+                (NetTab::Search, icons::SHIELD_CHECK, tr("Tarmoq"), None),
             ] {
                 if ui_kit::tab_icon(ui, Some(ic), label, n, *tab == t).clicked() {
                     *tab = t;
@@ -2149,17 +2151,52 @@ pub(super) fn net_form(
     }
     ui.add_space(12.0);
     match tab {
-        NetTab::Domains => block_list(
-            ui,
-            p,
-            domains,
-            entry,
-            import,
-            tr("sayt: tiktok.com"),
-            tr("Toifani to'liq bloklasangiz, undagi barcha saytlar ochilmaydi; ichidan bittasini tanlasangiz — faqat o'sha sayt. Yoqilgan saytlarning subdomenlari ham ochilmaydi. Import qilingan ro'yxat (masalan, respublika ro'yxati) alohida toifa bo'ladi."),
-            &[],
-            |ui| categories(ui, p, site_cats, crate::blockcat::SITES, open_cat),
-        ),
+        NetTab::Domains => {
+            mode_row(
+                ui,
+                p,
+                &mut extra.web_mode,
+                &[
+                    (0, tr("Ro'yxatdagilar yopiq")),
+                    (1, tr("Faqat ro'yxatdagilar")),
+                    (2, tr("Internet o'chiq")),
+                ],
+            );
+            match extra.web_mode {
+                1 => block_list(
+                    ui,
+                    p,
+                    &mut extra.allow_sites,
+                    entry,
+                    import,
+                    tr("sayt: edu.uz"),
+                    tr("Brauzerda faqat shu saytlar ochiladi, qolganlari yopiq. Masalan, dars yoki test sayti."),
+                    &[],
+                    |_| {},
+                ),
+                2 => {
+                    ui.label(
+                        RichText::new(with_icon(
+                            icons::GLOBE_LOCK,
+                            tr("Internet butunlay o'chiq. Sinf tarmog'i (konsol bilan aloqa) ishlayveradi."),
+                        ))
+                        .size(13.0)
+                        .color(p.text),
+                    );
+                }
+                _ => block_list(
+                    ui,
+                    p,
+                    domains,
+                    entry,
+                    import,
+                    tr("sayt: tiktok.com"),
+                    tr("Toifani to'liq bloklasangiz, undagi barcha saytlar ochilmaydi; ichidan bittasini tanlasangiz — faqat o'sha sayt. Yoqilgan saytlarning subdomenlari ham ochilmaydi. Import qilingan ro'yxat (masalan, respublika ro'yxati) alohida toifa bo'ladi."),
+                    &[],
+                    |ui| categories(ui, p, site_cats, crate::blockcat::SITES, open_cat),
+                ),
+            }
+        }
         NetTab::Keywords => block_list(
             ui,
             p,
@@ -2198,17 +2235,42 @@ pub(super) fn net_form(
             ],
             |_| {},
         ),
-        NetTab::Apps => block_list(
-            ui,
-            p,
-            apps,
-            entry,
-            import,
-            tr("dastur: steam.exe"),
-            tr("Ro'yxatdagi dasturlar ochilishi bilan yopiladi. Jarayon nomini yozing (masalan, steam.exe yoki telegram). Toifani to'liq yoki ichidan alohida dasturlarni bloklash mumkin."),
-            &[],
-            |ui| categories(ui, p, app_cats, crate::blockcat::APPS, open_cat),
-        ),
+        NetTab::Apps => {
+            mode_row(
+                ui,
+                p,
+                &mut extra.app_mode,
+                &[
+                    (0, tr("Ro'yxatdagilar yopiq")),
+                    (1, tr("Faqat ro'yxatdagilar")),
+                ],
+            );
+            if extra.app_mode == 1 {
+                block_list(
+                    ui,
+                    p,
+                    &mut extra.allow_apps,
+                    entry,
+                    import,
+                    tr("dastur: winword.exe"),
+                    tr("Faqat shu dasturlar ishlaydi, boshqalari ochilishi bilan yopiladi (Windows). Windows'ning o'z qismlari (Explorer, Sozlamalar) ishlayveradi."),
+                    &[],
+                    |_| {},
+                );
+            } else {
+                block_list(
+                    ui,
+                    p,
+                    apps,
+                    entry,
+                    import,
+                    tr("dastur: steam.exe"),
+                    tr("Ro'yxatdagi dasturlar ochilishi bilan yopiladi. Jarayon nomini yozing (masalan, steam.exe yoki telegram). Toifani to'liq yoki ichidan alohida dasturlarni bloklash mumkin."),
+                    &[],
+                    |ui| categories(ui, p, app_cats, crate::blockcat::APPS, open_cat),
+                );
+            }
+        }
         NetTab::Devices => devices_form(ui, p, devices),
         NetTab::Search => {
             sgroup(ui, p, |ui| {
@@ -2222,6 +2284,23 @@ pub(super) fn net_form(
                     )),
                     |ui| {
                         ui_kit::toggle(ui, safe);
+                    },
+                );
+                srow(
+                    ui,
+                    p,
+                    false,
+                    tr("Yopiq portlar"),
+                    Some(tr("Shu tarmoq portlari orqali chiqib bo'lmaydi. Vergul bilan: 25, 6881. Bo'sh — cheklov yo'q.")),
+                    |ui| {
+                        let r = ui.add(
+                            ui_kit::text_field(&mut extra.ports)
+                                .hint_text("25, 6881")
+                                .desired_width(200.0),
+                        );
+                        if r.changed() {
+                            extra.ports.retain(|c| c.is_ascii_digit() || c == ',' || c == ' ');
+                        }
                     },
                 );
             });
@@ -2529,4 +2608,31 @@ fn devices_form(ui: &mut egui::Ui, p: &Palette, d: &mut vimora_core::DevicePolic
             .size(12.0)
             .color(p.faint),
     );
+}
+
+/// One segmented choice above a tab's content (what the list below means).
+fn mode_row(ui: &mut egui::Ui, p: &Palette, value: &mut u8, items: &[(u8, &str)]) {
+    ui_kit::segmented(p).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            for (v, label) in items {
+                if ui_kit::tab(ui, label, None, *value == *v).clicked() {
+                    *value = *v;
+                }
+            }
+        });
+    });
+    ui.add_space(10.0);
+}
+
+/// "25, 6881" → ports.
+pub(super) fn parse_ports(s: &str) -> Vec<u16> {
+    let mut v: Vec<u16> = s
+        .split([',', ' ', ';'])
+        .filter_map(|t| t.trim().parse().ok())
+        .filter(|p| *p > 0)
+        .collect();
+    v.sort();
+    v.dedup();
+    v
 }

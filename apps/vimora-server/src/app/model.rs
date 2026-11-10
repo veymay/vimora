@@ -93,6 +93,8 @@ pub(super) enum Dialog {
         /// The category opened in the accordion.
         open_cat: Option<String>,
         devices: vimora_core::DevicePolicy,
+        /// Allow-lists, internet off, ports.
+        extra: NetExtra,
         safe: bool,
         /// The "add" box.
         entry: String,
@@ -497,4 +499,18 @@ pub(super) struct CtxMenu {
     pub(super) frame: u64,
     /// "Xonaga biriktirish" list expanded.
     pub(super) rooms_open: bool,
+}
+
+/// The stricter internet / program rules of the "Bloklash" drawer.
+#[derive(Clone, Default)]
+pub(super) struct NetExtra {
+    /// Sites: 0 = listed sites blocked, 1 = only listed sites allowed, 2 = internet off.
+    pub(super) web_mode: u8,
+    /// Sites allowed in mode 1 (lines, '#' = off).
+    pub(super) allow_sites: String,
+    /// Programs: 0 = listed blocked, 1 = only listed allowed.
+    pub(super) app_mode: u8,
+    pub(super) allow_apps: String,
+    /// Blocked outgoing ports, "25, 6881".
+    pub(super) ports: String,
 }

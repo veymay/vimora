@@ -912,9 +912,24 @@ impl ConsoleApp {
                     site_cats,
                     app_cats,
                     open_cat,
+                    extra,
                     ..
                 }) = &mut self.dialog
                 {
+                    // Allow-list modes: the file's lines join the allow list.
+                    let allow = match tab {
+                        NetTab::Domains if extra.web_mode == 1 => Some(&mut extra.allow_sites),
+                        NetTab::Apps if extra.app_mode == 1 => Some(&mut extra.allow_apps),
+                        _ => None,
+                    };
+                    if let Some(list) = allow {
+                        let n = add_lines(list, &text);
+                        self.hub
+                            .lock()
+                            .unwrap()
+                            .toast(true, tf!("{n} ta qator qo'shildi", n = n));
+                        return;
+                    }
                     // Sites and programs: the file becomes a category of its own (fully blocked).
                     let cats = match tab {
                         NetTab::Keywords => None,
@@ -1187,9 +1202,36 @@ impl ConsoleApp {
                 site_cats,
                 app_cats,
                 devices,
+                extra,
                 safe,
                 ..
             } => {
+                let access = if clear {
+                    vimora_core::AccessPolicy::default()
+                } else {
+                    let mut c = self.cfg.write().unwrap();
+                    c.web_mode = extra.web_mode;
+                    c.allow_sites = extra.allow_sites.clone();
+                    c.app_mode = extra.app_mode;
+                    c.allow_apps = extra.allow_apps.clone();
+                    c.blocked_ports = extra.ports.clone();
+                    vimora_core::AccessPolicy {
+                        internet_off: extra.web_mode == 2,
+                        allow_sites: if extra.web_mode == 1 {
+                            crate::config::active_list(&extra.allow_sites)
+                        } else {
+                            vec![]
+                        },
+                        ports: parse_ports(&extra.ports),
+                    }
+                };
+                self.send_priv(t, PrivCommand::SetAccessPolicy(access), "");
+                let allow_apps = if !clear && extra.app_mode == 1 {
+                    crate::config::active_list(&extra.allow_apps)
+                } else {
+                    vec![]
+                };
+                self.send(t, Command::SetAppAllowlist(allow_apps), "");
                 let devices = if clear { Default::default() } else { devices };
                 self.cfg.write().unwrap().device_policy = devices;
                 self.send_priv(t, PrivCommand::SetDevicePolicy(devices), "");

@@ -77,10 +77,14 @@ pub(super) async fn blocker_task(state: Shared) {
     let mut blocker = system::AppBlocker::new();
     loop {
         tokio::time::sleep(Duration::from_secs(2)).await;
-        let list = state.lock().unwrap().apps.clone();
-        if !list.is_empty() {
+        let (list, allow) = {
+            let s = state.lock().unwrap();
+            (s.apps.clone(), s.allow_apps.clone())
+        };
+        if !list.is_empty() || !allow.is_empty() {
             let (killed, b) = tokio::task::spawn_blocking(move || {
-                let k = blocker.enforce(&list);
+                let mut k = blocker.enforce(&list);
+                k.extend(blocker.enforce_allow(&allow));
                 (k, blocker)
             })
             .await
