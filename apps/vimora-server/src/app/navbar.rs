@@ -65,6 +65,8 @@ struct Btn<'a> {
     h: f32,
     /// Disabled buttons are dimmed and ignore clicks.
     enabled: bool,
+    /// Side padding of a labelled button (the navbar narrows it when space is short).
+    pad: f32,
 }
 
 impl Btn<'_> {
@@ -76,7 +78,7 @@ impl Btn<'_> {
             } else {
                 ICON_W + ICON_GAP
             };
-            SIDE_PAD + icon + g.size().x + SIDE_PAD
+            self.pad + icon + g.size().x + self.pad
         } else {
             self.h
         }
@@ -96,21 +98,30 @@ impl Btn<'_> {
         let ink = match (self.tint, hov, self.active) {
             _ if !self.enabled => p.faint.gamma_multiply(0.6),
             (Some(c), _, _) => c,
-            (None, true, _) | (None, _, true) => p.strong,
+            (None, true, false) => p.accent_ink,
+            (None, _, true) => p.strong,
             _ => p.text,
         };
+        // Hover: a light wash of the primary colour with a 1 px primary border.
+        // Active: a stronger wash and a 2 px primary underline.
         if self.active {
             let c = self.tint.unwrap_or(p.accent);
             ui.painter()
-                .rect_filled(r, Rounding::ZERO, c.gamma_multiply(0.12));
+                .rect_filled(r, Rounding::ZERO, c.gamma_multiply(0.14));
             ui.painter()
                 .hline(r.x_range(), r.bottom() - 1.0, Stroke::new(2.0_f32, c));
         } else if hov {
-            ui.painter().rect_filled(r, Rounding::ZERO, p.hover);
+            ui.painter()
+                .rect_filled(r, Rounding::ZERO, p.accent.gamma_multiply(0.08));
+            ui.painter().rect_stroke(
+                r.shrink(0.5),
+                Rounding::ZERO,
+                Stroke::new(1.0_f32, p.accent.gamma_multiply(0.7)),
+            );
         }
         let labelled = self.labelled && !self.label.is_empty();
         let icon_x = if labelled {
-            r.left() + SIDE_PAD + ICON_W / 2.0
+            r.left() + self.pad + ICON_W / 2.0
         } else {
             r.center().x
         };
@@ -128,7 +139,7 @@ impl Btn<'_> {
             let g = label_galley(ui, self.label, ink);
             ui.painter().galley(
                 pos2(
-                    r.left() + SIDE_PAD + if has_icon { ICON_W + ICON_GAP } else { 0.0 },
+                    r.left() + self.pad + if has_icon { ICON_W + ICON_GAP } else { 0.0 },
                     r.center().y - g.size().y / 2.0,
                 ),
                 g,
@@ -148,7 +159,7 @@ impl Btn<'_> {
             );
             let bw = (g.size().x + 8.0).max(15.0);
             let at = if labelled {
-                pos2(r.left() + SIDE_PAD + ICON_W - 2.0, r.top() + 6.0)
+                pos2(r.left() + self.pad + ICON_W - 2.0, r.top() + 6.0)
             } else {
                 pos2(r.center().x + 9.0, r.top() + 6.0)
             };
@@ -233,9 +244,38 @@ impl ConsoleApp {
 
                     // Right cluster is laid out first (right-to-left); actions fill what remains.
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.spacing_mut().item_spacing.x = BTN_GAP;
+                        // Navbar buttons sit edge to edge.
+                        ui.spacing_mut().item_spacing.x = 0.0;
 
-                        // Journal / alerts (rightmost)
+                        // Fullscreen (rightmost): same as F11; the icon follows the real state,
+                        // whichever way it was switched.
+                        let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+                        let r = Btn {
+                            icon: if full {
+                                icons::MINIMIZE_2
+                            } else {
+                                icons::MAXIMIZE_2
+                            },
+                            label: "",
+                            tint: None,
+                            active: false,
+                            badge: None,
+                            labelled: false,
+                            h: NAV_BTN_H,
+                            enabled: true,
+                            pad: SIDE_PAD,
+                        }
+                        .show(ui, p)
+                        .tip(if full {
+                            tr("To'liq ekrandan chiqish (F11)")
+                        } else {
+                            tr("To'liq ekran (F11)")
+                        });
+                        if r.clicked() {
+                            self.toggle_fullscreen(ctx);
+                        }
+
+                        // Journal / alerts
                         let r = Btn {
                             icon: if attention > 0 {
                                 icons::BELL_DOT
@@ -250,6 +290,7 @@ impl ConsoleApp {
                             labelled: false,
                             h: NAV_BTN_H,
                             enabled: true,
+                            pad: SIDE_PAD,
                         }
                         .show(ui, p)
                         .tip(tr("Jurnal va ogohlantirishlar"));
@@ -267,14 +308,13 @@ impl ConsoleApp {
                             labelled: false,
                             h: NAV_BTN_H,
                             enabled: true,
+                            pad: SIDE_PAD,
                         }
                         .show(ui, p)
                         .tip(tr("Chat"));
                         if r.clicked() {
                             self.menu(Menu::Message, all);
                         }
-                        ui.add_space(6.0);
-
                         // Class actions: whatever width is left.
                         ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                             self.action_strip(ui, p, all);
@@ -372,6 +412,7 @@ impl ConsoleApp {
             labelled: !label.is_empty(),
             h,
             enabled: true,
+            pad: SIDE_PAD,
         };
 
         egui::TopBottomPanel::bottom("statusbar")
@@ -431,16 +472,6 @@ impl ConsoleApp {
                         .tip(tr("Sozlamalar"));
                         if r.clicked() {
                             self.open_dialog(Dialog::Settings(SettingsTab::General));
-                        }
-
-                        let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
-                        let (fic, ftip) = if full {
-                            (icons::MINIMIZE_2, tr("To'liq ekrandan chiqish (F11)"))
-                        } else {
-                            (icons::MAXIMIZE_2, tr("To'liq ekran (F11)"))
-                        };
-                        if btn(fic, "", full).show(ui, p).tip(ftip).clicked() {
-                            self.toggle_fullscreen(ctx);
                         }
 
                         let (ic, tip) = match self.theme {
@@ -552,6 +583,7 @@ impl ConsoleApp {
                                 labelled: true,
                                 h,
                                 enabled: true,
+                                pad: SIDE_PAD,
                             })
                             .show(ui, p)
                             .tip(tr("Bosing: 100%"))
@@ -661,57 +693,38 @@ impl ConsoleApp {
             ],
         ];
 
-        // Text is always shown, unless the user chose compact buttons in the settings.
-        let labelled = !self.cfg.read().unwrap().compact_nav;
-
-        // When the row doesn't fit (narrow window, longer language), buttons lose their text from
-        // the right end first; the name stays in the tooltip. Nothing ever overlaps.
-        let btn_of = |act: &Act, labelled: bool| Btn {
+        // Every action keeps its text. When the row is short of space (narrow window, a longer
+        // language) the buttons' side padding shrinks instead; they sit edge to edge.
+        ui.spacing_mut().item_spacing.x = 0.0;
+        let btn_of = |act: &Act, pad: f32| Btn {
             icon: act.icon,
             label: act.label,
             tint: act.tint,
             active: act.active,
             badge: None,
-            labelled,
+            labelled: true,
             h: NAV_BTN_H,
             enabled: true,
+            pad,
         };
         let flat: Vec<&Act> = groups.iter().flatten().collect();
-        let mut text: Vec<bool> = vec![labelled; flat.len()];
-        let dividers = (groups.len() - 1) as f32 * (9.0 + BTN_GAP);
-        let total = |text: &[bool], ui: &egui::Ui| -> f32 {
-            flat.iter()
-                .zip(text)
-                .map(|(a, &t)| btn_of(a, t).width(ui, p) + BTN_GAP)
-                .sum::<f32>()
-                + dividers
-        };
         let room = ui.available_width() - 8.0;
-        for i in (0..flat.len()).rev() {
-            if total(&text, ui) <= room {
-                break;
-            }
-            text[i] = false;
+        let mut pad = SIDE_PAD;
+        while pad > 6.0
+            && flat
+                .iter()
+                .map(|a| btn_of(a, pad).width(ui, p))
+                .sum::<f32>()
+                > room
+        {
+            pad -= 1.0;
         }
 
         let mut clicked = None;
-        let mut k = 0;
-        for (gi, group) in groups.iter().enumerate() {
-            if gi > 0 {
-                divider(ui, p, NAV_BTN_H);
-            }
-            for act in group {
-                let show_text = text[k];
-                k += 1;
-                let r = Btn {
-                    labelled: show_text,
-                    ..btn_of(act, show_text)
-                }
-                .show(ui, p)
-                .tip(act.hint);
-                if r.clicked() {
-                    clicked = Some(act.menu);
-                }
+        for act in flat {
+            let r = btn_of(act, pad).show(ui, p).tip(act.hint);
+            if r.clicked() {
+                clicked = Some(act.menu);
             }
         }
         if let Some(m) = clicked {
@@ -771,6 +784,7 @@ impl ConsoleApp {
             labelled: false,
             h: TAB_BTN_H,
             enabled: true,
+            pad: SIDE_PAD,
         }
         .show(ui, p)
         .tip(tr("Yangi xona"));

@@ -53,7 +53,7 @@ impl ConsoleApp {
     }
 
     pub(super) fn save_room(&mut self, name: String, rename: Option<String>) {
-        let name = name.trim().to_string();
+        let name = name.trim().to_uppercase();
         if name.is_empty() {
             return;
         }

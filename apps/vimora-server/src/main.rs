@@ -43,7 +43,6 @@ fn main() -> eframe::Result<()> {
     let cfg = config::load();
     vimora_ui::i18n::install(i18n_table::ROWS);
     vimora_ui::i18n::set_lang(cfg.language);
-    let maximized = cfg.start_maximized;
     let check_updates = cfg.check_updates;
     let cfg = Arc::new(RwLock::new(cfg));
     let hub: net::SharedHub = Arc::new(Mutex::new(net::Hub::new(config::identity())));
@@ -60,8 +59,7 @@ fn main() -> eframe::Result<()> {
         .with_inner_size(MIN_WINDOW)
         .with_min_inner_size(MIN_WINDOW)
         .with_resizable(false)
-        .with_maximize_button(false)
-        .with_fullscreen(maximized);
+        .with_maximize_button(false);
     if let Ok(icon) =
         eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/brand/vimora-256.png"))
     {

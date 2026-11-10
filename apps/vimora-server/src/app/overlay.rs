@@ -356,8 +356,9 @@ impl ConsoleApp {
         }) else {
             return;
         };
-        // No modals: every dialog is a drawer on the right edge.
-        let drawer = true;
+        // Drawers on the right edge for everything except the two short questions
+        // (new room, power), which stay small modals.
+        let drawer = !matches!(dialog, Dialog::Room { .. } | Dialog::Power(_));
         let (title, width) = match dialog {
             Dialog::Message { .. } => (tr("Xabarlar"), 460.0),
             Dialog::Launch { .. } => (tr("Sayt yoki dasturni ochish"), 520.0),
@@ -416,6 +417,8 @@ impl ConsoleApp {
             let x = screen.right() - width + (1.0 - ease) * (width + 24.0);
             egui::Area::new(egui::Id::new("drawer"))
                 .order(egui::Order::Foreground)
+                // Allowed past the screen edge: that's where the slide starts.
+                .constrain(false)
                 .fixed_pos(pos2(x, screen.top()))
         } else {
             egui::Area::new(egui::Id::new("modal"))
@@ -446,7 +449,14 @@ impl ConsoleApp {
             // A fixed rectangle: content can't widen it, so ✕ is always on the right edge and
             // switching tabs never changes the drawer's size.
             {
-                let rect = Rect::from_min_size(ui.max_rect().min, vec2(width, screen.height()));
+                // Drawers: full height. Modals: as tall as their content was last frame.
+                let modal_h = egui::Id::new("modal-height");
+                let h = if drawer {
+                    screen.height()
+                } else {
+                    ctx.data(|d| d.get_temp::<f32>(modal_h)).unwrap_or(260.0)
+                };
+                let rect = Rect::from_min_size(ui.max_rect().min, vec2(width, h));
                 ui.painter()
                     .add(frame.shadow.as_shape(rect, Rounding::ZERO));
                 ui.painter()
@@ -670,6 +680,10 @@ impl ConsoleApp {
                                 });
                             });
                         });
+                }
+                if !drawer {
+                    let used = ui.min_rect().height();
+                    ctx.data_mut(|d| d.insert_temp(modal_h, used));
                 }
             };
         });

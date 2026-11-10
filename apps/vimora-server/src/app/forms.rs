@@ -288,9 +288,13 @@ pub(super) fn dialog_body(
         Dialog::Room { name, .. } => {
             let r = ui.add(
                 ui_kit::text_field(name)
-                    .hint_text(tr("Masalan: 204-xona, Informatika"))
+                    .hint_text(tr("Masalan: 204-XONA, INFORMATIKA"))
                     .desired_width(f32::INFINITY),
             );
+            // Room names are always in capitals, as they are typed.
+            if r.changed() && name.chars().any(|c| c.is_lowercase()) {
+                *name = name.to_uppercase();
+            }
             if ui.memory(|m| m.focused().is_none()) {
                 r.request_focus();
             }
@@ -845,60 +849,109 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
     ui.add_space(12.0);
 
     if *f.tab == ShadowTab::Protection {
-        // The switch.
-        Frame::none()
-        .fill(p.bg)
-        .stroke(Stroke::new(1.0_f32, if on { p.accent } else { p.line }))
-        .inner_margin(Margin::same(14.0))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(icons::SNOWFLAKE)
-                        .size(28.0)
-                        .color(if on { p.accent_ink } else { p.faint }),
-                );
-                ui.add_space(4.0);
-                ui.vertical(|ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
-                        ui.label(
-                            RichText::new("Shadow")
-                                .family(ui_kit::bold())
-                                .size(15.0)
-                                .color(p.strong),
-                        );
-                        ui_kit::info(
-                            ui,
-                            tr("Yoniqda qayta yuklanganda barcha o'zgarishlar o'chadi, kompyuter toza qaytadi. Konsoldan qilganingiz saqlanadi."),
-                        );
-                    });
-                    let (txt, col) = if views.is_empty() {
-                        (tr("Pastdan kompyuter belgilang"), p.faint)
-                    } else if usable == 0 {
-                        (tr("Mavjud emas"), p.faint)
-                    } else if pending {
-                        (tr("Qayta yuklangach kuchga kiradi"), p.warning)
-                    } else if on {
-                        (tr("Yoniq"), p.accent_ink)
-                    } else {
-                        (tr("O'chiq"), p.muted)
-                    };
-                    ui.label(RichText::new(txt).size(12.5).color(col));
-                });
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.add_enabled_ui(usable > 0, |ui| {
-                        let was = on;
-                        if ui_kit::toggle(ui, &mut on).clicked() && on != was {
-                            *f.request = Some(ShadowRequest::Apply(if on {
-                                FreezeAction::Freeze
-                            } else {
-                                FreezeAction::Thaw
-                            }));
-                        }
-                    });
-                });
-            });
+        // A switch flipped a moment ago: show where it is going until the computers report
+        // back (Shadow changes take a few seconds and often only finish at the next restart).
+        let wait_id = egui::Id::new("shadow-switch-wait");
+        let now = ui.input(|i| i.time);
+        let mut waiting: Option<(bool, f64)> = ui.data(|d| d.get_temp(wait_id));
+        if let Some((target, since)) = waiting {
+            if (usable > 0 && on == target) || now - since > 20.0 {
+                waiting = None;
+                ui.data_mut(|d| d.remove::<(bool, f64)>(wait_id));
+            }
+        }
+        if let Some((target, _)) = waiting {
+            on = target;
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(250));
+        }
+
+        // The switch card: icon, title and state on a fixed grid, the switch centred.
+        let w = ui.available_width();
+        let (card, _) = ui.allocate_exact_size(vec2(w, 68.0), Sense::hover());
+        let edge = if waiting.is_some() {
+            p.warning
+        } else if on {
+            p.accent
+        } else {
+            p.line
+        };
+        ui.painter()
+            .rect(card, Rounding::ZERO, p.bg, Stroke::new(1.0_f32, edge));
+        let cy = card.center().y;
+        ui.painter().text(
+            pos2(card.left() + 30.0, cy),
+            Align2::CENTER_CENTER,
+            icons::SNOWFLAKE,
+            FontId::proportional(26.0),
+            if on { p.accent_ink } else { p.faint },
+        );
+        let text_x = card.left() + 58.0;
+        let title = ui.painter().layout_no_wrap(
+            "Shadow".into(),
+            FontId::new(15.0, ui_kit::bold()),
+            p.strong,
+        );
+        let title_w = title.size().x;
+        ui.painter()
+            .galley(pos2(text_x, cy - 2.0 - title.size().y), title, p.strong);
+        let mut help_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(Rect::from_min_size(
+                    pos2(text_x + title_w + 6.0, cy - 21.0),
+                    vec2(20.0, 20.0),
+                ))
+                .layout(Layout::left_to_right(Align::Center)),
+        );
+        ui_kit::info(
+            &mut help_ui,
+            tr("Yoniqda qayta yuklanganda barcha o'zgarishlar o'chadi, kompyuter toza qaytadi. Konsoldan qilganingiz saqlanadi."),
+        );
+        let (txt, col) = if let Some((target, _)) = waiting {
+            (
+                if target {
+                    tr("Yoqilmoqda…")
+                } else {
+                    tr("O'chirilmoqda…")
+                },
+                p.warning,
+            )
+        } else if views.is_empty() {
+            (tr("Pastdan kompyuter belgilang"), p.faint)
+        } else if usable == 0 {
+            (tr("Mavjud emas"), p.faint)
+        } else if pending {
+            (tr("Qayta yuklangach kuchga kiradi"), p.warning)
+        } else if on {
+            (tr("Yoniq"), p.accent_ink)
+        } else {
+            (tr("O'chiq"), p.muted)
+        };
+        ui.painter().text(
+            pos2(text_x, cy + 3.0),
+            Align2::LEFT_TOP,
+            txt,
+            FontId::proportional(12.5),
+            col,
+        );
+        let mut sw = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(Rect::from_center_size(
+                    pos2(card.right() - 36.0, cy),
+                    vec2(40.0, 22.0),
+                ))
+                .layout(Layout::left_to_right(Align::Center)),
+        );
+        sw.add_enabled_ui(usable > 0 && waiting.is_none(), |ui| {
+            let was = on;
+            if ui_kit::toggle(ui, &mut on).clicked() && on != was {
+                *f.request = Some(ShadowRequest::Apply(if on {
+                    FreezeAction::Freeze
+                } else {
+                    FreezeAction::Thaw
+                }));
+                ui.data_mut(|d| d.insert_temp(wait_id, (on, now)));
+            }
         });
 
         // Problems, one short line each.
@@ -921,36 +974,6 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
                 );
             }
         }
-
-        ui.add_space(8.0);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 4.0;
-            ui.add_enabled_ui(usable > 0, |ui| {
-                ui.checkbox(f.restart, tr("Darhol qayta yuklash"));
-            });
-            ui_kit::info(
-                ui,
-                tr("Kompyuterlar o'zi qayta yuklanadi. Saqlanmagan ish yo'qolishi mumkin."),
-            );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui_kit::info(
-                    ui,
-                    tr("Shadow'ni vaqtincha o'chirib, yangilanishlarni o'rnatadi va qayta yoqadi."),
-                );
-                ui.add_enabled_ui(usable > 0, |ui| {
-                    if ui_kit::button(
-                        ui,
-                        Some(icons::WRENCH),
-                        tr("Yangilab yoqish"),
-                        Kind::Outline,
-                    )
-                    .clicked()
-                    {
-                        *f.request = Some(ShadowRequest::Apply(FreezeAction::Maintenance));
-                    }
-                });
-            });
-        });
 
         titled(
             ui,
@@ -1027,6 +1050,41 @@ fn commit_section(
     any_frozen: bool,
 ) {
     use vimora_core::ChangeKind;
+    let usable = cx
+        .all
+        .iter()
+        .any(|v| f.chosen.contains(&v.id) && v.status.service);
+    sgroup(ui, p, |ui| {
+        srow(
+            ui,
+            p,
+            true,
+            tr("Yangilab yoqish"),
+            Some(tr(
+                "Shadow vaqtincha o'chadi, yangilanishlar o'rnatiladi, keyin Shadow o'zi yoqiladi.",
+            )),
+            |ui| {
+                ui.add_enabled_ui(usable, |ui| {
+                    if ui_kit::button(ui, Some(icons::WRENCH), tr("Boshlash"), Kind::Outline)
+                        .clicked()
+                    {
+                        *f.request = Some(ShadowRequest::Apply(FreezeAction::Maintenance));
+                    }
+                });
+            },
+        );
+        srow(
+            ui,
+            p,
+            false,
+            tr("Darhol qayta yuklash"),
+            Some(tr("Shadow yoqilganda yoki o'chirilganda kompyuterlar darhol qayta yuklanadi. Saqlanmagan ish yo'qolishi mumkin.")),
+            |ui| {
+                ui_kit::toggle(ui, f.restart);
+            },
+        );
+    });
+    ui.add_space(6.0);
     titled(
         ui,
         p,

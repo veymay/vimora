@@ -17,9 +17,8 @@ pub(super) enum SettingsTab {
 }
 
 impl SettingsTab {
-    const ALL: [SettingsTab; 6] = [
+    const ALL: [SettingsTab; 5] = [
         SettingsTab::General,
-        SettingsTab::Appearance,
         SettingsTab::LockScreen,
         SettingsTab::Students,
         SettingsTab::Updates,
@@ -31,7 +30,7 @@ impl SettingsTab {
             SettingsTab::General => tr("Umumiy"),
             SettingsTab::Appearance => tr("Ko'rinish"),
             SettingsTab::LockScreen => tr("Qulf ekrani"),
-            SettingsTab::Students => tr("O'quvchi kompyuterlari"),
+            SettingsTab::Students => tr("O'quvchilar"),
             SettingsTab::Updates => tr("Yangilanish"),
             SettingsTab::About => tr("Dastur haqida"),
         }
@@ -196,7 +195,7 @@ pub(super) fn settings_page(
                                 ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
                                 match tab {
                                     SettingsTab::General => general(ui, p, c, out),
-                                    SettingsTab::Appearance => appearance(ui, p, c),
+                                    SettingsTab::Appearance => general(ui, p, c, out),
                                     SettingsTab::LockScreen => lock_screen(ui, p, c),
                                     SettingsTab::Students => students(ui, p, c, cx, out),
                                     SettingsTab::Updates => updates(ui, p, c, cx, out),
@@ -409,15 +408,6 @@ fn general(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig, out: &mut Setti
     row(
         ui,
         p,
-        tr("To'liq ekranda ochish"),
-        Some(tr("Yoqilsa, konsol to'liq ekranda ochiladi. Aks holda oyna o'lchami doim bir xil (1120 × 700) va uni o'zgartirib bo'lmaydi. To'liq ekranga istalgan vaqtda F11 bilan o'tasiz.")),
-        |ui| {
-            ui_kit::toggle(ui, &mut c.start_maximized);
-        },
-    );
-    row(
-        ui,
-        p,
         tr("Ovozli signallar"),
         Some(tr(
             "Natija, xato va o'quvchi ogohlantirishlarida qisqa ovoz chiqadi.",
@@ -444,6 +434,7 @@ fn general(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig, out: &mut Setti
             }
         },
     );
+    appearance(ui, p, c);
 }
 
 fn appearance(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
@@ -486,15 +477,6 @@ fn appearance(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
             }
         },
     );
-    row(
-        ui,
-        p,
-        tr("Ixcham tugmalar"),
-        Some(tr("Yoqilsa, yuqoridagi amallar tugmalarida faqat ikonka ko'rinadi (nomi ustiga olib borganda chiqadi). O'chiq bo'lsa — ikonka bilan birga yozuv.")),
-        |ui| {
-            ui_kit::toggle(ui, &mut c.compact_nav);
-        },
-    );
     row(ui, p, tr("Kompyuterlar"), None, |ui| {
         choice(
             ui,
@@ -506,18 +488,6 @@ fn appearance(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig) {
             ],
         );
     });
-    let mut cols = c.grid_columns.clamp(MIN_COLUMNS, MAX_COLUMNS);
-    row(
-        ui,
-        p,
-        tr("Kartochka o'lchami"),
-        Some(tr("100% — bir qatorda 6 ta kompyuter, 200% — 3 ta. Kompyuterlar sahifasida Ctrl + g'ildirak yoki − / + tugmalari bilan ham o'zgartiriladi.")),
-        |ui| {
-            if choice(ui, p, &mut cols, &[(6, "100%"), (5, "120%"), (4, "150%"), (3, "200%")]) {
-                c.grid_columns = cols;
-            }
-        },
-    );
     row(
         ui,
         p,

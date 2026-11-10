@@ -233,13 +233,14 @@ pub(super) fn zoom_percent(cols: u32) -> u32 {
 
 pub(super) fn freeze_label(f: FreezeState) -> &'static str {
     match f {
-        FreezeState::Unknown => tr("noma'lum"),
-        FreezeState::Unsupported => tr("qo'llanmaydi"),
-        FreezeState::Thawed => tr("o'chiq"),
-        FreezeState::Frozen => tr("yoqilgan"),
-        FreezeState::FreezePending => tr("qayta yuklanganda yoqiladi"),
-        FreezeState::ThawPending => tr("qayta yuklanganda o'chadi"),
-        FreezeState::Maintenance => tr("xizmat rejimi"),
+        // One word each; the colour carries the rest (see `freeze_color`).
+        FreezeState::Unknown => "—",
+        FreezeState::Unsupported => tr("Mavjud emas"),
+        FreezeState::Thawed => tr("O'chiq"),
+        FreezeState::Frozen => tr("Yoniq"),
+        FreezeState::FreezePending => tr("Yoqiladi"),
+        FreezeState::ThawPending => tr("O'chadi"),
+        FreezeState::Maintenance => tr("Xizmat"),
     }
 }
 

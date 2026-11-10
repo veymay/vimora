@@ -98,14 +98,9 @@ pub(super) fn status_badges(ui: &egui::Ui, p: &Palette, s: &ClientStatus) -> Vec
             };
             Some((icons::SNOWFLAKE, label, col))
         }
-        FreezeState::FreezePending => Some((
-            icons::SNOWFLAKE,
-            tr("Shadow · kutilmoqda").into(),
-            p.warning,
-        )),
-        FreezeState::ThawPending => {
-            Some((icons::SUN_SNOW, tr("Shadow · o'chmoqda").into(), p.warning))
-        }
+        // One or two words and a colour; the meaning is in the colour and the icon.
+        FreezeState::FreezePending => Some((icons::SNOWFLAKE, tr("Yoqiladi").into(), p.warning)),
+        FreezeState::ThawPending => Some((icons::SUN_SNOW, tr("O'chadi").into(), p.warning)),
         FreezeState::Maintenance => Some((icons::WRENCH, tr("Xizmat").into(), p.warning)),
         _ => None,
     };
@@ -165,6 +160,47 @@ fn paint_flags(painter: &egui::Painter, p: &Palette, v: &View, right: f32, y: f3
     x
 }
 
+/// List view: what is active on the computer, as short coloured words (no puzzling icons).
+fn flag_words(
+    ui: &egui::Ui,
+    painter: &egui::Painter,
+    p: &Palette,
+    v: &View,
+    left: f32,
+    y: f32,
+    right: f32,
+) {
+    let mut words: Vec<(&str, Color32)> = vec![];
+    if v.alert.is_some() {
+        words.push((tr("Diqqat"), p.danger));
+    }
+    if v.help.is_some() {
+        words.push((tr("Yordam"), p.warning));
+    }
+    if v.status.web_blocklist + v.status.keywords > 0 || v.status.safe_search {
+        words.push((tr("Internet"), p.accent_ink));
+    }
+    if v.status.app_blocklist > 0 {
+        words.push((tr("Dastur"), p.accent_ink));
+    }
+    if v.status.showing_teacher {
+        words.push((tr("Namoyish"), p.accent_ink));
+    }
+    if v.status.busy.is_some() {
+        words.push((tr("Yangilanmoqda"), p.warning));
+    }
+    let mut x = left;
+    for (w, col) in words {
+        let g = ui_kit::caps(ui, w, 9.0, ui_kit::mono_bold(), col);
+        let r = Rect::from_min_size(pos2(x, y - 10.0), vec2(g.size().x + 12.0, 20.0));
+        if r.right() > right {
+            break;
+        }
+        ui_kit::paint_chip(painter, r, g, col);
+        x = r.right() + 4.0;
+    }
+}
+
 const ROW_H: f32 = 36.0;
 
 /// List-view columns: (column, width; 0 = flexible = the last one). Narrow windows drop trailing ones.
@@ -175,7 +211,7 @@ fn list_columns(width: f32) -> Vec<(Col, f32)> {
         (Col::Name, 140.0),
         (Col::Status, 100.0),
         (Col::Shadow, 140.0),
-        (Col::Flags, 120.0),
+        (Col::Flags, 190.0),
         (Col::Room, 130.0),
     ];
     if width > 1000.0 {
@@ -471,6 +507,10 @@ impl ConsoleApp {
         let spans = column_spans(cols, rect);
         for ((col, _), (x0, x1)) in cols.iter().zip(spans) {
             let inner = Rect::from_x_y_ranges(x0 + 8.0..=x1 - 6.0, rect.y_range());
+            // Each cell stays inside its column, whatever it holds.
+            let painter = painter.with_clip_rect(
+                Rect::from_x_y_ranges(x0..=x1 - 1.0, rect.y_range()).intersect(painter.clip_rect()),
+            );
             match *col {
                 Col::Num => {
                     let num = ui_kit::caps(
@@ -549,14 +589,7 @@ impl ConsoleApp {
                     }
                 }
                 Col::Flags => {
-                    let flags_w: f32 = 6.0 * 22.0;
-                    paint_flags(
-                        &painter,
-                        p,
-                        v,
-                        inner.left() + flags_w.min(inner.width()),
-                        cy,
-                    );
+                    flag_words(ui, &painter, p, v, inner.left(), cy, inner.right());
                 }
                 _ => {
                     let text = match *col {

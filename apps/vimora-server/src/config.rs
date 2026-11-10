@@ -31,10 +31,6 @@ pub struct ServerConfig {
     pub dark_mode: bool,
     /// Follow the operating system's light/dark setting (overrides `dark_mode`).
     pub theme_system: bool,
-    /// Open the window maximized instead of at its minimum size.
-    pub start_maximized: bool,
-    /// Navbar buttons show icons only (default: icon + text).
-    pub compact_nav: bool,
     /// Play short sounds for results, warnings and student alerts.
     pub sounds: bool,
     /// Order of the computers in the grid and list.
@@ -106,8 +102,6 @@ impl Default for ServerConfig {
             language,
             dark_mode: true,
             theme_system: false,
-            start_maximized: false,
-            compact_nav: false,
             sounds: true,
             sort: SortBy::Name,
             check_updates: true,
