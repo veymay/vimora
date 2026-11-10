@@ -73,6 +73,10 @@ pub(super) struct SettingsCtx<'a> {
     pub(super) online: usize,
     /// Last automatic save, for the "saved" hint.
     pub(super) saved: bool,
+    /// Online computers: (name, Vimora version, what the service is busy with).
+    pub(super) students: Vec<(String, String, Option<String>)>,
+    /// Newest version known (an available release, else this console's own).
+    pub(super) latest: String,
 }
 
 pub(super) fn settings_page(
@@ -405,7 +409,7 @@ fn general(ui: &mut egui::Ui, p: &Palette, c: &mut ServerConfig, out: &mut Setti
         ui,
         p,
         tr("To'liq ekranda ochish"),
-        Some(tr("Yoqilsa, konsol to'liq ekranda ochiladi. Aks holda oyna o'lchami doim bir xil (1280 × 760) va uni o'zgartirib bo'lmaydi. To'liq ekranga istalgan vaqtda F11 bilan o'tasiz.")),
+        Some(tr("Yoqilsa, konsol to'liq ekranda ochiladi. Aks holda oyna o'lchami doim bir xil (1120 × 700) va uni o'zgartirib bo'lmaydi. To'liq ekranga istalgan vaqtda F11 bilan o'tasiz.")),
         |ui| {
             ui_kit::toggle(ui, &mut c.start_maximized);
         },
@@ -712,6 +716,7 @@ fn students(
             }
         },
     );
+    student_versions(ui, p, cx);
     heading(ui, p, tr("Ulanish"));
     row(
         ui,
@@ -768,19 +773,25 @@ fn updates(
                     version,
                     done,
                     total,
+                    speed,
                 } => (
                     icons::CLOUD_DOWNLOAD,
                     p.accent_ink,
-                    tf!(
-                        "{v} yuklab olinmoqda — {pct}%",
-                        v = version,
-                        pct = if *total > 0 { done * 100 / total } else { 0 }
-                    ),
+                    download_line(version, *done, *total, *speed),
+                ),
+                Phase::Verifying(v) => (
+                    icons::SHIELD_CHECK,
+                    p.accent_ink,
+                    tf!("{v} yuklab olindi, fayl tekshirilmoqda (SHA-256)…", v = v),
                 ),
                 Phase::Installing(v) => (
                     icons::PACKAGE_CHECK,
                     p.accent_ink,
-                    tf!("{v} o'rnatilmoqda…", v = v),
+                    if cfg!(windows) {
+                        tf!("{v} o'rnatilmoqda: konsol yopiladi va o'zi qayta ochiladi", v = v)
+                    } else {
+                        tf!("{v} o'rnatilmoqda: parol oynasi chiqsa, parolingizni kiriting", v = v)
+                    },
                 ),
                 Phase::Installed(v) => (
                     icons::BADGE_CHECK,
@@ -833,7 +844,10 @@ fn updates(
                         out.restart = true;
                     }
                 }
-                Phase::Checking | Phase::Downloading { .. } | Phase::Installing(_) => {
+                Phase::Checking
+                | Phase::Downloading { .. }
+                | Phase::Verifying(_)
+                | Phase::Installing(_) => {
                     ui.spinner();
                 }
                 _ => {
@@ -845,10 +859,47 @@ fn updates(
                 }
             });
         });
-        if let Phase::Downloading { done, total, .. } = cx.phase {
-            if total > 0 {
-                ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_height(4.0));
-            }
+        // Three steps, so it is always clear what happens now and what comes next.
+        let step = match &cx.phase {
+            Phase::Downloading { .. } => Some(0),
+            Phase::Verifying(_) => Some(1),
+            Phase::Installing(_) => Some(2),
+            Phase::Installed(_) => Some(3),
+            _ => None,
+        };
+        if let Some(step) = step {
+            ui.add_space(4.0);
+            let frac = match &cx.phase {
+                Phase::Downloading { done, total, .. } if *total > 0 => {
+                    *done as f32 / *total as f32 * 0.8
+                }
+                Phase::Downloading { .. } => 0.0,
+                Phase::Verifying(_) => 0.85,
+                Phase::Installing(_) => 0.92,
+                _ => 1.0,
+            };
+            ui.add(
+                egui::ProgressBar::new(frac)
+                    .desired_height(6.0)
+                    .fill(p.accent)
+                    .animate(step < 3),
+            );
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 14.0;
+                for (i, name) in [tr("step|Yuklab olish"), tr("step|Tekshirish"), tr("step|O'rnatish")]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let (ic, col) = if i < step {
+                        (icons::CIRCLE_CHECK, p.success)
+                    } else if i == step {
+                        (icons::REFRESH_CW, p.accent_ink)
+                    } else {
+                        (icons::CIRCLE_DOT, p.faint)
+                    };
+                    ui.label(RichText::new(with_icon(ic, name)).size(12.0).color(col));
+                }
+            });
         }
     });
     ui.add_space(8.0);
@@ -927,4 +978,119 @@ fn about(ui: &mut egui::Ui, p: &Palette, cx: &SettingsCtx<'_>) {
             config::open("https://github.com/veymay/vimora");
         }
     });
+}
+
+/// "3.2 / 9.1 MB · 1.4 MB/s · 5 s left".
+pub(super) fn download_line(version: &str, done: u64, total: u64, speed: u64) -> String {
+    let mb = |b: u64| b as f64 / 1_048_576.0;
+    let mut s = tf!(
+        "{v} yuklab olinmoqda: {d} / {t} MB",
+        v = version,
+        d = format!("{:.1}", mb(done)),
+        t = format!("{:.1}", mb(total))
+    );
+    if speed > 0 {
+        s += &format!(" · {:.1} MB/s", mb(speed));
+        if total > done {
+            let left = (total - done) / speed.max(1);
+            s += &format!(" · {}", tf!("{n} s qoldi", n = left + 1));
+        }
+    }
+    s
+}
+
+/// One line per online computer: name, version and its update state (with a bar while it
+/// downloads: the service reports "Vimora 0.3.9 yuklanmoqda 45%").
+fn student_versions(ui: &mut egui::Ui, p: &Palette, cx: &SettingsCtx<'_>) {
+    if cx.students.is_empty() {
+        return;
+    }
+    ui.add_space(8.0);
+    ui.spacing_mut().item_spacing.y = 0.0;
+    let w = ui.available_width();
+    for (name, version, busy) in &cx.students {
+        let (r, _) = ui.allocate_exact_size(vec2(w, 34.0), Sense::hover());
+        ui.painter()
+            .hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0_f32, p.line));
+        let y = r.center().y;
+        let n = ui_kit::truncated(
+            ui,
+            name,
+            FontId::new(13.0, ui_kit::medium()),
+            p.text,
+            w * 0.32,
+        );
+        ui.painter()
+            .galley(pos2(r.left() + 4.0, y - n.size().y / 2.0), n, p.text);
+        let v = if version.is_empty() {
+            "—"
+        } else {
+            version.as_str()
+        };
+        ui.painter().text(
+            pos2(r.left() + w * 0.36, y),
+            Align2::LEFT_CENTER,
+            v,
+            FontId::new(12.0, ui_kit::mono()),
+            p.muted,
+        );
+        let right = Rect::from_min_max(pos2(r.left() + w * 0.5, r.top()), r.max);
+        let pct = busy.as_deref().and_then(|b| {
+            b.strip_suffix('%')
+                .and_then(|s| s.rsplit(' ').next())
+                .and_then(|n| n.parse::<f32>().ok())
+        });
+        match (busy, pct) {
+            (Some(b), Some(pct)) if b.contains("Vimora") => {
+                let bar = Rect::from_min_size(
+                    pos2(right.left(), y - 3.0),
+                    vec2(right.width() - 50.0, 6.0),
+                );
+                ui.painter().rect_filled(bar, Rounding::ZERO, p.sunken);
+                ui.painter().rect_filled(
+                    Rect::from_min_size(bar.min, vec2(bar.width() * pct / 100.0, 6.0)),
+                    Rounding::ZERO,
+                    p.accent,
+                );
+                ui.painter().text(
+                    pos2(right.right() - 4.0, y),
+                    Align2::RIGHT_CENTER,
+                    format!("{pct:.0}%"),
+                    FontId::new(12.0, ui_kit::mono()),
+                    p.accent_ink,
+                );
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(500));
+            }
+            (Some(b), _) => {
+                let t = ui_kit::truncated(
+                    ui,
+                    &with_icon(icons::REFRESH_CW, b),
+                    FontId::proportional(12.0),
+                    p.accent_ink,
+                    right.width(),
+                );
+                ui.painter()
+                    .galley(pos2(right.left(), y - t.size().y / 2.0), t, p.accent_ink);
+            }
+            (None, _) => {
+                let current = !version.is_empty() && !vimora_update::is_newer(&cx.latest, version);
+                let (text, col) = if current {
+                    (with_icon(icons::CIRCLE_CHECK, tr("eng so'nggi")), p.success)
+                } else {
+                    (
+                        with_icon(icons::CIRCLE_ARROW_UP, tr("yangilash kerak")),
+                        p.warning,
+                    )
+                };
+                ui.painter().text(
+                    pos2(right.left(), y),
+                    Align2::LEFT_CENTER,
+                    text,
+                    FontId::proportional(12.0),
+                    col,
+                );
+            }
+        }
+    }
 }

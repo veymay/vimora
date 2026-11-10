@@ -10,6 +10,7 @@
 
 mod agent;
 mod apps;
+mod blocked;
 mod chat;
 mod config;
 mod kiosk;
@@ -71,6 +72,9 @@ enum Cmd {
         #[arg(long)]
         reply: bool,
     },
+    /// Internal: full-screen "forbidden search" modal.
+    #[command(hide = true)]
+    Blocked { word: String },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -86,6 +90,7 @@ fn main() -> anyhow::Result<()> {
     match cli.cmd {
         Some(Cmd::Overlay) => overlay::run(),
         Some(Cmd::Popup { title, text, reply }) => popup::run(&title, &text, reply),
+        Some(Cmd::Blocked { word }) => blocked::run(&word),
         Some(Cmd::Service) => service::run(),
         Some(Cmd::Chat) => chat::run(),
         Some(Cmd::UiProbe) => ui_probe(),

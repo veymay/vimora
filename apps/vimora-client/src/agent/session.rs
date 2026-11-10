@@ -276,13 +276,6 @@ pub(super) async fn handle_command(
     }
 }
 
-pub(super) fn spawn_self(args: &[&str]) -> Result<()> {
-    std::process::Command::new(std::env::current_exe()?)
-        .args(args)
-        .spawn()?;
-    Ok(())
-}
-
 /// Handles a console-signed privileged command: forwards it to the Vimora service, or (dev mode,
 /// no service running) verifies it against the paired console and runs it locally.
 pub(super) async fn privileged(

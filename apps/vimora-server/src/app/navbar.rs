@@ -459,6 +459,53 @@ impl ConsoleApp {
                             self.set_theme(ctx, t);
                         }
 
+                        // Console update in progress: a small bar + percent, visible anywhere.
+                        if self.updater.working() {
+                            use crate::update::Phase;
+                            let (frac, text) = match self.updater.phase() {
+                                Phase::Downloading { done, total, .. } if total > 0 => {
+                                    let f = done as f32 / total as f32;
+                                    (
+                                        f * 0.8,
+                                        format!("{} {}%", tr("Yangilanmoqda"), (f * 100.0) as u32),
+                                    )
+                                }
+                                Phase::Verifying(_) => (0.85, tr("Tekshirilmoqda…").to_string()),
+                                Phase::Installing(_) => (0.92, tr("O'rnatilmoqda…").to_string()),
+                                _ => (0.0, tr("Yangilanmoqda").to_string()),
+                            };
+                            let g = ui.painter().layout_no_wrap(
+                                text,
+                                FontId::new(12.0, ui_kit::medium()),
+                                p.accent_ink,
+                            );
+                            let (r, resp) = ui.allocate_exact_size(
+                                vec2(g.size().x + 110.0, h - 8.0),
+                                Sense::click(),
+                            );
+                            let bar = Rect::from_min_size(
+                                pos2(r.right() - 90.0, r.center().y - 3.0),
+                                vec2(84.0, 6.0),
+                            );
+                            ui.painter().rect_filled(bar, Rounding::ZERO, p.sunken);
+                            ui.painter().rect_filled(
+                                Rect::from_min_size(bar.min, vec2(bar.width() * frac, 6.0)),
+                                Rounding::ZERO,
+                                p.accent,
+                            );
+                            ui.painter().galley(
+                                pos2(r.left() + 6.0, r.center().y - g.size().y / 2.0),
+                                g,
+                                p.accent_ink,
+                            );
+                            if resp
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
+                                self.open_dialog(Dialog::Settings(SettingsTab::Updates));
+                            }
+                            ui.ctx().request_repaint_after(Duration::from_millis(200));
+                        }
                         if let Some(v) = &update {
                             let mut b = btn(icons::CIRCLE_ARROW_UP, "", true);
                             b.tint = Some(p.accent_ink);
@@ -578,18 +625,10 @@ impl ConsoleApp {
                     None,
                 ),
                 a(
-                    icons::GLOBE_LOCK,
-                    tr("Internet"),
-                    tr("Saytlar, kalit so'zlar, SafeSearch"),
-                    Menu::Net,
-                    false,
-                    None,
-                ),
-                a(
-                    icons::BAN,
+                    icons::SHIELD_BAN,
                     tr("Bloklash"),
-                    tr("Dasturlarni bloklash"),
-                    Menu::Apps,
+                    tr("Saytlar, kalit so'zlar, dasturlar"),
+                    Menu::Net,
                     false,
                     None,
                 ),
@@ -625,21 +664,48 @@ impl ConsoleApp {
         // Text is always shown, unless the user chose compact buttons in the settings.
         let labelled = !self.cfg.read().unwrap().compact_nav;
 
+        // When the row doesn't fit (narrow window, longer language), buttons lose their text from
+        // the right end first; the name stays in the tooltip. Nothing ever overlaps.
+        let btn_of = |act: &Act, labelled: bool| Btn {
+            icon: act.icon,
+            label: act.label,
+            tint: act.tint,
+            active: act.active,
+            badge: None,
+            labelled,
+            h: NAV_BTN_H,
+            enabled: true,
+        };
+        let flat: Vec<&Act> = groups.iter().flatten().collect();
+        let mut text: Vec<bool> = vec![labelled; flat.len()];
+        let dividers = (groups.len() - 1) as f32 * (9.0 + BTN_GAP);
+        let total = |text: &[bool], ui: &egui::Ui| -> f32 {
+            flat.iter()
+                .zip(text)
+                .map(|(a, &t)| btn_of(a, t).width(ui, p) + BTN_GAP)
+                .sum::<f32>()
+                + dividers
+        };
+        let room = ui.available_width() - 8.0;
+        for i in (0..flat.len()).rev() {
+            if total(&text, ui) <= room {
+                break;
+            }
+            text[i] = false;
+        }
+
         let mut clicked = None;
+        let mut k = 0;
         for (gi, group) in groups.iter().enumerate() {
             if gi > 0 {
                 divider(ui, p, NAV_BTN_H);
             }
             for act in group {
+                let show_text = text[k];
+                k += 1;
                 let r = Btn {
-                    icon: act.icon,
-                    label: act.label,
-                    tint: act.tint,
-                    active: act.active,
-                    badge: None,
-                    labelled,
-                    h: NAV_BTN_H,
-                    enabled: true,
+                    labelled: show_text,
+                    ..btn_of(act, show_text)
                 }
                 .show(ui, p)
                 .tip(act.hint);

@@ -197,12 +197,22 @@ pub(super) async fn service_status_task(ctx: Ctx) {
 }
 
 /// Watches the focused browser window title for blocked keywords.
+/// Forbidden keywords: a browser whose page title contains one (search results, a typed query)
+/// gets its tab closed — again and again while it shows — and the student sees a full-screen
+/// modal until they acknowledge it. The teacher is told once per word and visit.
 pub(super) fn keyword_watch(ctx: Ctx) {
     let mut watcher: Option<netcontrol::FocusWatcher> = None;
     let mut injector: Option<input::Injector> = None;
     let mut warned = false;
+    let mut modal: Option<std::process::Child> = None;
+    let mut reported: Option<(String, Instant)> = None;
     loop {
-        std::thread::sleep(Duration::from_millis(700));
+        std::thread::sleep(Duration::from_millis(250));
+        if let Some(m) = &mut modal {
+            if !matches!(m.try_wait(), Ok(None)) {
+                modal = None;
+            }
+        }
         let keywords = ctx.state.lock().unwrap().net.keywords.clone();
         if keywords.is_empty() {
             continue;
@@ -231,26 +241,39 @@ pub(super) fn keyword_watch(ctx: Ctx) {
             continue;
         };
 
-        info!("blocked keyword \"{hit}\" in \"{}\" ({})", f.title, f.app);
+        // Like a blocked site: the page must not stay open.
         if injector.is_none() {
             injector = input::Injector::new().ok();
         }
         if let Some(i) = &mut injector {
-            let _ = i.close_tab();
+            if let Err(e) = i.close_tab() {
+                warn!("cannot close the tab: {e:#}");
+            }
         }
-        let _ = spawn_self(&[
-            "popup",
-            "Taqiqlangan qidiruv",
-            &format!("\u{201c}{hit}\u{201d} bo'yicha qidirish taqiqlangan.\nSahifa yopildi va o'qituvchiga xabar berildi."),
-        ]);
-        if let Some(tx) = ctx.uplink.lock().unwrap().as_ref() {
-            let _ = tx.try_send(ClientMsg::Alert {
-                text: format!(
-                    "taqiqlangan so'z \"{hit}\" — {}",
-                    f.title.chars().take(70).collect::<String>()
-                ),
+        if modal.is_none() {
+            modal = std::env::current_exe().ok().and_then(|exe| {
+                std::process::Command::new(exe)
+                    .args(["blocked", hit])
+                    .spawn()
+                    .ok()
             });
         }
-        std::thread::sleep(Duration::from_millis(2500));
+        let fresh = !reported
+            .as_ref()
+            .is_some_and(|(w, t)| w == hit && t.elapsed() < Duration::from_secs(20));
+        if fresh {
+            info!("blocked keyword \"{hit}\" in \"{}\" ({})", f.title, f.app);
+            reported = Some((hit.clone(), Instant::now()));
+            if let Some(tx) = ctx.uplink.lock().unwrap().as_ref() {
+                let _ = tx.try_send(ClientMsg::Alert {
+                    text: format!(
+                        "taqiqlangan so'z \"{hit}\" — {}",
+                        f.title.chars().take(70).collect::<String>()
+                    ),
+                });
+            }
+        }
+        // Check again soon: if the tab is still there, it is closed again.
+        std::thread::sleep(Duration::from_millis(400));
     }
 }

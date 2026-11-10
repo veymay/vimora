@@ -55,6 +55,8 @@ pub(super) enum RoomTab {
 pub(super) enum NetTab {
     Domains,
     Keywords,
+    /// Programs closed as soon as they start.
+    Apps,
     Search,
 }
 
@@ -76,11 +78,13 @@ pub(super) enum Dialog {
         recent: Vec<String>,
     },
     File(String),
-    Apps(String),
+    /// "Bloklash": websites, keywords, programs and safe search in one drawer.
     Net {
         tab: NetTab,
         domains: String,
         keywords: String,
+        /// Blocked programs (process names), one per line; '#' = switched off.
+        apps: String,
         safe: bool,
         /// The "add" box.
         entry: String,

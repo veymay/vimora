@@ -184,7 +184,8 @@ impl ConsoleApp {
         }
         // Dev aid: VIMORA_OPEN=net|activity|launch opens a window at start (for screenshots).
         match std::env::var("VIMORA_OPEN").as_deref() {
-            Ok("net") => app.dev_open = Some(app.net_dialog()),
+            Ok("net") => app.dev_open = Some(app.net_dialog(NetTab::Domains)),
+            Ok("net:apps") => app.dev_open = Some(app.net_dialog(NetTab::Apps)),
             Ok("activity") => app.dev_open = Some(Dialog::Activity),
             Ok("settings") => app.dev_open = Some(Dialog::Settings(SettingsTab::General)),
             Ok(s) if s.starts_with("settings:") => {
@@ -701,12 +702,13 @@ impl ConsoleApp {
         }
     }
 
-    fn net_dialog(&self) -> Dialog {
+    fn net_dialog(&self, tab: NetTab) -> Dialog {
         let c = self.cfg.read().unwrap();
         Dialog::Net {
-            tab: NetTab::Domains,
+            tab,
             domains: c.web_blocklist.clone(),
             keywords: c.keyword_blocklist.clone(),
+            apps: c.app_blocklist.clone(),
             safe: c.safe_search,
             entry: String::new(),
             import: false,
@@ -747,11 +749,8 @@ impl ConsoleApp {
                 })
             }
             Menu::File => self.open_dialog(Dialog::File(String::new())),
-            Menu::Net => self.open_dialog(self.net_dialog()),
-            Menu::Apps => {
-                let list = self.cfg.read().unwrap().app_blocklist.clone();
-                self.open_dialog(Dialog::Apps(list));
-            }
+            Menu::Net => self.open_dialog(self.net_dialog(NetTab::Domains)),
+            Menu::Apps => self.open_dialog(self.net_dialog(NetTab::Apps)),
             Menu::Power => self.open_dialog(Dialog::Power(PowerChoice::Shutdown)),
             Menu::Freeze => self.open_dialog(self.shadow_dialog()),
             Menu::Updates => {

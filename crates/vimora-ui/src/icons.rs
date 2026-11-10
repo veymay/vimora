@@ -110,3 +110,4 @@ pub const BOOKMARK: &str = "\u{e064}";
 pub const BOOKMARK_PLUS: &str = "\u{e23d}";
 pub const BOOKMARK_CHECK: &str = "\u{e524}";
 pub const GIT_COMMIT: &str = "\u{e0e6}";
+pub const CIRCLE_DOT: &str = "\u{e349}";

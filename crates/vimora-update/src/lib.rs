@@ -79,7 +79,7 @@ fn agent() -> ureq::Agent {
         }
     };
     b.timeout_connect(Duration::from_secs(10))
-        .timeout_read(Duration::from_secs(60))
+        .timeout_read(Duration::from_secs(20))
         .user_agent(concat!("vimora-updater/", env!("CARGO_PKG_VERSION")))
         .build()
 }
@@ -193,12 +193,17 @@ impl Release {
 }
 
 fn fetch(url: &str, progress: &dyn Fn(u64, u64), total: u64) -> Result<Vec<u8>> {
-    let resp = agent().get(url).call().context("yuklab olib bo'lmadi")?;
+    let resp = agent()
+        .get(url)
+        .call()
+        .context("yuklab olib bo'lmadi (internet yoki GitHub javob bermadi)")?;
     let mut reader = resp.into_reader().take(MAX_DOWNLOAD);
     let mut out = Vec::with_capacity(total as usize);
     let mut buf = [0u8; 64 * 1024];
     loop {
-        let n = reader.read(&mut buf)?;
+        let n = reader
+            .read(&mut buf)
+            .context("yuklab olish to'xtab qoldi: 20 soniya davomida ma'lumot kelmadi")?;
         if n == 0 {
             break;
         }

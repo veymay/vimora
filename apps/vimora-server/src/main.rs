@@ -15,7 +15,7 @@ mod wayland_cast;
 use std::sync::{Arc, Mutex, RwLock};
 
 /// The window has exactly this size and can't be resized; only fullscreen (F11) changes it.
-pub const MIN_WINDOW: [f32; 2] = [1280.0, 760.0];
+pub const MIN_WINDOW: [f32; 2] = [1120.0, 700.0];
 
 fn main() -> eframe::Result<()> {
     tracing_subscriber::fmt()

@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/vimora-core", "crates/vimora-ui", "crates/vimora-update", "crates/vimora-tray", "apps/vimora-server", "apps/vimora-client"]
 
 [workspace.package]
-version = "0.3.8"
+version = "0.3.9"
 edition = "2021"
 license = "MIT"
 authors = ["VEYMAY"]
@@ -46,9 +46,11 @@ windows-sys = { version = "0.59", features = [
 ] }
 
 [profile.release]
+# Fast to build: all cores generate code in parallel, no link-time optimisation.
+# (The programs are I/O- and GPU-bound; LTO/codegen-units=1 only made builds several times slower.)
 opt-level = 3
-lto = "thin"
-codegen-units = 1
+lto = false
+codegen-units = 16
 strip = true
 
 # Fast image encode/decode even in debug builds

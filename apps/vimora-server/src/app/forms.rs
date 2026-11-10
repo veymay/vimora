@@ -215,25 +215,15 @@ pub(super) fn dialog_body(
                     .color(p.faint),
             );
         }
-        Dialog::Apps(list) => {
-            ui.label(RichText::new(tr("Jarayon nomlari, har biri yangi qatorda yoki vergul bilan. Ro'yxatdagi dasturlar ochilishi bilan yopiladi.")).color(p.muted));
-            ui.add_space(4.0);
-            ui.add(
-                ui_kit::text_area(list)
-                    .hint_text(tr("chrome\nsteam.exe\ndiscord"))
-                    .desired_rows(6)
-                    .desired_width(f32::INFINITY)
-                    .font(egui::TextStyle::Monospace),
-            );
-        }
         Dialog::Net {
             tab,
             domains,
             keywords,
+            apps,
             safe,
             entry,
             import,
-        } => net_form(ui, p, tab, domains, keywords, safe, entry, import),
+        } => net_form(ui, p, tab, domains, keywords, apps, safe, entry, import),
         Dialog::Power(a) => {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
@@ -1587,6 +1577,7 @@ pub(super) fn net_form(
     tab: &mut NetTab,
     domains: &mut String,
     keywords: &mut String,
+    apps: &mut String,
     safe: &mut bool,
     entry: &mut String,
     import: &mut bool,
@@ -1607,6 +1598,12 @@ pub(super) fn net_form(
                     icons::TEXT_SEARCH,
                     tr("Kalit so'zlar"),
                     Some(crate::config::active_list(keywords).len()),
+                ),
+                (
+                    NetTab::Apps,
+                    icons::APP_WINDOW,
+                    tr("Dasturlar"),
+                    Some(crate::config::active_list(apps).len()),
                 ),
                 (
                     NetTab::Search,
@@ -1671,7 +1668,7 @@ pub(super) fn net_form(
             entry,
             import,
             tr("so'z: kazino"),
-            tr("Shu so'z qidirilsa, tab yopiladi va sizga xabar keladi."),
+            tr("Shu so'z bilan qidirilsa, sahifa ochilmaydi (yopiladi), o'quvchiga ogohlantirish oynasi chiqadi va sizga xabar keladi."),
             &[
                 (
                     tr("Qimor"),
@@ -1698,6 +1695,25 @@ pub(super) fn net_form(
                         "o'yin yuklab",
                         "скачать игру",
                     ],
+                ),
+            ],
+        ),
+        NetTab::Apps => block_list(
+            ui,
+            p,
+            apps,
+            entry,
+            import,
+            tr("dastur: steam.exe"),
+            tr("Ro'yxatdagi dasturlar ochilishi bilan yopiladi. Jarayon nomini yozing (masalan, steam.exe yoki telegram)."),
+            &[
+                (
+                    tr("O'yinlar"),
+                    &["steam", "epicgameslauncher", "robloxplayerbeta", "minecraft", "javaw"],
+                ),
+                (
+                    tr("Messenjerlar"),
+                    &["telegram", "discord", "whatsapp", "viber", "skype"],
                 ),
             ],
         ),

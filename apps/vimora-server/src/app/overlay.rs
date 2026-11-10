@@ -7,6 +7,8 @@ use vimora_ui::{tf, tr};
 /// Open/close animation length for modals and drawers.
 const OVERLAY_ANIM_SECS: f32 = 0.22;
 /// Overlay header and footer bar heights.
+/// Width of every right-side drawer.
+pub(super) const DRAWER_W: f32 = 620.0;
 const HEADER_H: f32 = 52.0;
 const FOOTER_H: f32 = 62.0;
 
@@ -299,7 +301,19 @@ impl ConsoleApp {
             } else {
                 Default::default()
             },
-            online: all.len(),
+            online: all.iter().filter(|v| v.online).count(),
+            students: if settings_open {
+                all.iter()
+                    .filter(|v| v.online)
+                    .map(|v| (v.label.clone(), v.version.clone(), v.status.busy.clone()))
+                    .collect()
+            } else {
+                vec![]
+            },
+            latest: match self.updater.phase() {
+                crate::update::Phase::Available(r) => r.version,
+                _ => vimora_update::current().to_string(),
+            },
             saved: self
                 .saved_at
                 .is_some_and(|t| t.elapsed() < Duration::from_secs(2)),
@@ -345,7 +359,6 @@ impl ConsoleApp {
             dialog,
             Dialog::Net { .. }
                 | Dialog::Message { .. }
-                | Dialog::Apps(_)
                 | Dialog::Activity
                 | Dialog::Freeze { .. }
                 | Dialog::Updates { .. }
@@ -354,8 +367,7 @@ impl ConsoleApp {
             Dialog::Message { .. } => (tr("Xabarlar"), 460.0),
             Dialog::Launch { .. } => (tr("Sayt yoki dasturni ochish"), 520.0),
             Dialog::File(_) => (tr("Fayl yuborish"), 500.0),
-            Dialog::Apps(_) => (tr("Dasturlarni bloklash"), 480.0),
-            Dialog::Net { .. } => (tr("Internet"), 540.0),
+            Dialog::Net { .. } => (tr("Bloklash"), 540.0),
             Dialog::Power(_) => (tr("Kompyuterlarni boshqarish"), 540.0),
             Dialog::Settings(_) => (tr("Sozlamalar"), SETTINGS_W),
             Dialog::Room { rename: None, .. } => (tr("Yangi xona"), 440.0),
@@ -365,6 +377,9 @@ impl ConsoleApp {
             Dialog::Rename { .. } => (tr("Nomini o'zgartirish"), 460.0),
             Dialog::Updates { .. } => (tr("Yangilanishlar"), 600.0),
         };
+        // Every drawer has the same width, wide enough for its widest content (four tabs),
+        // so the frame never grows past the header and ✕ always sits on the right edge.
+        let width = if drawer { DRAWER_W } else { width };
 
         let count_label: Option<String> = if matches!(
             dialog,
@@ -388,8 +403,7 @@ impl ConsoleApp {
             Dialog::Message { .. } => icons::MESSAGE_SQUARE_TEXT,
             Dialog::Launch { .. } => icons::GLOBE,
             Dialog::File(_) => icons::FILE_UP,
-            Dialog::Apps(_) => icons::BAN,
-            Dialog::Net { .. } => icons::GLOBE_LOCK,
+            Dialog::Net { .. } => icons::SHIELD_BAN,
             Dialog::Power(_) => icons::POWER,
             Dialog::Settings(_) => icons::SETTINGS,
             Dialog::Room { .. } => icons::LAYOUT_GRID,
@@ -582,7 +596,7 @@ impl ConsoleApp {
                         .show(ui, |ui| {
                             ui.set_width(width - 36.0);
                             ui.horizontal(|ui| {
-                                if matches!(dialog, Dialog::Apps(_) | Dialog::Net { .. })
+                                if matches!(dialog, Dialog::Net { .. })
                                     && ui_kit::button(
                                         ui,
                                         Some(icons::TRASH_2),
@@ -605,7 +619,6 @@ impl ConsoleApp {
                                         Dialog::Launch { .. } => {
                                             (icons::PLAY, tr("Ishga tushirish"))
                                         }
-                                        Dialog::Apps(_) => (icons::BAN, tr("Bloklash")),
                                         Dialog::Net { .. } => (icons::SHIELD_CHECK, tr("Qo'llash")),
                                         Dialog::Power(_) => (icons::POWER, tr("Tasdiqlash")),
                                         Dialog::Settings(_)
@@ -762,11 +775,13 @@ impl ConsoleApp {
                     tab,
                     domains,
                     keywords,
+                    apps,
                     ..
                 }) = &mut self.dialog
                 {
                     let n = match tab {
                         NetTab::Keywords => add_lines(keywords, &text),
+                        NetTab::Apps => add_lines(apps, &text),
                         _ => add_lines(domains, &text),
                     };
                     self.hub
@@ -977,27 +992,24 @@ impl ConsoleApp {
                         .log(Level::Warn, tf!("Faylni o'qib bo'lmadi: {e}", e = e)),
                 }
             }
-            Dialog::Apps(list) => {
-                let items = if clear { vec![] } else { split_list(&list) };
-                if !clear {
-                    self.cfg.write().unwrap().app_blocklist = list;
-                }
-                self.send(
-                    t,
-                    Command::SetAppBlocklist(items),
-                    if clear {
-                        tr("Dastur bloki olib tashlandi")
-                    } else {
-                        tr("Dasturlar bloklandi")
-                    },
-                );
-            }
             Dialog::Net {
                 domains,
                 keywords,
+                apps,
                 safe,
                 ..
             } => {
+                // Programs go to the agent (it closes them), the rest to the service.
+                let programs = if clear {
+                    vec![]
+                } else {
+                    crate::config::active_list(&apps)
+                };
+                if !clear {
+                    self.cfg.write().unwrap().app_blocklist = apps.clone();
+                }
+                let n_programs = programs.len();
+                self.send(t, Command::SetAppBlocklist(programs), "");
                 let policy = if clear {
                     NetPolicy::default()
                 } else {
@@ -1012,12 +1024,13 @@ impl ConsoleApp {
                     }
                 };
                 let what = if clear {
-                    tr("NetControl o'chirildi").to_string()
+                    tr("Barcha bloklar olib tashlandi").to_string()
                 } else {
                     tf!(
-                        "NetControl: {v0} domen, {v1} kalit so'z{v2}",
+                        "Bloklash: {v0} sayt, {v1} kalit so'z, {v3} dastur{v2}",
                         v0 = policy.domains.len(),
                         v1 = policy.keywords.len(),
+                        v3 = n_programs,
                         v2 = if safe { ", SafeSearch" } else { "" }
                     )
                 };

@@ -107,7 +107,10 @@ impl Engine {
         if self.shield.store().vimora_manual || self.inner.lock().unwrap().busy.is_some() {
             return;
         }
-        match self.update_vimora() {
+        let res = self.update_vimora();
+        // update_vimora shows its progress as "busy"; outside a job nobody else clears it.
+        self.inner.lock().unwrap().busy = None;
+        match res {
             Ok(m) if m.contains("o'rnatilmoqda") => self.push(true, m),
             Ok(_) => {}
             Err(e) => tracing::warn!("self-update skipped: {e:#}"),
@@ -141,7 +144,23 @@ impl Engine {
                 self.shield.queue_commit(vec![dir]);
             }
         }
-        let path = vimora_update::download(&rel, Role::Student, &update_dir(), &|_, _| {})?;
+        // Progress goes to the console through the status ("busy"), e.g.
+        // "Vimora 0.3.9 yuklanmoqda 45%" — the console draws a bar from the percent.
+        let v = rel.version.clone();
+        let last = std::sync::Mutex::new(u64::MAX);
+        let progress = |done: u64, total: u64| {
+            if total == 0 {
+                return;
+            }
+            let pct = (done * 100 / total).min(100);
+            let mut l = last.lock().unwrap();
+            if *l != pct {
+                *l = pct;
+                self.inner.lock().unwrap().busy = Some(format!("Vimora {v} yuklanmoqda {pct}%"));
+            }
+        };
+        let path = vimora_update::download(&rel, Role::Student, &update_dir(), &progress)?;
+        self.inner.lock().unwrap().busy = Some(format!("Vimora {v} o'rnatilmoqda"));
         vimora_update::install_student(&path)?;
         Ok(format!("Vimora {} o'rnatilmoqda", rel.version))
     }

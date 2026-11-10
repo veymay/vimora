@@ -15,7 +15,11 @@ pub enum Phase {
         version: String,
         done: u64,
         total: u64,
+        /// Bytes per second, averaged since the start.
+        speed: u64,
     },
+    /// Checking the downloaded file against SHA256SUMS.
+    Verifying(String),
     Installing(String),
     /// Ubuntu: the new version is installed; restart to use it.
     Installed(String),
@@ -55,6 +59,14 @@ impl Updater {
         }
     }
 
+    /// Download / verify / install in progress (shown in the status bar too).
+    pub fn working(&self) -> bool {
+        matches!(
+            self.0.lock().unwrap().phase,
+            Phase::Downloading { .. } | Phase::Verifying(_) | Phase::Installing(_)
+        )
+    }
+
     pub fn take_exit(&self) -> bool {
         std::mem::take(&mut self.0.lock().unwrap().exit)
     }
@@ -70,7 +82,10 @@ impl Updater {
     fn busy(&self) -> bool {
         matches!(
             self.0.lock().unwrap().phase,
-            Phase::Checking | Phase::Downloading { .. } | Phase::Installing(_)
+            Phase::Checking
+                | Phase::Downloading { .. }
+                | Phase::Verifying(_)
+                | Phase::Installing(_)
         )
     }
 
@@ -118,11 +133,31 @@ impl Updater {
         std::thread::spawn(move || {
             let v = rel.version.clone();
             let dir = std::env::temp_dir().join("vimora-update");
+            let started = std::time::Instant::now();
+            let last = Mutex::new(std::time::Instant::now() - Duration::from_secs(1));
+            me.set(Phase::Downloading {
+                version: v.clone(),
+                done: 0,
+                total: rel.asset(Role::Teacher).map_or(0, |a| a.size),
+                speed: 0,
+            });
             let progress = |done: u64, total: u64| {
+                if total > 0 && done >= total {
+                    me.set(Phase::Verifying(v.clone()));
+                    return;
+                }
+                // ~10 updates a second is plenty for the bar.
+                let mut l = last.lock().unwrap();
+                if l.elapsed() < Duration::from_millis(100) {
+                    return;
+                }
+                *l = std::time::Instant::now();
+                let secs = started.elapsed().as_secs_f64().max(0.1);
                 me.set(Phase::Downloading {
                     version: v.clone(),
                     done,
                     total,
+                    speed: (done as f64 / secs) as u64,
                 })
             };
             let res = vimora_update::download(&rel, Role::Teacher, &dir, &progress).and_then(|p| {
