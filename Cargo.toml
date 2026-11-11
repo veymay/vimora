@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/vimora-core", "crates/vimora-ui", "crates/vimora-update", "crates/vimora-tray", "apps/vimora-server", "apps/vimora-client"]
 
 [workspace.package]
-version = "0.3.19"
+version = "0.3.20"
 edition = "2021"
 license = "MIT"
 authors = ["VEYMAY"]
