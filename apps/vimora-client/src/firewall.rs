@@ -26,6 +26,35 @@ pub fn apply(internet_off: bool, ports: &[u16]) -> Result<String> {
     })
 }
 
+/// Vimora's firewall rules in the registry (for commits while the PC is frozen).
+pub fn touched() -> crate::sh::Touched {
+    #[cfg(windows)]
+    {
+        const KEY: &str = r"HKLM\SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\FirewallRules";
+        let out = crate::sh::run("reg", &["query", KEY])
+            .map(|(_, o)| o)
+            .unwrap_or_default();
+        let registry = out
+            .lines()
+            .filter(|l| l.contains("Name=Vimora"))
+            .filter_map(|l| {
+                l.split_whitespace()
+                    .next()
+                    .map(|v| (KEY.to_string(), v.to_string()))
+            })
+            .collect();
+        crate::sh::Touched {
+            files: vec![],
+            registry,
+        }
+    }
+    #[cfg(not(windows))]
+    crate::sh::Touched {
+        files: vec![],
+        registry: vec![],
+    }
+}
+
 fn port_list(ports: &[u16]) -> String {
     ports
         .iter()

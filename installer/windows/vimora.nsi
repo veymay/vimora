@@ -152,14 +152,21 @@ FunctionEnd
 ; stopped here and started again by "vimora-client setup".
 Section "Vimora"
   SetOutPath "$INSTDIR"
+  ; Keep the watchdog from restarting the old service while files are swapped.
+  nsExec::Exec '"$SYSDIR\schtasks.exe" /change /tn "Vimora Service Watchdog" /disable'
+  Pop $0
   nsExec::Exec '"$SYSDIR\schtasks.exe" /end /tn "Vimora Service"'
   Pop $0
-  Delete "$INSTDIR\vimora-client.old.exe"
-  Delete "$INSTDIR\vimora-server.old.exe"
+  Sleep 1500
+  ; Old files from earlier updates: delete what is no longer running (the rest stays until the
+  ; next update). Each update moves the running files aside under a NEW name, so a file still
+  ; in use can never block the update.
+  Call DeleteOldFiles
+  System::Call 'kernel32::GetTickCount() i .r9'
   IfFileExists "$INSTDIR\vimora-client.exe" 0 +2
-    Rename "$INSTDIR\vimora-client.exe" "$INSTDIR\vimora-client.old.exe"
+    Rename "$INSTDIR\vimora-client.exe" "$INSTDIR\vimora-client.old-$9.exe"
   IfFileExists "$INSTDIR\vimora-server.exe" 0 +2
-    Rename "$INSTDIR\vimora-server.exe" "$INSTDIR\vimora-server.old.exe"
+    Rename "$INSTDIR\vimora-server.exe" "$INSTDIR\vimora-server.old-$9.exe"
 
   ${If} $Role == "teacher"
     File "${BINDIR}\vimora-server.exe"
@@ -185,6 +192,9 @@ Section "Vimora"
     nsExec::Exec /TIMEOUT=180000 '"$INSTDIR\vimora-client.exe" setup'
     Pop $0
   ${EndIf}
+  ; The watchdog again (setup re-creates it too; this covers a failed setup).
+  nsExec::Exec '"$SYSDIR\schtasks.exe" /change /tn "Vimora Service Watchdog" /enable'
+  Pop $0
 
   WriteUninstaller "$INSTDIR\uninstall.exe"
   File "/oname=vimora.ico" "vimora.ico"
@@ -205,6 +215,18 @@ Section "Vimora"
     Call LaunchApp
   ${EndIf}
 SectionEnd
+
+; Deletes the files earlier updates moved aside (those still running are skipped).
+Function DeleteOldFiles
+  Delete "$INSTDIR\vimora-client.old.exe"
+  Delete "$INSTDIR\vimora-server.old.exe"
+  FindFirst $0 $1 "$INSTDIR\vimora-*.old-*.exe"
+  ${DoWhile} $1 != ""
+    Delete "$INSTDIR\$1"
+    FindNext $0 $1
+  ${Loop}
+  FindClose $0
+FunctionEnd
 
 ; Starts the program in the user's (non-elevated) session.
 Function LaunchApp
@@ -248,6 +270,7 @@ Section "Uninstall"
   Delete "$INSTDIR\vimora-server.exe"
   Delete "$INSTDIR\vimora-client.old.exe"
   Delete "$INSTDIR\vimora-server.old.exe"
+  Delete "$INSTDIR\vimora-*.old-*.exe"
   Delete "$INSTDIR\vimora.ico"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"

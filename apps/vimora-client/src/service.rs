@@ -205,6 +205,7 @@ async fn serve(pairing: Pairing) -> Result<()> {
     let listener = TcpListener::bind(("127.0.0.1", port())).await?;
     info!("Vimora service listening on 127.0.0.1:{}", port());
     cleanup_old_binaries();
+    exit_when_replaced();
     crate::power::keep_awake();
     // A lock left over from before a crash or restart: release it; a still-locked agent
     // asks again within seconds.
@@ -268,7 +269,44 @@ fn cleanup_old_binaries() {
         for n in ["vimora-client.old.exe", "vimora-server.old.exe"] {
             let _ = std::fs::remove_file(dir.join(n));
         }
+        // Files earlier updates moved aside ("vimora-client.old-<n>.exe"); those still running
+        // can't be deleted and are left for later.
+        if let Ok(rd) = std::fs::read_dir(&dir) {
+            for e in rd.flatten() {
+                let n = e.file_name().to_string_lossy().to_lowercase();
+                if n.starts_with("vimora-") && n.contains(".old-") && n.ends_with(".exe") {
+                    let _ = std::fs::remove_file(e.path());
+                }
+            }
+        }
     }
+}
+
+/// An update replaced our program file while this service kept running from the old one
+/// (the installer moves running files aside): exit, so the new version starts (the watchdog
+/// and the "Vimora Service" task start it again).
+fn exit_when_replaced() {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let stamp = |p: &std::path::Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    let Some(start) = stamp(&exe) else { return };
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(20));
+        match stamp(&exe) {
+            Some(t) if t != start => {
+                // Let the installer finish (it runs "setup", which starts the new service).
+                std::thread::sleep(std::time::Duration::from_secs(15));
+                info!("program file replaced by an update: restarting the service");
+                #[cfg(windows)]
+                {
+                    let _ = crate::sh::run("schtasks", &["/run", "/tn", "Vimora Service"]);
+                }
+                std::process::exit(0);
+            }
+            _ => {}
+        }
+    });
 }
 
 async fn handle(

@@ -6,6 +6,22 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Sound is turned off by the teacher.
 static OFF: AtomicBool = AtomicBool::new(false);
+/// The lock screen is up: silent, like a frozen computer.
+static LOCKED: AtomicBool = AtomicBool::new(false);
+
+/// Lock screen shown (true) or gone: mute while it is up, sound back afterwards (unless the
+/// teacher turned sound off).
+pub fn set_locked(on: bool) {
+    let was = LOCKED.swap(on, Ordering::Relaxed);
+    if was == on {
+        return;
+    }
+    if on {
+        mute(true);
+    } else if !OFF.load(Ordering::Relaxed) {
+        mute(false);
+    }
+}
 
 fn flag_file() -> Option<std::path::PathBuf> {
     dirs::config_dir().map(|d| d.join("vimora").join("sound-off"))
@@ -29,13 +45,13 @@ pub fn set_off(off: bool) {
         }
     }
     if off || was {
-        mute(off);
+        mute(off || LOCKED.load(Ordering::Relaxed));
     }
 }
 
 /// Called every few seconds: re-mutes while sound is off.
 pub fn enforce() {
-    if OFF.load(Ordering::Relaxed) {
+    if OFF.load(Ordering::Relaxed) || LOCKED.load(Ordering::Relaxed) {
         mute(true);
     }
 }

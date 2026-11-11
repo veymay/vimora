@@ -884,6 +884,7 @@ mod input_block {
             }
         }
         keep_covering(ours);
+        keep_covers();
         let fg = GetForegroundWindow();
         if fg == ours {
             return;
@@ -911,9 +912,109 @@ mod input_block {
         SetForegroundWindow(ours);
     }
 
+    /// Black windows over every monitor but the primary one (the lock screen covers that).
+    static COVERS: std::sync::Mutex<Vec<isize>> = std::sync::Mutex::new(Vec::new());
+
+    unsafe extern "system" fn cover_proc(h: HWND, m: u32, w: WPARAM, l: LPARAM) -> LRESULT {
+        // Never let these be closed or activated by the student.
+        if m == WM_CLOSE || m == WM_MOUSEACTIVATE {
+            return if m == WM_MOUSEACTIVATE {
+                MA_NOACTIVATE as LRESULT
+            } else {
+                0
+            };
+        }
+        DefWindowProcW(h, m, w, l)
+    }
+
+    unsafe extern "system" fn each_monitor(
+        mon: windows_sys::Win32::Graphics::Gdi::HMONITOR,
+        _: windows_sys::Win32::Graphics::Gdi::HDC,
+        _: *mut RECT,
+        list: LPARAM,
+    ) -> BOOL {
+        use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITORINFO};
+        let mut mi: MONITORINFO = std::mem::zeroed();
+        mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        if GetMonitorInfoW(mon, &mut mi) != 0 && mi.dwFlags & 1 == 0 {
+            // Not the primary monitor (MONITORINFOF_PRIMARY = 1).
+            (*(list as *mut Vec<RECT>)).push(mi.rcMonitor);
+        }
+        1
+    }
+
+    /// Creates the black covers (on the hook thread, which pumps their messages).
+    unsafe fn create_covers() {
+        use windows_sys::Win32::Graphics::Gdi::{EnumDisplayMonitors, GetStockObject, BLACK_BRUSH};
+        let mut rects: Vec<RECT> = vec![];
+        EnumDisplayMonitors(
+            null_mut(),
+            null(),
+            Some(each_monitor),
+            &mut rects as *mut Vec<RECT> as LPARAM,
+        );
+        if rects.is_empty() {
+            return;
+        }
+        let class: Vec<u16> = "VimoraCover\0".encode_utf16().collect();
+        let wc = WNDCLASSW {
+            style: 0,
+            lpfnWndProc: Some(cover_proc),
+            cbClsExtra: 0,
+            cbWndExtra: 0,
+            hInstance: GetModuleHandleW(null()),
+            hIcon: null_mut(),
+            hCursor: null_mut(),
+            hbrBackground: GetStockObject(BLACK_BRUSH) as _,
+            lpszMenuName: null(),
+            lpszClassName: class.as_ptr(),
+        };
+        RegisterClassW(&wc);
+        let mut covers = COVERS.lock().unwrap();
+        for r in rects {
+            let h = CreateWindowExW(
+                WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                class.as_ptr(),
+                class.as_ptr(),
+                WS_POPUP | WS_VISIBLE,
+                r.left,
+                r.top,
+                r.right - r.left,
+                r.bottom - r.top,
+                null_mut(),
+                null_mut(),
+                GetModuleHandleW(null()),
+                null(),
+            );
+            if !h.is_null() {
+                covers.push(h as isize);
+            }
+        }
+    }
+
+    /// Keeps the covers shown and on top.
+    unsafe fn keep_covers() {
+        for &h in COVERS.lock().unwrap().iter() {
+            let h = h as HWND;
+            if IsWindowVisible(h) == 0 || IsIconic(h) != 0 {
+                ShowWindow(h, SW_SHOWNOACTIVATE);
+            }
+            SetWindowPos(
+                h,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+            );
+        }
+    }
+
     pub fn install() {
         std::thread::spawn(|| unsafe {
             crate::desktop::join_thread();
+            create_covers();
             let mut hooks = hook_all();
             if hooks.0.is_null() || hooks.1.is_null() {
                 tracing::warn!("input hooks: keyboard {:?}, mouse {:?}", hooks.0, hooks.1);

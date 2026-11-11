@@ -345,6 +345,7 @@ impl Engine {
                     m
                 };
                 let fw = crate::firewall::apply(a.internet_off, &a.ports)?;
+                self.commit(&crate::firewall::touched());
                 format!("{sites}; {fw}")
             }
             PrivCommand::SetDevicePolicy(p) => {

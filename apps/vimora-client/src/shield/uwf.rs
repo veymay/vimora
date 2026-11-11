@@ -255,12 +255,27 @@ impl Uwf {
             r"C:\ProgramData\Microsoft\Windows Defender".to_string(),
             r"C:\Program Files\Windows Defender".to_string(),
         ];
-        // Each user's console pairing (%APPDATA%\vimora), so unpairing sticks.
+        // Vimora itself: an update (new program files) is never rolled back.
+        if let Some(dir) = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.to_string_lossy().into_owned()))
+        {
+            files.push(dir);
+        }
+        // Each user's Vimora settings (%APPDATA%\vimora: pairing, program lists, sound) and the
+        // files the teacher sent (Downloads\Vimora).
         if let Ok(users) = std::fs::read_dir(format!("{}\\Users", system_drive())) {
             for u in users.flatten() {
                 let roaming = u.path().join("AppData").join("Roaming");
                 if roaming.is_dir() {
                     files.push(roaming.join("vimora").to_string_lossy().into_owned());
+                    files.push(
+                        u.path()
+                            .join("Downloads")
+                            .join("Vimora")
+                            .to_string_lossy()
+                            .into_owned(),
+                    );
                 }
             }
         }
@@ -279,6 +294,14 @@ impl Uwf {
             r"HKLM\SOFTWARE\Policies",
             r"HKLM\SOFTWARE\Microsoft\Windows Defender",
             r"HKLM\SECURITY\Policy\Secrets\$MACHINE.ACC",
+            // Firewall rules (internet off, blocked ports) set from the console.
+            r"HKLM\SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy",
+            // Device control (USB, printer, Bluetooth service start types) and Vimora's version.
+            r"HKLM\SYSTEM\CurrentControlSet\Services\USBSTOR",
+            r"HKLM\SYSTEM\CurrentControlSet\Services\Spooler",
+            r"HKLM\SYSTEM\CurrentControlSet\Services\bthserv",
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore",
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Vimora",
         ] {
             if let Err(e) = uwf(&["registry", "add-exclusion", k]) {
                 tracing::debug!("uwf exclusion {k}: {e:#}");
@@ -383,6 +406,14 @@ impl Backend for Uwf {
     fn commit_file(&self, path: &Path) -> Result<()> {
         uwf(&["file", "commit", &path.to_string_lossy()])?;
         Ok(())
+    }
+
+    /// Service start: (re)apply the exclusions, so PCs frozen by an older Vimora get the
+    /// newer list too (exclusions take effect from the next restart).
+    fn mount_persistent(&self, folders: &[String]) {
+        if self.config().is_some() {
+            self.add_exclusions(folders);
+        }
     }
 
     /// UWF commits files one by one: a folder (e.g. Vimora's own after an update) is walked.

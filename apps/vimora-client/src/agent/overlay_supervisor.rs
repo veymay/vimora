@@ -153,6 +153,10 @@ pub(super) async fn overlay_task(state: Shared, mut rx: mpsc::Receiver<OverlayRe
             None => locked,
             Some((on, at)) => on != locked || (locked && at.elapsed() > Duration::from_secs(30)),
         };
+        if kiosk.map(|k| k.0) != Some(locked) {
+            // Silent while locked (like a frozen PC); sound back afterwards.
+            let _ = tokio::task::spawn_blocking(move || crate::audio::set_locked(locked)).await;
+        }
         if due {
             kiosk = Some((locked, Instant::now()));
             tokio::spawn(async move {
