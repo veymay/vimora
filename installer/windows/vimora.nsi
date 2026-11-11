@@ -191,6 +191,13 @@ Section "Vimora"
     ; Privileged service (SYSTEM), logon task, Shadow control, updates.
     nsExec::Exec /TIMEOUT=180000 '"$INSTDIR\vimora-client.exe" setup'
     Pop $0
+    ; Standalone updater: a script of its own (not the Vimora program), so a PC always reaches
+    ; the newest version even if a Vimora version could not update itself.
+    File "vimora-update.ps1"
+    nsExec::Exec '"$SYSDIR\schtasks.exe" /create /tn "Vimora Updater" /tr "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \"$INSTDIR\vimora-update.ps1\"" /sc hourly /mo 6 /ru SYSTEM /rl HIGHEST /f'
+    Pop $0
+    nsExec::Exec '"$SYSDIR\schtasks.exe" /create /tn "Vimora Updater Boot" /tr "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \"$INSTDIR\vimora-update.ps1\"" /sc onstart /delay 0005:00 /ru SYSTEM /rl HIGHEST /f'
+    Pop $0
   ${EndIf}
   ; The watchdog again (setup re-creates it too; this covers a failed setup).
   nsExec::Exec '"$SYSDIR\schtasks.exe" /change /tn "Vimora Service Watchdog" /enable'
@@ -259,6 +266,10 @@ Section "Uninstall"
   Pop $0
   nsExec::Exec '"$SYSDIR\schtasks.exe" /delete /tn "Vimora Update" /f'
   Pop $0
+  nsExec::Exec '"$SYSDIR\schtasks.exe" /delete /tn "Vimora Updater" /f'
+  Pop $0
+  nsExec::Exec '"$SYSDIR\schtasks.exe" /delete /tn "Vimora Updater Boot" /f'
+  Pop $0
   nsExec::Exec '"$SYSDIR\schtasks.exe" /delete /tn "Vimora Agent" /f'
   Pop $0
   DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "VimoraAgent"
@@ -272,6 +283,7 @@ Section "Uninstall"
   Delete "$INSTDIR\vimora-server.old.exe"
   Delete "$INSTDIR\vimora-*.old-*.exe"
   Delete "$INSTDIR\vimora.ico"
+  Delete "$INSTDIR\vimora-update.ps1"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
   ReadEnvStr $0 ProgramData

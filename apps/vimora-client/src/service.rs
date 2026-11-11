@@ -206,6 +206,7 @@ async fn serve(pairing: Pairing) -> Result<()> {
     info!("Vimora service listening on 127.0.0.1:{}", port());
     cleanup_old_binaries();
     exit_when_replaced();
+    std::thread::spawn(ensure_updater_tasks);
     crate::power::keep_awake();
     // A lock left over from before a crash or restart: release it; a still-locked agent
     // asks again within seconds.
@@ -277,6 +278,46 @@ fn cleanup_old_binaries() {
                 if n.starts_with("vimora-") && n.contains(".old-") && n.ends_with(".exe") {
                     let _ = std::fs::remove_file(e.path());
                 }
+            }
+        }
+    }
+}
+
+/// The standalone updater (`vimora-update.ps1` next to the program, run by its own tasks) must
+/// always be scheduled: re-created here when missing (a frozen PC may have rolled them back).
+fn ensure_updater_tasks() {
+    #[cfg(windows)]
+    {
+        let Some(script) = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.join("vimora-update.ps1")))
+            .filter(|p| p.exists())
+        else {
+            return;
+        };
+        let tr = format!(
+            "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{}\"",
+            script.display()
+        );
+        for (name, schedule) in [
+            ("Vimora Updater", &["/sc", "hourly", "/mo", "6"][..]),
+            (
+                "Vimora Updater Boot",
+                &["/sc", "onstart", "/delay", "0005:00"][..],
+            ),
+        ] {
+            let exists = crate::sh::run("schtasks", &["/query", "/tn", name])
+                .map(|(ok, _)| ok)
+                .unwrap_or(false);
+            if exists {
+                continue;
+            }
+            let mut args = vec!["/create", "/tn", name, "/tr", &tr];
+            args.extend_from_slice(schedule);
+            args.extend_from_slice(&["/ru", "SYSTEM", "/rl", "HIGHEST", "/f"]);
+            match crate::sh::run_ok("schtasks", &args) {
+                Ok(_) => info!("updater task {name} registered"),
+                Err(e) => tracing::warn!("updater task {name}: {e:#}"),
             }
         }
     }

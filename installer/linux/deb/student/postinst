@@ -6,6 +6,31 @@ if [ "$1" = configure ]; then
     # vimora-service.service — the root part: Shadow, updates, NetControl.
     /opt/vimora/bin/vimora-client setup || echo "vimora: service setup failed" >&2
     chmod 644 /etc/vimora/client.json 2>/dev/null || true
+    # Standalone updater: runs on its own timer, independent of the Vimora program.
+    cat > /etc/systemd/system/vimora-updater.service <<'UNIT'
+[Unit]
+Description=Vimora standalone updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/vimora/bin/vimora-updater
+UNIT
+    cat > /etc/systemd/system/vimora-updater.timer <<'UNIT'
+[Unit]
+Description=Vimora standalone updater (5 minutes after start-up, then every 6 hours)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl enable --now vimora-updater.timer 2>/dev/null || true
     if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
         ufw allow 47800/udp >/dev/null || true
     fi

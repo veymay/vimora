@@ -3,7 +3,9 @@ set -e
 # Upgrades keep the service running; only a real removal stops it.
 if [ "$1" = remove ]; then
     systemctl disable --now vimora-service 2>/dev/null || true
+    systemctl disable --now vimora-updater.timer 2>/dev/null || true
     rm -f /etc/systemd/system/vimora-service.service
+    rm -f /etc/systemd/system/vimora-updater.service /etc/systemd/system/vimora-updater.timer
     systemctl daemon-reload 2>/dev/null || true
     pkill -x vimora-client 2>/dev/null || true
 fi
