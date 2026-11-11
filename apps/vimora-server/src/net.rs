@@ -1142,6 +1142,17 @@ impl Hub {
     }
 }
 
+/// "Skanerlash": asks every computer on the network that belongs to no console to show itself.
+pub fn scan(console_port: u16) {
+    let data = vimora_core::net::encode_scan(console_port);
+    if let Ok(s) = std::net::UdpSocket::bind(("0.0.0.0", 0)) {
+        let _ = s.set_broadcast(true);
+        for _ in 0..2 {
+            let _ = s.send_to(&data, ("255.255.255.255", vimora_core::DISCOVERY_PORT));
+        }
+    }
+}
+
 /// "Take this computer": tells a free computer to join this console.
 pub fn claim(ip: std::net::IpAddr, key: &str, console_port: u16) {
     let data = vimora_core::net::encode_claim(key, console_port);

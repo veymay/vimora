@@ -6,6 +6,17 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Yangi kompyuterlar", "New computers", "Новые компьютеры"),
+    ("O'quvchi kompyuterlariga Vimora'ni o'rnating, so'ng \"Skanerlash\" ni bosib ularni qo'shing.\nBir xil tarmoqda (Wi-Fi yoki LAN) bo'lsa kifoya.", "Install Vimora on the student computers, then press \"Scan\" and add them.\nThey only need to be on the same network (Wi-Fi or LAN).", "Установите Vimora на компьютеры учеников, затем нажмите «Сканировать» и добавьте их.\nДостаточно одной сети (Wi-Fi или LAN)."),
+    ("Skanerlash", "Scan", "Сканировать"),
+    ("Tarmoqdan yangi kompyuterlarni qidirish", "Search the network for new computers", "Искать новые компьютеры в сети"),
+    ("Hali qo'shilmagan kompyuterlar: qo'shish uchun bosing", "Computers not added yet: click to add", "Ещё не добавленные компьютеры: нажмите, чтобы добавить"),
+    ("{n} ta yangi kompyuter", "{n} new computers", "Новых компьютеров: {n}"),
+    ("Tarmoqdagi hali hech bir konsolga qo'shilmagan kompyuterlar. \"Qo'shish\" ni bosing — kompyuter shu konsolga ulanadi.", "Computers on the network that are not in any console yet. Press \"Add\" and the computer joins this console.", "Компьютеры в сети, ещё не добавленные ни в одну консоль. Нажмите «Добавить» — компьютер подключится к этой консоли."),
+    ("Skanerlanmoqda…", "Scanning…", "Сканирование…"),
+    ("Qayta skanerlash", "Scan again", "Сканировать снова"),
+    ("Yangi kompyuter topilmadi. O'quvchi kompyuterida Vimora o'rnatilgani va u shu tarmoqqa ulangani (Wi-Fi yoki LAN) tekshiring.", "No new computers found. Check that Vimora is installed on the student computer and that it is on this network (Wi-Fi or LAN).", "Новые компьютеры не найдены. Проверьте, что на компьютере ученика установлена Vimora и он подключён к этой сети (Wi-Fi или LAN)."),
+    ("{n} ta kompyuter topildi", "{n} computers found", "Найдено компьютеров: {n}"),
     ("Bo'sh kompyuterlar", "Free computers", "Свободные компьютеры"),
     ("Bu kompyuterlar o'z konsolidan olib tashlangan va bo'sh. Ular tarmoqdagi hamma konsollarda ko'rinadi; \"Qo'shish\" ni bosgan konsolga ulanadi.", "These computers were removed from their console and are free. Every console on the network sees them; they join the console where \"Add\" is pressed.", "Эти компьютеры удалены из своей консоли и свободны. Их видят все консоли в сети; компьютер подключится к той, где нажмут «Добавить»."),
     ("Hammasini qo'shish ({n})", "Add all ({n})", "Добавить все ({n})"),

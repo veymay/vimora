@@ -274,9 +274,9 @@ pub async fn run(cfg: Config) -> Result<()> {
         // Where to connect: a fixed address from the config, else the console that worked last
         // time (tried first), else whatever announces itself on the network.
         let mut targets: Vec<String> = vec![];
-        // Removed from its console: free. It shows itself to every console and joins the one
-        // whose teacher adds it.
-        if pin.is_none() && cfg.server.is_none() && crate::config::is_released() {
+        // Not paired with any console (a new install, or removed from its console): free. It
+        // shows itself to every console ("Skanerlash") and joins the one whose teacher adds it.
+        if pin.is_none() && cfg.server.is_none() {
             let addr = free_mode(cfg.name.clone()).await;
             targets.push(addr);
         }
@@ -382,6 +382,17 @@ async fn free_mode(name: Option<String>) -> String {
                     info!("free: added by the console at {addr}");
                     return addr;
                 }
+                continue;
+            }
+            // A teacher pressed "Skanerlash": answer that console right away.
+            if let Some(port) = vimora_core::net::decode_scan(&buf[..n]) {
+                let addr = format!("{}:{port}", src.ip());
+                consoles.insert(addr.clone());
+                let info = info.clone();
+                tokio::spawn(async move {
+                    let _ =
+                        tokio::time::timeout(Duration::from_secs(4), say_free(&addr, info)).await;
+                });
                 continue;
             }
             if let Some(b) = vimora_core::net::decode_beacon(&buf[..n]) {

@@ -133,9 +133,16 @@ pub(super) enum Dialog {
         /// Shadow Defender password for the Windows student PCs.
         password: String,
     },
-    /// Free computers (removed from a console) waiting to be added; `add` = keys to add now.
+    /// "Skanerlash": computers that belong to no console (new installs, or removed from a
+    /// console), found by a network scan; `add` = keys to add now.
     FreePcs {
         add: Vec<String>,
+        /// When the current scan started (results keep coming afterwards too).
+        started: std::time::Instant,
+        /// Last scan datagram sent; repeated every few seconds while the drawer is open.
+        sent: Option<std::time::Instant>,
+        /// "Qayta skanerlash" pressed.
+        rescan: bool,
     },
     /// Administrator password window; `then` opens after a successful login.
     AdminLogin {
@@ -547,4 +554,16 @@ pub(super) struct NetExtra {
     pub(super) allow_apps: String,
     /// Blocked outgoing ports, "25, 6881".
     pub(super) ports: String,
+}
+
+impl Dialog {
+    /// The "Skanerlash" drawer, scanning from now.
+    pub(super) fn scan() -> Self {
+        Dialog::FreePcs {
+            add: vec![],
+            started: std::time::Instant::now(),
+            sent: None,
+            rescan: false,
+        }
+    }
 }

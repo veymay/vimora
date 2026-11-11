@@ -84,10 +84,38 @@ pub fn decode_claim(data: &[u8]) -> Option<(String, u16)> {
     bincode::deserialize(&data[CLAIM_MAGIC.len()..]).ok()
 }
 
+/// "Who is waiting to be added?": broadcast by a console when the teacher presses "Skanerlash".
+/// Computers that belong to no console answer at once with `ClientMsg::Free` over TCP to the
+/// datagram's source address and the console TCP port it carries.
+const SCAN_MAGIC: &[u8; 8] = b"VIMSCN01";
+
+pub fn encode_scan(tcp_port: u16) -> Vec<u8> {
+    let mut out = SCAN_MAGIC.to_vec();
+    out.extend(tcp_port.to_le_bytes());
+    out
+}
+
+pub fn decode_scan(data: &[u8]) -> Option<u16> {
+    if data.len() != SCAN_MAGIC.len() + 2 || &data[..SCAN_MAGIC.len()] != SCAN_MAGIC {
+        return None;
+    }
+    Some(u16::from_le_bytes([data[8], data[9]]))
+}
+
 pub fn decode_beacon(data: &[u8]) -> Option<crate::protocol::Beacon> {
     let magic = crate::protocol::BEACON_MAGIC;
     if data.len() <= magic.len() || &data[..magic.len()] != magic {
         return None;
     }
     bincode::deserialize(&data[magic.len()..]).ok()
+}
+
+#[cfg(test)]
+mod scan_tests {
+    #[test]
+    fn scan_round_trip() {
+        let d = super::encode_scan(47801);
+        assert_eq!(super::decode_scan(&d), Some(47801));
+        assert_eq!(super::decode_scan(&super::encode_claim("k", 1)), None);
+    }
 }

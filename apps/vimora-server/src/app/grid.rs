@@ -617,7 +617,8 @@ impl ConsoleApp {
     }
 }
 
-pub(super) fn empty_state(ui: &mut egui::Ui, p: &Palette, _cfg: &ServerConfig) {
+/// No computers at all: what to do, and the "Skanerlash" button. Returns true when pressed.
+pub(super) fn empty_state(ui: &mut egui::Ui, p: &Palette, _cfg: &ServerConfig) -> bool {
     ui.vertical_centered(|ui| {
         ui.add_space(ui.available_height() * 0.2);
         ui.label(ui_kit::icon(icons::WIFI_OFF, 48.0, p.faint));
@@ -625,10 +626,13 @@ pub(super) fn empty_state(ui: &mut egui::Ui, p: &Palette, _cfg: &ServerConfig) {
         ui.label(RichText::new(tr("Kompyuterlar hali ulanmagan")).family(ui_kit::bold()).size(22.0).color(p.strong));
         ui.add_space(6.0);
         ui.label(
-            RichText::new(tr("O'quvchi kompyuterlariga Vimora'ni o'rnating — ular shu yerda o'zi paydo bo'ladi.\nHech narsa sozlash shart emas: bir xil tarmoqda (Wi-Fi yoki LAN) bo'lsa kifoya."))
+            RichText::new(tr("O'quvchi kompyuterlariga Vimora'ni o'rnating, so'ng \"Skanerlash\" ni bosib ularni qo'shing.\nBir xil tarmoqda (Wi-Fi yoki LAN) bo'lsa kifoya."))
                 .color(p.muted),
         );
-    });
+        ui.add_space(18.0);
+        ui_kit::button(ui, Some(icons::SEARCH), tr("Skanerlash"), Kind::Primary).clicked()
+    })
+    .inner
 }
 
 impl ConsoleApp {
@@ -645,7 +649,10 @@ impl ConsoleApp {
                 let visible_all: Vec<&View> = all.iter().filter(|v| self.in_tab(v)).collect();
 
                 if all.is_empty() {
-                    empty_state(ui, p, &self.cfg.read().unwrap());
+                    let scan = empty_state(ui, p, &self.cfg.read().unwrap());
+                    if scan {
+                        self.open_dialog(Dialog::scan());
+                    }
                     return;
                 }
 

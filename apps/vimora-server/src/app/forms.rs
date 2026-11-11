@@ -173,7 +173,12 @@ pub(super) fn dialog_body(
             request,
         } => updates_form(ui, p, tab, policy, restart, request, cx),
         Dialog::Lesson(l) => lesson_form(ui, p, l, cx),
-        Dialog::FreePcs { add } => free_pcs_form(ui, p, add, cx),
+        Dialog::FreePcs {
+            add,
+            started,
+            rescan,
+            ..
+        } => free_pcs_form(ui, p, add, started.elapsed().as_secs_f32(), rescan, cx),
         Dialog::AdminLogin {
             password, error, ..
         } => {
@@ -2703,21 +2708,65 @@ pub(super) fn parse_ports(s: &str) -> Vec<u16> {
     v
 }
 
-/// Computers removed from some console: free, shown in every console until a teacher adds one.
-fn free_pcs_form(ui: &mut egui::Ui, p: &Palette, add: &mut Vec<String>, cx: &FormCtx<'_>) {
-    let free = cx.hub.lock().unwrap().free_now();
+/// "Skanerlash": computers that belong to no console (a new install, or removed from its
+/// console). They show in every console that scans; "Qo'shish" joins one to this console.
+fn free_pcs_form(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    add: &mut Vec<String>,
+    since: f32,
+    rescan: &mut bool,
+    cx: &FormCtx<'_>,
+) {
+    /// The first seconds of a scan: answers are still coming.
+    const SCANNING: f32 = 6.0;
+    let mut free = cx.hub.lock().unwrap().free_now();
+    free.sort_by_key(|f| f.1.label().to_lowercase());
     ui.label(
-        RichText::new(tr("Bu kompyuterlar o'z konsolidan olib tashlangan va bo'sh. Ular tarmoqdagi hamma konsollarda ko'rinadi; \"Qo'shish\" ni bosgan konsolga ulanadi."))
+        RichText::new(tr("Tarmoqdagi hali hech bir konsolga qo'shilmagan kompyuterlar. \"Qo'shish\" ni bosing — kompyuter shu konsolga ulanadi."))
             .size(12.5)
             .color(p.muted),
     );
     ui.add_space(12.0);
+    let scanning = since < SCANNING;
+    ui.horizontal(|ui| {
+        if scanning {
+            ui.add(egui::Spinner::new().size(16.0).color(p.accent));
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(tr("Skanerlanmoqda…"))
+                    .size(13.0)
+                    .color(p.text),
+            );
+        } else {
+            ui.label(
+                RichText::new(tf!("{n} ta kompyuter topildi", n = free.len()))
+                    .size(13.0)
+                    .color(p.text),
+            );
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui_kit::button(
+                    ui,
+                    Some(icons::REFRESH_CW),
+                    tr("Qayta skanerlash"),
+                    Kind::Outline,
+                )
+                .clicked()
+                {
+                    *rescan = true;
+                }
+            });
+        }
+    });
+    ui.add_space(12.0);
     if free.is_empty() {
-        ui.label(
-            RichText::new(tr("Hozir bo'sh kompyuter yo'q."))
-                .size(13.0)
-                .color(p.faint),
-        );
+        if !scanning {
+            ui.label(
+                RichText::new(tr("Yangi kompyuter topilmadi. O'quvchi kompyuterida Vimora o'rnatilgani va u shu tarmoqqa ulangani (Wi-Fi yoki LAN) tekshiring."))
+                    .size(13.0)
+                    .color(p.faint),
+            );
+        }
         return;
     }
     let w = ui.available_width();

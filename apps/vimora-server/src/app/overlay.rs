@@ -370,7 +370,7 @@ impl ConsoleApp {
             Dialog::Updates { .. } => (tr("Yangilanishlar"), 600.0),
             Dialog::Machine { .. } => (tr("Kompyuter holati"), 600.0),
             Dialog::Lesson(_) => (tr("Dars"), 600.0),
-            Dialog::FreePcs { .. } => (tr("Bo'sh kompyuterlar"), 600.0),
+            Dialog::FreePcs { .. } => (tr("Yangi kompyuterlar"), 600.0),
             Dialog::AdminLogin { .. } => (tr("Administrator"), 420.0),
         };
         // Every drawer has the same width, wide enough for its widest content (four tabs),
@@ -412,7 +412,7 @@ impl ConsoleApp {
             Dialog::Updates { .. } => icons::DOWNLOAD,
             Dialog::Machine { .. } => icons::GAUGE,
             Dialog::Lesson(_) => icons::GRADUATION_CAP,
-            Dialog::FreePcs { .. } => icons::MONITOR,
+            Dialog::FreePcs { .. } => icons::SEARCH,
             Dialog::AdminLogin { .. } => icons::LOCK,
         };
         // Drawers slide in from the right; modals fade in at the centre.
@@ -769,7 +769,7 @@ impl ConsoleApp {
         self.shadow_requests(&targets);
         self.machine_requests(ctx);
         self.lesson_requests(&targets);
-        self.free_requests();
+        self.free_requests(ctx);
         if let Some(Dialog::Updates {
             policy,
             restart,
@@ -1059,15 +1059,32 @@ impl ConsoleApp {
 
     /// Inline actions of the Shadow drawer: they run at once and the drawer stays open.
     /// "Bo'sh kompyuterlar": tells the chosen free computers to join this console.
-    fn free_requests(&mut self) {
-        let Some(Dialog::FreePcs { add }) = &mut self.dialog else {
+    fn free_requests(&mut self, ctx: &egui::Context) {
+        let Some(Dialog::FreePcs {
+            add,
+            started,
+            sent,
+            rescan,
+        }) = &mut self.dialog
+        else {
             return;
         };
+        let port = self.cfg.read().unwrap().port;
+        if std::mem::take(rescan) {
+            *started = std::time::Instant::now();
+            *sent = None;
+        }
+        // Scan again every few seconds while the drawer is open: computers switched on later
+        // show up too.
+        if sent.is_none_or(|t| t.elapsed() > std::time::Duration::from_secs(3)) {
+            *sent = Some(std::time::Instant::now());
+            std::thread::spawn(move || crate::net::scan(port));
+        }
+        ctx.request_repaint_after(std::time::Duration::from_millis(250));
         let keys = std::mem::take(add);
         if keys.is_empty() {
             return;
         }
-        let port = self.cfg.read().unwrap().port;
         let mut h = self.hub.lock().unwrap();
         for key in keys {
             if let Some((info, ip, _, _)) = h.free.remove(&key) {

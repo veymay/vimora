@@ -221,6 +221,7 @@ impl ConsoleApp {
         }
         // Dev aid: VIMORA_OPEN=net|activity|launch opens a window at start (for screenshots).
         match std::env::var("VIMORA_OPEN").as_deref() {
+            Ok("scan") => app.dev_open = Some(Dialog::scan()),
             Ok("net") => app.dev_open = Some(app.net_dialog(NetTab::Domains)),
             Ok("net:apps") => app.dev_open = Some(app.net_dialog(NetTab::Apps)),
             Ok("net:devices") => app.dev_open = Some(app.net_dialog(NetTab::Devices)),
@@ -341,6 +342,22 @@ impl ConsoleApp {
 
     /// Dev aid: `VIMORA_DEMO=<n>` fills the console with fake computers (never saved to disk).
     fn demo_students(&mut self, n: usize) {
+        // New computers waiting to be added ("Skanerlash").
+        {
+            let mut h = self.hub.lock().unwrap();
+            for (i, name) in ["PC-21", "PC-22", "Lab-Noutbuk"].into_iter().enumerate() {
+                let info = vimora_core::ClientInfo {
+                    hostname: name.into(),
+                    username: "student".into(),
+                    os: "windows".into(),
+                    display_name: None,
+                    machine_id: format!("demo-new-{i}"),
+                };
+                let ip = std::net::IpAddr::from([192, 168, 1, 60 + i as u8]);
+                h.free
+                    .insert(info.key(), (info, ip, std::time::Instant::now(), false));
+            }
+        }
         {
             let mut c = self.cfg.write().unwrap();
             for (i, name) in ["PC-15", "PC-16", "Eski-PC"].into_iter().enumerate() {

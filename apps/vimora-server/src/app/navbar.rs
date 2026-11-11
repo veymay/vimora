@@ -376,6 +376,13 @@ impl ConsoleApp {
                     ui.spacing_mut().item_spacing.x = BTN_GAP;
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         self.search_box(ui, p);
+                        // New computers: scan the network, then add them one by one.
+                        if ui_kit::button(ui, Some(icons::SEARCH), tr("Skanerlash"), Kind::Outline)
+                            .tip(tr("Tarmoqdan yangi kompyuterlarni qidirish"))
+                            .clicked()
+                        {
+                            self.open_dialog(Dialog::scan());
+                        }
                         ui.add_space(10.0);
 
                         // Rooms: whatever width is left, scrolls sideways if there are many.
@@ -458,7 +465,7 @@ impl ConsoleApp {
                         on = online,
                         all = total
                     ));
-                    // Free computers (removed from a console) waiting to be added.
+                    // New computers (in no console yet) waiting to be added.
                     let free = self.hub.lock().unwrap().free_now().len();
                     if free > 0 {
                         ui.add_space(12.0);
@@ -467,18 +474,16 @@ impl ConsoleApp {
                                 egui::Button::new(
                                     RichText::new(with_icon(
                                         icons::PLUS,
-                                        &tf!("{n} ta bo'sh kompyuter", n = free),
+                                        &tf!("{n} ta yangi kompyuter", n = free),
                                     ))
                                     .size(12.5)
                                     .color(p.accent_ink),
                                 )
                                 .frame(false),
                             )
-                            .tip(tr(
-                                "Konsoldan olib tashlangan kompyuterlar: qo'shish uchun bosing",
-                            ));
+                            .tip(tr("Hali qo'shilmagan kompyuterlar: qo'shish uchun bosing"));
                         if r.clicked() {
-                            self.open_dialog(Dialog::FreePcs { add: vec![] });
+                            self.open_dialog(Dialog::scan());
                         }
                         ui.ctx()
                             .request_repaint_after(std::time::Duration::from_secs(5));
