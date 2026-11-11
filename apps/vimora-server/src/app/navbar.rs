@@ -670,7 +670,8 @@ impl ConsoleApp {
             active,
             tint,
         };
-        // Grouped: [lock, unlock, present] · [site, block] · [power, updates, freeze]
+        // Grouped by use: [lock, unlock] · [present, lesson, site] · [block, freeze] ·
+        // [updates, power]. Power, the rare and drastic one, sits last.
         // Lock and unlock are two fixed buttons: they never change with what is selected.
         let groups: Vec<Vec<Act>> = vec![
             vec![
@@ -690,6 +691,8 @@ impl ConsoleApp {
                     false,
                     None,
                 ),
+            ],
+            vec![
                 a(
                     icons::CAST,
                     if self.showing {
@@ -702,8 +705,6 @@ impl ConsoleApp {
                     self.showing,
                     self.showing.then_some(p.accent_ink),
                 ),
-            ],
-            vec![
                 a(
                     icons::GRADUATION_CAP,
                     tr("Dars"),
@@ -720,6 +721,8 @@ impl ConsoleApp {
                     false,
                     None,
                 ),
+            ],
+            vec![
                 a(
                     icons::SHIELD_BAN,
                     tr("Bloklash"),
@@ -728,17 +731,16 @@ impl ConsoleApp {
                     false,
                     None,
                 ),
-            ],
-            // Daily first (power on/off at the start and end of the day), set-up work last.
-            vec![
                 a(
-                    icons::POWER,
-                    tr("Quvvat"),
-                    tr("Yoqish, o'chirish, qayta yuklash"),
-                    Menu::Power,
+                    icons::SNOWFLAKE,
+                    tr("Muzlatish"),
+                    tr("Qayta yuklanganda kompyuter toza holatga qaytadi (Shadow Defender, UWF)"),
+                    Menu::Freeze,
                     false,
                     None,
                 ),
+            ],
+            vec![
                 a(
                     icons::DOWNLOAD,
                     tr("Yangilanish"),
@@ -748,10 +750,10 @@ impl ConsoleApp {
                     None,
                 ),
                 a(
-                    icons::SNOWFLAKE,
-                    tr("Muzlatish"),
-                    tr("Qayta yuklanganda kompyuter toza holatga qaytadi (Shadow Defender, UWF)"),
-                    Menu::Freeze,
+                    icons::POWER,
+                    tr("Quvvat"),
+                    tr("Yoqish, o'chirish, qayta yuklash"),
+                    Menu::Power,
                     false,
                     None,
                 ),

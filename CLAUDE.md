@@ -39,6 +39,16 @@ touching the real console: run both inside `unshare -rn` with a veth pair (`ip a
 - Release 0.3.8's `.deb` files were built before this and require glibc 2.44 (do not install on
   Ubuntu 22.04/24.04); rebuild with `./build.sh linux` before publishing.
 - Do not move or recreate existing tags; do not force push; ask before publishing releases.
+- Updates are signed: student PCs (0.3.27+) install only a `SHA256SUMS` whose `SHA256SUMS.sig`
+  verifies against `RELEASE_KEYS` in `crates/vimora-update/src/lib.rs`. `build.sh` signs with
+  `~/.config/vimora-release/release.key` (never in the repo; backup `../vimora-release.key.BACKUP`).
+  Losing the key = PCs never update again; to rotate, add the new public key to `RELEASE_KEYS`
+  first and keep the old one for a long time. Every release must upload `SHA256SUMS.sig`.
+- Update paths on a PC: the service (every 30 min), the "Vimora Updater" tasks
+  (`vimora-client update-now`, boot + every 4 h) and the console's LAN push (`lanupdate.rs`,
+  `Command::InstallUpdate`). Future installers must keep accepting
+  `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TYPE=student /COMPONENTS=agent`, and asset names
+  must keep matching `*windows*.exe` / `vimora-student*.deb`.
 
 ## Compatibility rules (old and new builds must keep working together)
 - The wire format (bincode) is positional. Never insert, reorder or remove enum variants or

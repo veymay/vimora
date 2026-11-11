@@ -18,6 +18,8 @@ pub(super) enum MachineTab {
     Security,
     Services,
     Command,
+    /// Installed programs; each can be uninstalled.
+    Apps,
 }
 
 /// What the drawer asked for (handled by the app, some after a confirmation).
@@ -29,6 +31,10 @@ pub(super) enum MachineRequest {
     /// Start (true) or stop a service.
     Service(String, bool),
     Run,
+    /// Ask for the installed programs.
+    RefreshApps,
+    /// Uninstall a program: (id, name), confirmed first.
+    Uninstall(String, String),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -156,38 +162,46 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
     let online = cx.all.iter().any(|v| v.id == f.id && v.online);
     let n_procs = report.as_ref().map(|(i, _)| i.processes.len());
 
-    ui_kit::segmented(p).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            for (t, ic, label, n) in [
-                (MachineTab::Overview, icons::GAUGE, tr("Umumiy holat"), None),
-                (
-                    MachineTab::Processes,
-                    icons::LIST,
-                    tr("Jarayonlar"),
-                    n_procs,
-                ),
-                (
-                    MachineTab::Security,
-                    icons::SHIELD_CHECK,
-                    tr("Xavfsizlik"),
-                    None,
-                ),
-                (MachineTab::Services, icons::SETTINGS, tr("Xizmatlar"), None),
-                (MachineTab::Command, icons::TERMINAL, tr("Buyruq"), None),
-            ] {
-                if ui_kit::tab_icon(ui, Some(ic), label, n, *f.tab == t).clicked() {
-                    *f.tab = t;
-                }
-            }
+    // Six tabs are wider than the drawer: they scroll sideways instead of widening the page.
+    egui::ScrollArea::horizontal()
+        .id_salt("machine-tabs")
+        .auto_shrink([false, true])
+        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+        .show(ui, |ui| {
+            ui_kit::segmented(p).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    for (t, ic, label, n) in [
+                        (MachineTab::Overview, icons::GAUGE, tr("Umumiy holat"), None),
+                        (
+                            MachineTab::Processes,
+                            icons::LIST,
+                            tr("Jarayonlar"),
+                            n_procs,
+                        ),
+                        (
+                            MachineTab::Security,
+                            icons::SHIELD_CHECK,
+                            tr("Xavfsizlik"),
+                            None,
+                        ),
+                        (MachineTab::Apps, icons::LAYOUT_GRID, tr("Dasturlar"), None),
+                        (MachineTab::Services, icons::SETTINGS, tr("Xizmatlar"), None),
+                        (MachineTab::Command, icons::TERMINAL, tr("Buyruq"), None),
+                    ] {
+                        if ui_kit::tab_icon(ui, Some(ic), label, n, *f.tab == t).clicked() {
+                            *f.tab = t;
+                        }
+                    }
+                });
+            });
         });
-    });
     ui.add_space(12.0);
 
     // The IT tabs are for the administrator.
     if matches!(
         *f.tab,
-        MachineTab::Security | MachineTab::Services | MachineTab::Command
+        MachineTab::Security | MachineTab::Services | MachineTab::Command | MachineTab::Apps
     ) && !cx.admin
     {
         ui.add_space(20.0);
@@ -248,6 +262,10 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
         }
         MachineTab::Command => {
             command(ui, p, f, cx);
+            return;
+        }
+        MachineTab::Apps => {
+            programs(ui, p, f, cx);
             return;
         }
         _ => {}
@@ -775,4 +793,106 @@ fn hw_label(k: &str) -> String {
         other => other,
     }
     .to_string()
+}
+
+/// Installed programs, like the block lists: one row each, X uninstalls (after a confirmation).
+fn programs(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, cx: &FormCtx<'_>) {
+    let apps = cx
+        .hub
+        .lock()
+        .unwrap()
+        .students
+        .get(&f.id)
+        .and_then(|s| s.apps.clone());
+    // Asked for once when the tab opens (and with "Yangilash").
+    let asked = egui::Id::new(("apps-asked", f.id));
+    if apps.is_none() && !ui.data(|d| d.get_temp::<bool>(asked).unwrap_or(false)) {
+        ui.data_mut(|d| d.insert_temp(asked, true));
+        *f.request = Some(MachineRequest::RefreshApps);
+    }
+    let w = ui.available_width();
+    ui.allocate_ui_with_layout(
+        vec2(w, ui_kit::CONTROL_H),
+        Layout::right_to_left(Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            if ui_kit::button(ui, Some(icons::REFRESH_CW), tr("Yangilash"), Kind::Outline).clicked()
+            {
+                *f.request = Some(MachineRequest::RefreshApps);
+            }
+            ui.add(
+                ui_kit::text_field(f.filter)
+                    .hint_text(tr("Qidirish…"))
+                    .desired_width(ui.available_width()),
+            );
+        },
+    );
+    ui.add_space(8.0);
+    let Some(apps) = apps else {
+        ui.add_space(20.0);
+        ui.vertical_centered(|ui| {
+            ui.spinner();
+            ui.label(RichText::new(tr("Ma'lumot olinmoqda…")).color(p.muted));
+        });
+        return;
+    };
+    let q = f.filter.trim().to_lowercase();
+    let list: Vec<&vimora_core::AppInfo> = apps
+        .iter()
+        .filter(|a| q.is_empty() || a.name.to_lowercase().contains(&q))
+        .collect();
+    if list.is_empty() {
+        ui.label(
+            RichText::new(tr("Ro'yxat bo'sh."))
+                .size(12.5)
+                .color(p.faint),
+        );
+        return;
+    }
+    Frame::none()
+        .stroke(Stroke::new(1.0_f32, p.line))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for (i, a) in list.iter().enumerate() {
+                let rw = ui.available_width();
+                let (rect, _) = ui.allocate_exact_size(vec2(rw, 38.0), Sense::hover());
+                if !ui.is_rect_visible(rect) {
+                    continue;
+                }
+                if i > 0 {
+                    ui.painter()
+                        .hline(rect.x_range(), rect.top(), Stroke::new(1.0_f32, p.line));
+                }
+                let mut child = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(rect.shrink2(vec2(10.0, 0.0)))
+                        .layout(Layout::left_to_right(Align::Center)),
+                );
+                child.spacing_mut().item_spacing.x = 10.0;
+                child.label(ui_kit::icon(icons::LAYOUT_GRID, 16.0, p.accent));
+                let g = ui_kit::truncated(
+                    &child,
+                    &a.name,
+                    FontId::new(13.0, ui_kit::mono()),
+                    p.text,
+                    rw - 200.0,
+                );
+                child.label(egui::WidgetText::from(g));
+                child.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui_kit::icon_cell(ui, icons::X, 30.0, false)
+                        .tip(tr("O'chirib tashlash"))
+                        .clicked()
+                    {
+                        *f.request = Some(MachineRequest::Uninstall(a.id.clone(), a.name.clone()));
+                    }
+                    ui.label(
+                        RichText::new(&a.version)
+                            .family(ui_kit::mono())
+                            .size(11.5)
+                            .color(p.faint),
+                    );
+                });
+            }
+        });
 }

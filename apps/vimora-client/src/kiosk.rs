@@ -105,7 +105,72 @@ mod imp {
             ours.clear();
         }
         save(&ours);
+        touchpad(on);
         Ok(())
+    }
+
+    /// Touchpads that Vimora switched off (PnP instance ids), so unlocking (or the next service
+    /// start after a crash) switches exactly those on again.
+    fn touchpad_state() -> PathBuf {
+        state_path().with_file_name("kiosk-touchpad.txt")
+    }
+
+    /// Touchpad gestures (three/four-finger swipes: desktop, task view, app switching) are
+    /// handled by Windows itself, past every hook — so the touchpad is off while the lock screen
+    /// is up (the pointer is blocked then anyway). Touchpads are found by their standard HID
+    /// usage (digitizer / touch pad), whatever the Windows language.
+    fn touchpad(on: bool) {
+        let path = touchpad_state();
+        if on {
+            const SCRIPT: &str = r#"
+$ids = Get-CimInstance Win32_PnPEntity | Where-Object { $_.Status -eq 'OK' -and ($_.CompatibleID -contains 'HID_DEVICE_UP:000D_U:0005' -or $_.HardwareID -contains 'HID_DEVICE_UP:000D_U:0005') } | ForEach-Object { $_.PNPDeviceID }
+foreach ($id in $ids) { try { Disable-PnpDevice -InstanceId $id -Confirm:$false -ErrorAction Stop; $id } catch {} }
+"#;
+            match sh::script(SCRIPT) {
+                Ok((_, out)) => {
+                    let mut ids: Vec<String> = std::fs::read_to_string(&path)
+                        .unwrap_or_default()
+                        .lines()
+                        .map(str::to_string)
+                        .collect();
+                    ids.extend(
+                        out.lines()
+                            .map(str::trim)
+                            .filter(|l| !l.is_empty())
+                            .map(str::to_string),
+                    );
+                    ids.sort();
+                    ids.dedup();
+                    if !ids.is_empty() {
+                        let _ = std::fs::write(&path, ids.join("\n"));
+                    }
+                }
+                Err(e) => tracing::debug!("touchpad off: {e:#}"),
+            }
+        } else {
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                return;
+            };
+            let ids: Vec<&str> = text
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .collect();
+            let list = ids
+                .iter()
+                .map(|i| format!("'{}'", i.replace('\'', "''")))
+                .collect::<Vec<_>>()
+                .join(",");
+            let script = format!(
+                "foreach ($id in @({list})) {{ try {{ Enable-PnpDevice -InstanceId $id -Confirm:$false -ErrorAction Stop }} catch {{}} }}"
+            );
+            match sh::script(&script) {
+                Ok(_) => {
+                    let _ = std::fs::remove_file(&path);
+                }
+                Err(e) => tracing::warn!("touchpad on: {e:#}"),
+            }
+        }
     }
 }
 

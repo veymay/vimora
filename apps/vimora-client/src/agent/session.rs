@@ -355,12 +355,54 @@ pub(super) async fn handle_command(
             Some(system::run_program(&program, &args).map(|_| format!("ishga tushdi: {program}")))
         }
         Command::Power(a) => Some(system::power(a).map(|_| format!("{a:?}"))),
+        Command::InstallUpdate {
+            name,
+            data,
+            sums,
+            sig,
+        } => Some(install_from_console(name, data, sums, sig).await),
         Command::SendFile { name, data } => Some(
             tokio::task::spawn_blocking(move || system::save_file(&name, &data))
                 .await
                 .unwrap()
                 .map(|p| format!("saqlandi: {}", p.display())),
         ),
+    }
+}
+
+/// A Vimora installer from the console: saved to a temporary file and handed to the service,
+/// which checks the signature itself (the agent is not trusted with that).
+async fn install_from_console(
+    name: String,
+    data: Vec<u8>,
+    sums: String,
+    sig: String,
+) -> anyhow::Result<String> {
+    // Only a plain file name: nothing outside the folder.
+    let name = std::path::Path::new(&name)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .filter(|n| !n.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("fayl nomi noto'g'ri"))?;
+    let dir = std::env::temp_dir().join("vimora-lan-update");
+    let path = dir.join(&name);
+    let p2 = path.clone();
+    tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+        std::fs::create_dir_all(&dir)?;
+        std::fs::write(&p2, &data)
+    })
+    .await??;
+    let res = service::call(IpcReq::InstallUpdate {
+        path: path.to_string_lossy().into_owned(),
+        sums,
+        sig,
+    })
+    .await;
+    let _ = std::fs::remove_file(&path);
+    match res? {
+        IpcResp::Done { ok: true, message } => Ok(message),
+        IpcResp::Done { ok: false, message } => Err(anyhow::anyhow!(message)),
+        _ => Err(anyhow::anyhow!("Vimora xizmati noto'g'ri javob berdi")),
     }
 }
 

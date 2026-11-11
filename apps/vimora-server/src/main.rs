@@ -7,6 +7,7 @@ mod avi;
 mod blockcat;
 mod config;
 mod i18n_table;
+mod lanupdate;
 mod net;
 mod single;
 mod sound;
@@ -50,6 +51,7 @@ fn main() -> eframe::Result<()> {
     let hub: net::SharedHub = Arc::new(Mutex::new(net::Hub::new(config::identity())));
     let show = Arc::new(net::Show::default());
     net::start(hub.clone(), cfg.clone(), show.clone());
+    lanupdate::start(hub.clone(), cfg.clone());
     let updater = update::Updater::new();
     if check_updates {
         updater.start_background_checks();

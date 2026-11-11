@@ -40,6 +40,14 @@ pub fn blocked(prefs: &BTreeMap<String, bool>) -> Vec<String> {
         .collect()
 }
 
+/// Uninstalls an application silently (winget on Windows; snap or apt on Ubuntu).
+pub fn uninstall(id: &str) -> Result<String> {
+    if id.trim().is_empty() || id.starts_with('-') {
+        anyhow::bail!("dastur noto'g'ri");
+    }
+    imp::uninstall(id)
+}
+
 /// Upgrades every application with an available update except the blocked ones.
 pub fn upgrade_allowed(prefs: &BTreeMap<String, bool>) -> Result<String> {
     imp::upgrade_allowed(&blocked(prefs))
@@ -128,6 +136,23 @@ mod imp {
 
     fn winget(args: &[&str]) -> Result<(bool, String)> {
         sh::run(&crate::updates::winget_path(), args)
+    }
+
+    pub fn uninstall(id: &str) -> Result<String> {
+        let (ok, out) = winget(&[
+            "uninstall",
+            "--id",
+            id,
+            "--exact",
+            "--silent",
+            "--force",
+            "--accept-source-agreements",
+            "--disable-interactivity",
+        ])?;
+        if !ok {
+            anyhow::bail!("o'chirilmadi: {}", sh::tail(&out, 2));
+        }
+        Ok(format!("{id} o'chirildi"))
     }
 
     pub fn list() -> Result<Vec<AppInfo>> {
@@ -220,6 +245,22 @@ mod imp {
 mod imp {
     use super::*;
     use std::collections::{HashMap, HashSet};
+
+    pub fn uninstall(id: &str) -> Result<String> {
+        let snap = sh::run("snap", &["list", id]).is_ok_and(|(ok, _)| ok);
+        let (ok, out) = if snap {
+            sh::run("snap", &["remove", id])?
+        } else {
+            sh::run(
+                "apt-get",
+                &["remove", "-y", "-o", "DPkg::Lock::Timeout=300", id],
+            )?
+        };
+        if !ok {
+            anyhow::bail!("o'chirilmadi: {}", sh::tail(&out, 2));
+        }
+        Ok(format!("{id} o'chirildi"))
+    }
 
     pub fn list() -> Result<Vec<AppInfo>> {
         let (_, manual) = sh::run("apt-mark", &["showmanual"])?;

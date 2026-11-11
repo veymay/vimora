@@ -6,24 +6,25 @@ if [ "$1" = configure ]; then
     # vimora-service.service — the root part: Shadow, updates, NetControl.
     /opt/vimora/bin/vimora-client setup || echo "vimora: service setup failed" >&2
     chmod 644 /etc/vimora/client.json 2>/dev/null || true
-    # Standalone updater: runs on its own timer, independent of the Vimora program.
+    # Update check on its own timer, apart from the service (signed releases only).
+    rm -f /opt/vimora/bin/vimora-updater
     cat > /etc/systemd/system/vimora-updater.service <<'UNIT'
 [Unit]
-Description=Vimora standalone updater
+Description=Vimora update check
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/vimora/bin/vimora-updater
+ExecStart=/opt/vimora/bin/vimora-client update-now
 UNIT
     cat > /etc/systemd/system/vimora-updater.timer <<'UNIT'
 [Unit]
-Description=Vimora standalone updater (5 minutes after start-up, then every 6 hours)
+Description=Vimora update check (5 minutes after start-up, then every 4 hours)
 
 [Timer]
 OnBootSec=5min
-OnUnitActiveSec=6h
+OnUnitActiveSec=4h
 Persistent=true
 
 [Install]

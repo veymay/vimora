@@ -104,7 +104,10 @@ try {
     if (Test-Path $sums) { $lines = @(Get-Content $sums | Where-Object { $_ -and ($_ -notmatch "windows-x64-setup\.exe") }) }
     $lines += "$hash  $exeName"
     [System.IO.File]::WriteAllText($sums, (($lines -join "`n") + "`n"), $utf8)
-    & $gh release upload "v$ver" $exe $sums --repo $repo --clobber
+    # Student computers install only a signed list (key: %USERPROFILE%\.config\vimora-release\release.key).
+    & $cargo run -q -p vimora-update --example sign -- sign $sums
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$sums.sig")) { throw "SHA256SUMS imzolanmadi: release.key kaliti yo'q (Ubuntu'dagi ~/.config/vimora-release/release.key nusxasini qo'ying)." }
+    & $gh release upload "v$ver" $exe $sums "$sums.sig" --repo $repo --clobber
     if ($LASTEXITCODE -ne 0) { throw "Yuklash xato bilan tugadi." }
     Write-Host "Yuklandi: https://github.com/$repo/releases/tag/v$ver" -ForegroundColor Green
     exit 0

@@ -138,7 +138,6 @@ pub(super) fn dialog_body(
         Dialog::Freeze {
             tab,
             chosen,
-            restart,
             folders,
             request,
             manual,
@@ -150,7 +149,6 @@ pub(super) fn dialog_body(
             ShadowForm {
                 chosen,
                 tab,
-                restart,
                 folders,
                 request,
                 manual,
@@ -163,9 +161,8 @@ pub(super) fn dialog_body(
             alias,
             system,
             system_name,
-            restart,
             ..
-        } => rename_form(ui, p, alias, system, system_name, restart, key),
+        } => rename_form(ui, p, alias, system, system_name, key),
         Dialog::Updates {
             tab,
             policy,
@@ -663,121 +660,6 @@ pub(super) fn section(ui: &mut egui::Ui, p: &Palette, title: &str) {
     ui.add_space(2.0);
 }
 
-/// Ticked list of every computer (name, state chip); "all" ticks or clears them all.
-fn pick_rows(
-    ui: &mut egui::Ui,
-    p: &Palette,
-    all: &[View],
-    chosen: &mut std::collections::BTreeSet<u64>,
-    chip: impl Fn(&View) -> (String, Color32),
-) {
-    let all_on = !all.is_empty() && all.iter().all(|v| chosen.contains(&v.id));
-    egui::ScrollArea::vertical()
-        .id_salt("shadow-pcs")
-        .max_height(260.0)
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
-            Frame::none()
-                .stroke(Stroke::new(1.0_f32, p.line))
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    let row = |ui: &mut egui::Ui,
-                               first: bool,
-                               on: bool,
-                               name: &str,
-                               bold: bool,
-                               chip: Option<(String, Color32)>,
-                               tip: Option<&str>|
-                     -> bool {
-                        let (rect, resp) = ui
-                            .allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
-                        if !first {
-                            ui.painter().hline(
-                                rect.x_range(),
-                                rect.top(),
-                                Stroke::new(1.0_f32, p.line),
-                            );
-                        }
-                        if resp.hovered() {
-                            ui.painter().rect_filled(rect, Rounding::ZERO, p.hover);
-                        }
-                        let bx = Rect::from_center_size(
-                            pos2(rect.left() + 20.0, rect.center().y),
-                            vec2(16.0, 16.0),
-                        );
-                        ui.painter().rect(
-                            bx,
-                            Rounding::ZERO,
-                            if on { p.accent } else { p.sunken },
-                            Stroke::new(1.0_f32, if on { p.accent } else { p.line_strong }),
-                        );
-                        if on {
-                            ui.painter().text(
-                                bx.center(),
-                                Align2::CENTER_CENTER,
-                                icons::CHECK,
-                                FontId::proportional(12.0),
-                                p.on_accent,
-                            );
-                        }
-                        let name = ui_kit::truncated(
-                            ui,
-                            name,
-                            FontId::new(
-                                13.5,
-                                if bold {
-                                    ui_kit::bold()
-                                } else {
-                                    ui_kit::medium()
-                                },
-                            ),
-                            p.text,
-                            rect.width() * 0.45,
-                        );
-                        ui.painter().galley(
-                            pos2(rect.left() + 40.0, rect.center().y - name.size().y / 2.0),
-                            name,
-                            p.text,
-                        );
-                        if let Some((text, col)) = chip {
-                            let g = ui_kit::caps(ui, &text, 9.5, ui_kit::mono(), col);
-                            let r = Rect::from_min_size(
-                                pos2(
-                                    rect.right() - 12.0 - g.size().x - 12.0,
-                                    rect.center().y - 10.0,
-                                ),
-                                vec2(g.size().x + 12.0, 20.0),
-                            );
-                            ui_kit::paint_chip(ui.painter(), r, g, col);
-                        }
-                        if let Some(t) = tip {
-                            resp.clone().tip(t);
-                        }
-                        resp.clicked()
-                    };
-                    if row(ui, true, all_on, tr("Hammasi"), true, None, None) {
-                        if all_on {
-                            chosen.clear();
-                        } else {
-                            chosen.extend(all.iter().map(|v| v.id));
-                        }
-                    }
-                    for v in all {
-                        let on = chosen.contains(&v.id);
-                        let note = v.status.shield_note.as_deref().filter(|_| v.status.service);
-                        if row(ui, false, on, &v.label, false, Some(chip(v)), note) {
-                            if on {
-                                chosen.remove(&v.id);
-                            } else {
-                                chosen.insert(v.id);
-                            }
-                        }
-                    }
-                });
-        });
-}
-
 /// One row per target PC: name on the left, a status chip on the right.
 #[allow(dead_code)]
 pub(super) fn target_rows(
@@ -833,85 +715,24 @@ fn note(ui: &mut egui::Ui, p: &Palette, text: &str) {
 pub(super) struct ShadowForm<'a> {
     pub(super) chosen: &'a mut std::collections::BTreeSet<u64>,
     pub(super) tab: &'a mut ShadowTab,
-    pub(super) restart: &'a mut bool,
     pub(super) folders: &'a mut String,
     pub(super) request: &'a mut Option<ShadowRequest>,
     pub(super) manual: &'a mut String,
     pub(super) password: &'a mut String,
 }
 
-/// Small caption with a "?" that explains it on hover.
-fn titled(ui: &mut egui::Ui, p: &Palette, title: &str, help: &str) {
-    ui.add_space(10.0);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
-        ui_kit::hud(ui, title, p.muted);
-        ui_kit::info(ui, help);
-    });
-    ui.add_space(2.0);
-}
-
 pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>, cx: &FormCtx<'_>) {
-    // Two tabs only: each filter has its protection, "saqlab qolish" and settings in one page.
+    // Two tabs only: each filter has its computers, kept files and settings in one page.
     if matches!(*f.tab, ShadowTab::Commit | ShadowTab::Settings) {
-        *f.tab = ShadowTab::Protection;
+        *f.tab = ShadowTab::Uwf;
     }
-    // The protection tabs: Shadow Defender (1) or UWF (2). A computer counts here when it uses
-    // this filter, or is not tied to one (Ubuntu, older agents).
+    // Shadow Defender (1) or UWF (2). A computer counts here when it uses this filter, or is
+    // not tied to one (Ubuntu, older agents).
     let engine: u8 = if *f.tab == ShadowTab::Uwf { 2 } else { 1 };
     let mine = |v: &View| {
         let e = engine_of(v);
         e == 0 || e == engine
     };
-    let views: Vec<&View> = cx.all.iter().filter(|v| f.chosen.contains(&v.id)).collect();
-    let usable = views
-        .iter()
-        .filter(|v| {
-            v.status.service
-                && (engine == 2
-                    || !matches!(
-                        v.status.freeze,
-                        FreezeState::Unsupported | FreezeState::Unknown
-                    ))
-        })
-        .count();
-    let want_on = |v: &View| {
-        mine(v)
-            && matches!(
-                v.status.freeze,
-                FreezeState::Frozen | FreezeState::FreezePending | FreezeState::Maintenance
-            )
-    };
-    let mut on = usable > 0
-        && views.iter().all(|v| {
-            !v.status.service
-                || (mine(v)
-                    && matches!(
-                        v.status.freeze,
-                        FreezeState::Unsupported | FreezeState::Unknown
-                    ))
-                || want_on(v)
-        });
-    let pending = views.iter().any(|v| {
-        v.status.service
-            && mine(v)
-            && matches!(
-                v.status.freeze,
-                FreezeState::FreezePending | FreezeState::ThawPending | FreezeState::Maintenance
-            )
-    });
-    let no_service = views.iter().filter(|v| !v.status.service).count();
-    let unsupported = views
-        .iter()
-        .filter(|v| {
-            v.status.service
-                && mine(v)
-                && matches!(
-                    v.status.freeze,
-                    FreezeState::Unsupported | FreezeState::Unknown
-                )
-        })
-        .count();
 
     ui_kit::segmented(p).show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -928,222 +749,126 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
     });
     ui.add_space(12.0);
 
-    if matches!(*f.tab, ShadowTab::Protection | ShadowTab::Uwf) {
-        // A switch flipped a moment ago: show where it is going until the computers report
-        // back (Shadow changes take a few seconds and often only finish at the next restart).
-        let wait_id = egui::Id::new("shadow-switch-wait");
+    // The computers picked in the grid (all of them when none is picked): each has its own
+    // switch, so the filter goes on or off for exactly that one.
+    let views: Vec<&View> = if f.chosen.is_empty() {
+        cx.all.iter().collect()
+    } else {
+        cx.all.iter().filter(|v| f.chosen.contains(&v.id)).collect()
+    };
+    if views.is_empty() {
+        ui.label(
+            RichText::new(tr("Kompyuter yo'q."))
+                .size(12.5)
+                .color(p.faint),
+        );
+    } else {
         let now = ui.input(|i| i.time);
-        let mut waiting: Option<(bool, f64)> = ui.data(|d| d.get_temp(wait_id));
-        if let Some((target, since)) = waiting {
-            if (usable > 0 && on == target) || now - since > 20.0 {
-                waiting = None;
-                ui.data_mut(|d| d.remove::<(bool, f64)>(wait_id));
-            }
-        }
-        if let Some((target, _)) = waiting {
-            on = target;
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(250));
-        }
-
-        // The switch card: icon, title and state on a fixed grid, the switch centred.
-        let w = ui.available_width();
-        let (card, _) = ui.allocate_exact_size(vec2(w, 68.0), Sense::hover());
-        let edge = if waiting.is_some() {
-            p.warning
-        } else if on {
-            p.accent
-        } else {
-            p.line
-        };
-        ui.painter()
-            .rect(card, Rounding::ZERO, p.bg, Stroke::new(1.0_f32, edge));
-        let cy = card.center().y;
-        ui.painter().text(
-            pos2(card.left() + 30.0, cy),
-            Align2::CENTER_CENTER,
-            if engine == 2 {
-                icons::SHIELD
-            } else {
-                icons::SNOWFLAKE
-            },
-            FontId::proportional(26.0),
-            if on { p.accent_ink } else { p.faint },
-        );
-        let text_x = card.left() + 58.0;
-        let title = ui.painter().layout_no_wrap(
-            if engine == 2 {
-                "UWF"
-            } else {
-                "Shadow Defender"
-            }
-            .into(),
-            FontId::new(15.0, ui_kit::bold()),
-            p.strong,
-        );
-        let title_w = title.size().x;
-        ui.painter()
-            .galley(pos2(text_x, cy - 2.0 - title.size().y), title, p.strong);
-        let mut help_ui = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(Rect::from_min_size(
-                    pos2(text_x + title_w + 6.0, cy - 21.0),
-                    vec2(20.0, 20.0),
-                ))
-                .layout(Layout::left_to_right(Align::Center)),
-        );
-        ui_kit::info(
-            &mut help_ui,
-            if engine == 2 {
-                tr("Windows 10/11 Education va Enterprise'dagi o'rnatilgan himoya (Unified Write Filter). Yoniqda qayta yuklanganda barcha o'zgarishlar o'chadi. Birinchi yoqishda komponent o'rnatiladi va kompyuter bir marta qayta yuklanadi.")
-            } else {
-                tr("Yoniqda qayta yuklanganda barcha o'zgarishlar o'chadi, kompyuter toza qaytadi. Konsoldan qilganingiz saqlanadi. Windows'da Shadow Defender o'rnatilgan bo'lishi kerak; Ubuntu'da o'zi ishlaydi.")
-            },
-        );
-        let (txt, col) = if let Some((target, _)) = waiting {
-            (
-                if target {
-                    tr("Yoqilmoqda…")
-                } else {
-                    tr("O'chirilmoqda…")
-                },
-                p.warning,
-            )
-        } else if views.is_empty() {
-            (tr("Pastdan kompyuter belgilang"), p.faint)
-        } else if usable == 0 {
-            (tr("Mavjud emas"), p.faint)
-        } else if pending {
-            (tr("Qayta yuklangach kuchga kiradi"), p.warning)
-        } else if on {
-            (tr("Yoniq"), p.accent_ink)
-        } else {
-            (tr("O'chiq"), p.muted)
-        };
-        ui.painter().text(
-            pos2(text_x, cy + 3.0),
-            Align2::LEFT_TOP,
-            txt,
-            FontId::proportional(12.5),
-            col,
-        );
-        let mut sw = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(Rect::from_center_size(
-                    pos2(card.right() - 36.0, cy),
-                    vec2(40.0, 22.0),
-                ))
-                .layout(Layout::left_to_right(Align::Center)),
-        );
-        sw.add_enabled_ui(usable > 0 && waiting.is_none(), |ui| {
-            let was = on;
-            if ui_kit::toggle(ui, &mut on).clicked() && on != was {
-                *f.request = Some(ShadowRequest::Apply(if on {
-                    FreezeAction::Freeze
-                } else {
-                    FreezeAction::Thaw
-                }));
-                ui.data_mut(|d| d.insert_temp(wait_id, (on, now)));
-            }
-        });
-
-        // Problems, one short line each.
-        for (n, text) in [
-            (no_service, tr("{n} ta kompyuterda Vimora xizmati yo'q")),
-            (
-                unsupported,
-                if engine == 2 {
-                    tr("{n} ta kompyuterda UWF yo'q (Windows Education yoki Enterprise kerak)")
-                } else {
-                    tr("{n} ta kompyuterda Shadow yo'q (Windows: Shadow Defender kerak)")
-                },
-            ),
-        ] {
-            if n > 0 {
-                ui.add_space(6.0);
-                ui.label(
-                    RichText::new(with_icon(
-                        icons::TRIANGLE_ALERT,
-                        &text.replace("{n}", &n.to_string()),
-                    ))
-                    .size(12.0)
-                    .color(p.warning),
-                );
-            }
-        }
-
-        titled(
-            ui,
-            p,
-            tr("Kompyuterlar"),
-            tr("Har bir kompyuterda Shadow holati. Foiz — xotira to'lishi."),
-        );
-        pick_rows(ui, p, cx.all, f.chosen, |v| {
-            if !v.status.service {
-                return (tr("Xizmat yo'q").into(), p.danger);
-            }
-            if !mine(v) {
-                // Protected by the other filter: say which.
-                let other = if engine == 2 {
-                    "Shadow Defender"
-                } else {
-                    "UWF"
-                };
-                return (other.into(), p.faint);
-            }
-            if v.status.freeze == FreezeState::Unsupported {
-                return (tr("Mavjud emas").into(), p.faint);
-            }
-            let mut t = freeze_label(v.status.freeze).to_string();
-            if let Some(u) = v.status.shield_usage {
-                t.push_str(&format!(" · {}%", u.percent()));
-            }
-            (t, freeze_color(p, v.status.freeze))
-        });
-    }
-
-    // Update cycle and restart: part of switching the protection on and off.
-    ui.add_space(12.0);
-    {
-        let usable = views.iter().any(|v| v.status.service);
-        sgroup(ui, p, |ui| {
-            srow(
-                ui,
-                p,
-                true,
-                tr("Yangilab yoqish"),
-                Some(tr(
-                    "Shadow vaqtincha o'chadi, yangilanishlar o'rnatiladi, keyin Shadow o'zi yoqiladi.",
-                )),
-                |ui| {
-                    ui.add_enabled_ui(usable, |ui| {
-                        if ui_kit::button(ui, Some(icons::WRENCH), tr("Boshlash"), Kind::Outline)
-                            .clicked()
-                        {
-                            *f.request = Some(ShadowRequest::Apply(FreezeAction::Maintenance));
+        Frame::none()
+            .stroke(Stroke::new(1.0_f32, p.line))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for (i, v) in views.iter().enumerate() {
+                    let rw = ui.available_width();
+                    let (rect, _) = ui.allocate_exact_size(vec2(rw, 38.0), Sense::hover());
+                    if i > 0 {
+                        ui.painter().hline(
+                            rect.x_range(),
+                            rect.top(),
+                            Stroke::new(1.0_f32, p.line),
+                        );
+                    }
+                    let frozen = matches!(
+                        v.status.freeze,
+                        FreezeState::Frozen | FreezeState::FreezePending | FreezeState::Maintenance
+                    );
+                    // A switch flipped a moment ago shows where it is going until the computer
+                    // reports back.
+                    let wait_id = egui::Id::new(("freeze-wait", v.id));
+                    let mut waiting: Option<(bool, f64)> = ui.data(|d| d.get_temp(wait_id));
+                    if let Some((target, since)) = waiting {
+                        if (mine(v) && frozen == target) || now - since > 20.0 {
+                            waiting = None;
+                            ui.data_mut(|d| d.remove::<(bool, f64)>(wait_id));
+                        } else {
+                            ui.ctx()
+                                .request_repaint_after(std::time::Duration::from_millis(250));
+                        }
+                    }
+                    let usable = v.online
+                        && v.status.service
+                        && mine(v)
+                        && (engine == 2
+                            || !matches!(
+                                v.status.freeze,
+                                FreezeState::Unsupported | FreezeState::Unknown
+                            ));
+                    let (status, col) = if !v.online {
+                        (tr("Oflayn").to_string(), p.faint)
+                    } else if !v.status.service {
+                        (tr("Xizmat yo'q").to_string(), p.danger)
+                    } else if !mine(v) {
+                        (
+                            if engine == 2 {
+                                "Shadow Defender"
+                            } else {
+                                "UWF"
+                            }
+                            .to_string(),
+                            p.faint,
+                        )
+                    } else if v.status.freeze == FreezeState::Unsupported && engine == 1 {
+                        (tr("Mavjud emas").to_string(), p.faint)
+                    } else if waiting.is_some() {
+                        (tr("Kutilmoqda…").to_string(), p.warning)
+                    } else {
+                        let mut t = freeze_label(v.status.freeze).to_string();
+                        if let Some(u) = v.status.shield_usage {
+                            t.push_str(&format!(" · {}%", u.percent()));
+                        }
+                        (t, freeze_color(p, v.status.freeze))
+                    };
+                    let mut child = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(rect.shrink2(vec2(10.0, 0.0)))
+                            .layout(Layout::left_to_right(Align::Center)),
+                    );
+                    child.spacing_mut().item_spacing.x = 10.0;
+                    let mut on = waiting.map_or(mine(v) && frozen, |(t, _)| t);
+                    child.add_enabled_ui(usable && waiting.is_none(), |ui| {
+                        let was = on;
+                        if ui_kit::toggle(ui, &mut on).changed() && on != was {
+                            *f.request = Some(ShadowRequest::Set { id: v.id, on });
+                            ui.data_mut(|d| d.insert_temp(wait_id, (on, now)));
                         }
                     });
-                },
-            );
-            srow(
-                ui,
-                p,
-                false,
-                tr("Darhol qayta yuklash"),
-                Some(tr("Shadow yoqilganda yoki o'chirilganda kompyuterlar darhol qayta yuklanadi. Saqlanmagan ish yo'qolishi mumkin.")),
-                |ui| {
-                    ui_kit::toggle(ui, f.restart);
-                },
-            );
-        });
+                    let g = ui_kit::truncated(
+                        &child,
+                        &v.label,
+                        FontId::new(13.0, ui_kit::mono()),
+                        if usable { p.text } else { p.faint },
+                        rw - 220.0,
+                    );
+                    child.label(egui::WidgetText::from(g));
+                    child.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(
+                            RichText::new(status.to_uppercase())
+                                .family(ui_kit::mono_bold())
+                                .size(11.0)
+                                .color(col),
+                        );
+                    });
+                }
+            });
     }
 
-    // Saqlab qolish: what to keep from the frozen session.
+    // Files and folders that always survive restarts.
     freeze_section(
         ui,
         p,
-        tr("Saqlab qolish"),
-        tr("Muzlatilgan kompyuterdagi kerakli o'zgarishlarni qayta yuklashdan keyin ham saqlab qolish."),
+        tr("Doim saqlanadigan fayllar"),
+        tr("Ro'yxatdagi fayl va papkalar qayta yuklangandan keyin ham qoladi."),
     );
     commit_section(ui, p, &mut f, cx);
 
@@ -1152,14 +877,8 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
         freeze_section(
             ui,
             p,
-            tr("Sozlamalar"),
-            tr("Shu himoya usulining sozlamalari."),
-        );
-        caption(
-            ui,
-            p,
             tr("Shadow Defender paroli"),
-            tr("Windows kompyuterlardagi Shadow Defender paroli. Parol yo'q bo'lsa, bo'sh qoldiring."),
+            tr("Parol yo'q bo'lsa, bo'sh qoldiring."),
         );
         ui_kit::input_frame(p).show(ui, |ui| {
             ui.add(
@@ -1193,17 +912,6 @@ fn freeze_section(ui: &mut egui::Ui, p: &Palette, title: &str, help: &str) {
     ui.add_space(8.0);
 }
 
-/// A small caption with a "?" above a field.
-fn caption(ui: &mut egui::Ui, p: &Palette, text: &str, help: &str) {
-    ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
-        ui_kit::hud(ui, text, p.muted);
-        ui_kit::info(ui, help);
-    });
-    ui.add_space(4.0);
-}
-
 /// Files and folders that always survive restarts (a list like the block lists: add, remove;
 /// every change goes to the computers at once) and one button that commits them now.
 fn commit_section(ui: &mut egui::Ui, p: &Palette, f: &mut ShadowForm<'_>, cx: &FormCtx<'_>) {
@@ -1211,12 +919,6 @@ fn commit_section(ui: &mut egui::Ui, p: &Palette, f: &mut ShadowForm<'_>, cx: &F
         .all
         .iter()
         .any(|v| f.chosen.contains(&v.id) && v.status.service);
-    titled(
-        ui,
-        p,
-        tr("Doim saqlanadigan fayl va papkalar"),
-        tr("Ro'yxatdagi fayl va papkalar (ichidagi hamma fayllar bilan) qayta yuklashdan keyin ham saqlanib qoladi. Qo'shish yoki olib tashlash darhol kompyuterlarga yuboriladi."),
-    );
     // Dev aid: VIMORA_OPEN=shadow-commit shows this part (for screenshots).
     if std::env::var("VIMORA_OPEN").as_deref() == Ok("shadow-commit") {
         ui.scroll_to_cursor(Some(Align::TOP));
@@ -1351,7 +1053,6 @@ pub(super) fn rename_form(
     alias: &mut String,
     system: &mut bool,
     system_name: &mut String,
-    restart: &mut bool,
     key: &str,
 ) {
     section(ui, p, tr("Konsoldagi nomi"));
@@ -1379,7 +1080,6 @@ pub(super) fn rename_form(
                 tr("1–15 ta lotin harfi, raqam yoki '-' (faqat raqamdan iborat bo'lmasin).")
             },
         );
-        ui.checkbox(restart, tr("Darhol qayta yuklash"));
     }
 }
 

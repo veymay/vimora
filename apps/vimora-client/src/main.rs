@@ -17,6 +17,7 @@ mod config;
 mod desktop;
 mod devices;
 mod firewall;
+mod guard;
 mod inputlock;
 mod kiosk;
 mod lessonui;
@@ -98,6 +99,9 @@ enum Cmd {
     /// Internal: fullscreen test (JSON on stdin).
     #[command(hide = true)]
     Test,
+    /// (Admin) Check GitHub for a newer signed Vimora and install it (the scheduled task).
+    #[command(hide = true)]
+    UpdateNow,
     /// (Admin) Used by the uninstaller: removes everything Vimora left on this computer.
     #[command(hide = true)]
     Purge,
@@ -113,6 +117,22 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
+    // The agent and its windows (lock screen, chat, …) can't be ended by the student from Task
+    // Manager; the privileged parts run as SYSTEM anyway.
+    if !matches!(
+        cli.cmd,
+        Some(
+            Cmd::Service
+                | Cmd::Setup
+                | Cmd::Unpair
+                | Cmd::Init
+                | Cmd::Purge
+                | Cmd::UpdateNow
+                | Cmd::UiProbe
+        )
+    ) {
+        guard::protect_self();
+    }
     match cli.cmd {
         Some(Cmd::Overlay) => overlay::run(),
         Some(Cmd::Popup { title, text, reply }) => popup::run(&title, &text, reply),
@@ -127,6 +147,7 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Setup) => service::setup(cli.server, cli.name),
         Some(Cmd::Unpair) => service::unpair(),
         Some(Cmd::Purge) => purge::run(),
+        Some(Cmd::UpdateNow) => privileged::update_now(),
         Some(Cmd::Init) => {
             let cfg = config::load().merge_cli(cli.server, cli.name);
             let path = config::save(&cfg)?;
@@ -136,6 +157,7 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Run) | None => {
             let cfg = config::load().merge_cli(cli.server, cli.name);
             single::take_over();
+            single::watch();
             system::set_dpi_aware();
             std::panic::set_hook(Box::new(|info| tracing::error!("panic: {info}")));
             watchdog();

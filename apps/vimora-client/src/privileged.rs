@@ -9,7 +9,7 @@
 
 use crate::shield::{Shield, Task};
 use crate::{apps, netcontrol::NetControl, sh, system, updates};
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -184,23 +184,10 @@ impl Engine {
                 vimora_update::current()
             ));
         }
-        if self.shield.protected_now() {
-            if !cfg!(windows) {
-                bail!(
-                    "Shadow yoqilgan: Vimora {} ni o'rnatish uchun avval Shadow'ni o'chiring",
-                    rel.version
-                );
-            }
-            // Shadow Defender would throw the new files away at the next restart (the PC would
-            // fall back to the old version every time): the new service commits them once the
-            // installer is done.
-            if let Some(dir) = std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|d| d.to_string_lossy().into_owned()))
-            {
-                self.shield.queue_commit(vec![dir]);
-            }
+        if let Some(m) = install_running(&rel.version) {
+            return Ok(m);
         }
+        let _lock = UpdateLock::take()?;
         // Progress goes to the console through the status ("busy"), e.g.
         // "Vimora 0.3.9 yuklanmoqda 45%" — the console draws a bar from the percent.
         let v = rel.version.clone();
@@ -218,21 +205,82 @@ impl Engine {
         };
         vimora_update::clear_old(&update_dir());
         let path = vimora_update::download(&rel, Role::Student, &update_dir(), &progress)?;
-        self.inner.lock().unwrap().busy = Some(format!("Vimora {v} o'rnatilmoqda"));
-        // Remember what was started, so the result can be checked (see check_pending_update).
+        self.start_install(&path, &rel.version)
+    }
+
+    /// An installer the console sent over the network (for computers without internet): the
+    /// signature of its list and its checksum are checked here, so a fake one is refused.
+    pub fn install_pushed(&self, file: &std::path::Path, sums: &str, sig: &str) -> Result<String> {
+        let res = self.install_pushed_inner(file, sums, sig);
+        // Shown as "busy" while it runs; nobody else clears it.
+        self.inner.lock().unwrap().busy = None;
+        if let Ok(m) = &res {
+            self.push(true, m.clone());
+        }
+        res
+    }
+
+    fn install_pushed_inner(
+        &self,
+        file: &std::path::Path,
+        sums: &str,
+        sig: &str,
+    ) -> Result<String> {
+        let name = file
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .context("fayl nomi yo'q")?;
+        let data = std::fs::read(file).context("yangilanish faylini o'qib bo'lmadi")?;
+        let version = vimora_update::verify_package(&name, &data, sums, sig)?;
+        if !vimora_update::is_newer(&version, vimora_update::current()) {
+            return Ok(format!(
+                "Vimora {} — eng so'nggi versiya",
+                vimora_update::current()
+            ));
+        }
+        if let Some(m) = install_running(&version) {
+            return Ok(m);
+        }
+        let _lock = UpdateLock::take()?;
+        vimora_update::clear_old(&update_dir());
+        // Our own copy in the service's folder (the student cannot change it after the check).
+        let path = vimora_update::save(&update_dir(), &name, &data)?;
+        vimora_update::verify_package(&name, &std::fs::read(&path)?, sums, sig)?;
+        self.start_install(&path, &version)
+    }
+
+    /// Starts a checked installer and remembers it (see `check_pending_update`).
+    fn start_install(&self, path: &std::path::Path, version: &str) -> Result<String> {
+        if self.shield.protected_now() {
+            if !cfg!(windows) {
+                bail!(
+                    "Muzlatish yoqilgan: Vimora {version} ni o'rnatish uchun avval uni o'chiring"
+                );
+            }
+            // The freeze would throw the new files away at the next restart (the PC would fall
+            // back to the old version every time): the new service commits them once the
+            // installer is done.
+            if let Some(dir) = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.to_string_lossy().into_owned()))
+            {
+                self.shield.queue_commit(vec![dir]);
+            }
+        }
+        self.inner.lock().unwrap().busy = Some(format!("Vimora {version} o'rnatilmoqda"));
         let tries = PendingUpdate::load()
-            .filter(|p| p.version == rel.version)
+            .filter(|p| p.version == version)
             .map_or(0, |p| p.tries)
             + 1;
         PendingUpdate {
-            version: rel.version.clone(),
+            version: version.to_string(),
             at: now_secs(),
             tries,
             reported: false,
         }
         .save();
-        vimora_update::install_student(&path)?;
-        Ok(format!("Vimora {} o'rnatilmoqda", rel.version))
+        vimora_update::install_student(path)?;
+        Ok(format!("Vimora {version} o'rnatilmoqda"))
     }
 
     /// Runs `f` on a background thread; the outcome arrives later through [`status`].
@@ -344,6 +392,16 @@ impl Engine {
                 let rev = i.apps.as_ref().map_or(1, |(r, _)| r + 1);
                 i.apps = Some((rev, list));
                 Ok(format!("{n} ta dastur topildi"))
+            })?,
+            PrivCommand::UninstallApp(id) => self.job("Dastur o'chirilmoqda", move |e| {
+                let msg = apps::uninstall(&id)?;
+                // A fresh list goes to the console (the removed one is gone from it).
+                if let Ok(list) = apps::list(&e.shield.store().app_updates) {
+                    let mut i = e.inner.lock().unwrap();
+                    let rev = i.apps.as_ref().map_or(1, |(r, _)| r + 1);
+                    i.apps = Some((rev, list));
+                }
+                Ok(msg)
             })?,
             PrivCommand::SetShadowPassword(pw) => {
                 self.shield.set_password(&pw)?;
@@ -517,6 +575,55 @@ fn update_dir() -> std::path::PathBuf {
     {
         std::path::PathBuf::from("/var/cache/vimora")
     }
+}
+
+/// An installer for `version` (or newer) was started a moment ago and has not finished: do not
+/// start another one (the service, the scheduled task and the console may all try).
+fn install_running(version: &str) -> Option<String> {
+    let p = PendingUpdate::load()?;
+    let fresh = now_secs().saturating_sub(p.at) < 15 * 60;
+    let done = vimora_update::install_result(&update_dir()).is_some();
+    (fresh && !done && !vimora_update::is_newer(version, &p.version))
+        .then(|| format!("Vimora {} o'rnatilmoqda", p.version))
+}
+
+/// Only one download + install start at a time (service, scheduled task, console push). A lock
+/// older than 20 minutes is left over from a crash and is taken over.
+struct UpdateLock(std::path::PathBuf);
+
+impl UpdateLock {
+    fn take() -> Result<Self> {
+        let path = update_dir().join("update.lock");
+        let _ = std::fs::create_dir_all(update_dir());
+        let stale = std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age > Duration::from_secs(20 * 60));
+        if stale {
+            let _ = std::fs::remove_file(&path);
+        }
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|_| anyhow::anyhow!("Vimora allaqachon yangilanmoqda"))?;
+        Ok(Self(path))
+    }
+}
+
+impl Drop for UpdateLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// `vimora-client update-now`: the scheduled task's update check (as SYSTEM, at start-up and
+/// every few hours) — works even when the service itself is stuck.
+pub fn update_now() -> Result<()> {
+    let e = Engine::new();
+    e.auto_update();
+    Ok(())
 }
 
 fn now_secs() -> u64 {

@@ -59,22 +59,31 @@ fn kill(pid: u32) {
 }
 
 /// Ends the previous agent of this user (if any) and records this process as the current one.
+///
+/// The agent can't be ended by the student (see `guard`), so the old copy is asked to go: it
+/// watches the PID file ([`watch`]) and exits once a newer copy wrote its number there. Older
+/// agents without that watch are ended the old way.
 pub fn take_over() {
     let path = pid_file();
     let me = std::process::id();
-    if let Some(old) = std::fs::read_to_string(&path)
+    let old = std::fs::read_to_string(&path)
         .ok()
         .and_then(|s| s.trim().parse::<u32>().ok())
-        .filter(|p| *p != me)
-    {
-        if is_agent(old) {
-            tracing::info!("replacing the running agent (pid {old})");
-            kill(old);
-            // Let the old copy release its sockets before this one binds.
-            std::thread::sleep(std::time::Duration::from_millis(800));
-        }
-    }
+        .filter(|p| *p != me);
     let _ = std::fs::write(&path, me.to_string());
+    if let Some(old) = old.filter(|o| is_agent(*o)) {
+        tracing::info!("replacing the running agent (pid {old})");
+        let start = std::time::Instant::now();
+        while is_agent(old) && start.elapsed() < std::time::Duration::from_secs(6) {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+        if is_agent(old) {
+            kill(old);
+        }
+        // Let the old copy release its sockets before this one binds.
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        let _ = std::fs::write(&path, me.to_string());
+    }
     // Two copies started in the same instant (logon task + Run key) both get here: the one
     // whose number is not in the file after a moment steps aside.
     std::thread::sleep(std::time::Duration::from_millis(700));
@@ -85,4 +94,22 @@ pub fn take_over() {
         tracing::info!("another agent started at the same time — this copy exits");
         std::process::exit(0);
     }
+}
+
+/// A newer copy took over (its number is in the PID file): this one steps aside.
+pub fn watch() {
+    let me = std::process::id();
+    let _ = std::thread::Builder::new()
+        .name("single-watch".into())
+        .spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let other = std::fs::read_to_string(pid_file())
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok())
+                .filter(|p| *p != me);
+            if other.is_some_and(is_agent) {
+                tracing::info!("a newer agent took over — this copy exits");
+                std::process::exit(0);
+            }
+        });
 }

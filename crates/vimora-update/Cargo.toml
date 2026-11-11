@@ -10,6 +10,7 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+ed25519-dalek.workspace = true
 tracing.workspace = true
 
 # TLS: the operating system's stack and certificate store on Windows (works behind school proxies
@@ -20,3 +21,6 @@ native-tls = "0.2"
 
 [target.'cfg(not(windows))'.dependencies]
 ureq = { version = "2", features = ["native-certs"] }
+
+[dev-dependencies]
+rand.workspace = true

@@ -1311,7 +1311,6 @@ impl ConsoleApp {
                         alias,
                         system: false,
                         system_name: v.hostname.clone(),
-                        restart: false,
                     });
                 }
             }

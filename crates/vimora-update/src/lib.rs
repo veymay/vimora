@@ -8,7 +8,10 @@
 //! | `vimora-teacher_<v>_amd64.deb`        | Ubuntu console                  |
 //! | `vimora-student_<v>_amd64.deb`        | Ubuntu agent (installed by the service) |
 //!
-//! Every download is checked against `SHA256SUMS` before it is run.
+//! Every download is checked against `SHA256SUMS` before it is run, and `SHA256SUMS` itself must
+//! carry a valid signature (`SHA256SUMS.sig`) made with the project's release key: nobody else
+//! can make the computers install anything — not a changed GitHub release, not a fake console on
+//! the network. Files are found by their name pattern, so later renames of versions keep working.
 
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
@@ -20,6 +23,134 @@ use std::time::Duration;
 pub const REPO: &str = "veymay/vimora";
 pub const RELEASES_PAGE: &str = "https://github.com/veymay/vimora/releases";
 const MAX_DOWNLOAD: u64 = 300 * 1024 * 1024;
+
+/// Public halves of the release signing keys (`examples/sign.rs`). Only `SHA256SUMS` signed by
+/// one of them is accepted. A new key can be added here (and used by the next releases) while
+/// the old one keeps working for the computers that have not updated yet.
+pub const RELEASE_KEYS: &[&str] =
+    &["6efd797fc57bfe7617a85d10b04cdf6272fce1949d39d3713064498a4dd2e282"];
+
+/// What the release key signs: a fixed prefix + the bytes of `SHA256SUMS`.
+pub fn signed_message(sums: &[u8]) -> Vec<u8> {
+    let mut m = b"vimora-release-sums\0".to_vec();
+    m.extend_from_slice(sums);
+    m
+}
+
+fn unhex(s: &str) -> Option<Vec<u8>> {
+    let s = s.trim();
+    if !s.len().is_multiple_of(2) {
+        return None;
+    }
+    (0..s.len() / 2)
+        .map(|i| u8::from_str_radix(s.get(i * 2..i * 2 + 2)?, 16).ok())
+        .collect()
+}
+
+/// Checks the signature of a `SHA256SUMS` file (hex text from `SHA256SUMS.sig`).
+pub fn verify_sums(sums: &[u8], sig_hex: &str) -> Result<()> {
+    use ed25519_dalek::{Signature, VerifyingKey};
+    let sig = unhex(sig_hex)
+        .and_then(|b| Signature::from_slice(&b).ok())
+        .context("imzo fayli buzilgan")?;
+    let msg = signed_message(sums);
+    let ok = RELEASE_KEYS.iter().any(|k| {
+        unhex(k)
+            .and_then(|b| <[u8; 32]>::try_from(b).ok())
+            .and_then(|b| VerifyingKey::from_bytes(&b).ok())
+            .is_some_and(|vk| vk.verify_strict(&msg, &sig).is_ok())
+    });
+    if !ok {
+        bail!("yangilanish imzosi noto'g'ri — o'rnatilmaydi");
+    }
+    Ok(())
+}
+
+/// Which installer: for a Windows PC, or the Ubuntu student / teacher package.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Target {
+    Windows,
+    StudentDeb,
+    TeacherDeb,
+}
+
+impl Target {
+    /// This computer's installer for `role`.
+    pub fn here(role: Role) -> Self {
+        match (cfg!(windows), role) {
+            (true, _) => Target::Windows,
+            (false, Role::Student) => Target::StudentDeb,
+            (false, Role::Teacher) => Target::TeacherDeb,
+        }
+    }
+
+    /// The student installer for a computer that reports `os` ("windows", "linux").
+    pub fn student_for(os: &str) -> Option<Self> {
+        match os {
+            "windows" => Some(Target::Windows),
+            "linux" => Some(Target::StudentDeb),
+            _ => None,
+        }
+    }
+
+    fn matches(self, name: &str) -> bool {
+        let n = name.to_lowercase();
+        match self {
+            Target::Windows => n.ends_with(".exe") && n.contains("windows"),
+            Target::StudentDeb => n.starts_with("vimora-student") && n.ends_with(".deb"),
+            Target::TeacherDeb => n.starts_with("vimora-teacher") && n.ends_with(".deb"),
+        }
+    }
+}
+
+/// The installer for `target` listed in a signed `SHA256SUMS`: (file name, sha256).
+pub fn pick_target(sums: &str, target: Target) -> Option<(String, String)> {
+    sums.lines().find_map(|l| {
+        let mut it = l.split_whitespace();
+        let (hash, name) = (it.next()?, it.next()?);
+        let name = name.trim_start_matches('*');
+        target
+            .matches(name)
+            .then(|| (name.to_string(), hash.to_lowercase()))
+    })
+}
+
+/// The installer for this platform and role listed in a signed `SHA256SUMS`: (file name, sha256).
+/// Exact name first, then the name pattern (so a later naming change keeps working).
+pub fn pick_from_sums(sums: &str, role: Role, version: &str) -> Option<(String, String)> {
+    let rows: Vec<(String, String)> = sums
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.split_whitespace();
+            let (hash, name) = (it.next()?, it.next()?);
+            Some((
+                name.trim_start_matches('*').to_string(),
+                hash.to_lowercase(),
+            ))
+        })
+        .collect();
+    let exact = asset_name(role, version);
+    if let Some(r) = rows.iter().find(|r| r.0 == exact) {
+        return Some(r.clone());
+    }
+    pick_target(sums, Target::here(role))
+}
+
+/// Version written in an installer's file name ("vimora-0.3.27-windows-x64-setup.exe",
+/// "vimora-student_0.3.27_amd64.deb" → "0.3.27").
+pub fn version_in_name(name: &str) -> Option<String> {
+    name.split(['-', '_'])
+        .find(|p| p.contains('.') && p.chars().next().is_some_and(|c| c.is_ascii_digit()))
+        .map(|p| p.to_string())
+}
+
+/// SHA-256 of `data` as lowercase hex.
+pub fn sha256_hex(data: &[u8]) -> String {
+    Sha256::digest(data)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
 
 /// The version of this build ("0.2.0").
 pub fn current() -> &'static str {
@@ -115,6 +246,7 @@ fn latest_page() -> Result<Release> {
             asset(format!("vimora-teacher_{v}_amd64.deb")),
             asset(format!("vimora-student_{v}_amd64.deb")),
             asset("SHA256SUMS".to_string()),
+            asset("SHA256SUMS.sig".to_string()),
         ],
         version: v,
     })
@@ -213,41 +345,105 @@ fn fetch(url: &str, progress: &dyn Fn(u64, u64), total: u64) -> Result<Vec<u8>> 
     Ok(out)
 }
 
-/// Downloads this platform's installer into `dir` and checks it against `SHA256SUMS`.
+/// A release's signed list of files: `SHA256SUMS` and its signature, checked.
+pub fn signed_sums(rel: &Release) -> Result<(String, String)> {
+    let find = |n: &str| rel.assets.iter().find(|a| a.name == n);
+    let sums = find("SHA256SUMS").context("relizda SHA256SUMS yo'q")?;
+    let sig = find("SHA256SUMS.sig").context("relizda imzo (SHA256SUMS.sig) yo'q")?;
+    let sums = fetch(&sums.url, &|_, _| {}, sums.size)?;
+    let sig = String::from_utf8(fetch(&sig.url, &|_, _| {}, sig.size)?)?;
+    verify_sums(&sums, &sig)?;
+    Ok((String::from_utf8(sums)?, sig))
+}
+
+/// A downloaded installer with the signed list that vouches for it.
+pub struct Package {
+    pub path: PathBuf,
+    pub name: String,
+    pub version: String,
+    pub sums: String,
+    pub sig: String,
+}
+
+/// Downloads this platform's installer into `dir`; checked against the signed `SHA256SUMS`.
 pub fn download(
     rel: &Release,
     role: Role,
     dir: &Path,
     progress: &dyn Fn(u64, u64),
 ) -> Result<PathBuf> {
-    let asset = rel
-        .asset(role)
-        .with_context(|| format!("relizda {} fayli yo'q", asset_name(role, &rel.version)))?;
-    let sums = rel
+    download_package(rel, role, dir, progress).map(|p| p.path)
+}
+
+/// [`download`], keeping the signed list (a console passes it on to computers without internet).
+pub fn download_package(
+    rel: &Release,
+    role: Role,
+    dir: &Path,
+    progress: &dyn Fn(u64, u64),
+) -> Result<Package> {
+    download_target(rel, Target::here(role), dir, progress)
+}
+
+/// The installer for any `target` (a console fetches the students' one), checked.
+pub fn download_target(
+    rel: &Release,
+    target: Target,
+    dir: &Path,
+    progress: &dyn Fn(u64, u64),
+) -> Result<Package> {
+    let (sums, sig) = signed_sums(rel)?;
+    let (name, want) =
+        pick_target(&sums, target).context("imzolangan ro'yxatda o'rnatuvchi topilmadi")?;
+    let base = rel
         .assets
         .iter()
         .find(|a| a.name == "SHA256SUMS")
+        .map(|a| a.url.trim_end_matches("SHA256SUMS").to_string())
         .context("relizda SHA256SUMS yo'q")?;
-    let sums = String::from_utf8(fetch(&sums.url, &|_, _| {}, sums.size)?)?;
+    let size = rel
+        .assets
+        .iter()
+        .find(|a| a.name == name)
+        .map_or(0, |a| a.size);
+    let data = fetch(&format!("{base}{name}"), progress, size)?;
+    if sha256_hex(&data) != want {
+        bail!("fayl buzilgan (SHA-256 mos kelmadi)");
+    }
+    let path = save(dir, &name, &data)?;
+    Ok(Package {
+        path,
+        version: version_in_name(&name).unwrap_or_else(|| rel.version.clone()),
+        name,
+        sums,
+        sig,
+    })
+}
+
+/// Checks a package that came from elsewhere (a console on the network): the signature of its
+/// list, its SHA-256, and that it is newer than this build. Returns its version.
+pub fn verify_package(name: &str, data: &[u8], sums: &str, sig: &str) -> Result<String> {
+    verify_sums(sums.as_bytes(), sig)?;
     let want = sums
         .lines()
         .find_map(|l| {
             let mut it = l.split_whitespace();
-            let (hash, name) = (it.next()?, it.next()?);
-            (name.trim_start_matches('*') == asset.name).then(|| hash.to_lowercase())
+            let (hash, n) = (it.next()?, it.next()?);
+            (n.trim_start_matches('*') == name).then(|| hash.to_lowercase())
         })
-        .context("SHA256SUMS da fayl topilmadi")?;
-    let data = fetch(&asset.url, progress, asset.size)?;
-    let got: String = Sha256::digest(&data)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    if got != want {
+        .context("fayl imzolangan ro'yxatda yo'q")?;
+    if sha256_hex(data) != want {
         bail!("fayl buzilgan (SHA-256 mos kelmadi)");
     }
+    let v = version_in_name(name).context("fayl nomida versiya yo'q")?;
+    Ok(v)
+}
+
+/// Saves a checked installer into `dir` (a fresh name when the old file is still in use).
+pub fn save(dir: &Path, name: &str, data: &[u8]) -> Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
-    let path = dir.join(&asset.name);
-    if std::fs::write(&path, &data).is_ok() {
+    let path = dir.join(name);
+    if std::fs::write(&path, data).is_ok() {
         return Ok(path);
     }
     // The file is in use (Windows "os error 32"): an installer started earlier is still
@@ -256,8 +452,8 @@ pub fn download(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let alt = dir.join(format!("{stamp}-{}", asset.name));
-    std::fs::write(&alt, &data)
+    let alt = dir.join(format!("{stamp}-{name}"));
+    std::fs::write(&alt, data)
         .with_context(|| format!("yangilanish faylini saqlab bo'lmadi: {}", alt.display()))?;
     Ok(alt)
 }
@@ -425,6 +621,32 @@ fn run(cmd: &str, args: &[&str]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn signature_is_required() {
+        let sums = b"abc  vimora-9.9.9-windows-x64-setup.exe\n";
+        assert!(verify_sums(sums, &"00".repeat(64)).is_err());
+        assert!(verify_sums(sums, "zz").is_err());
+        assert!(
+            verify_package("vimora-9.9.9-windows-x64-setup.exe", b"x", "abc  x", "00").is_err()
+        );
+    }
+
+    #[test]
+    fn picks_installers_by_pattern() {
+        let sums = "aa  vimora-1.2.3-windows-x64-setup.exe\nbb  vimora-student_1.2.3_amd64.deb\ncc  vimora-teacher_1.2.3_amd64.deb\n";
+        assert_eq!(pick_target(sums, Target::Windows).unwrap().1, "aa");
+        assert_eq!(pick_target(sums, Target::StudentDeb).unwrap().1, "bb");
+        assert_eq!(pick_target(sums, Target::TeacherDeb).unwrap().1, "cc");
+        assert_eq!(
+            version_in_name("vimora-1.2.3-windows-x64-setup.exe").as_deref(),
+            Some("1.2.3")
+        );
+        assert_eq!(
+            version_in_name("vimora-student_1.2.3_amd64.deb").as_deref(),
+            Some("1.2.3")
+        );
+    }
 
     #[test]
     fn versions() {

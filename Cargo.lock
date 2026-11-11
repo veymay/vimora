@@ -4811,7 +4811,9 @@ name = "vimora-update"
 version = "0.3.26"
 dependencies = [
  "anyhow",
+ "ed25519-dalek",
  "native-tls",
+ "rand 0.8.8",
  "serde",
  "serde_json",
  "sha2",

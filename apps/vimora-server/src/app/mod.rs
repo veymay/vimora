@@ -264,13 +264,13 @@ impl ConsoleApp {
                 }
                 app.dev_open = Some(Dialog::Lesson(Box::new(l)));
             }
-            Ok(m @ ("machine" | "machine:procs")) => {
+            Ok(m @ ("machine" | "machine:procs" | "machine:apps")) => {
                 app.dev_open = Some(Dialog::Machine {
                     id: 1001,
-                    tab: if m == "machine" {
-                        MachineTab::Overview
-                    } else {
-                        MachineTab::Processes
+                    tab: match m {
+                        "machine" => MachineTab::Overview,
+                        "machine:apps" => MachineTab::Apps,
+                        _ => MachineTab::Processes,
                     },
                     filter: String::new(),
                     sort: ProcSort::Cpu,
@@ -468,7 +468,26 @@ impl ConsoleApp {
                     alert: (i % 11 == 7).then(|| ("Taqiqlangan so'z".to_string(), Instant::now())),
                     client_nonce: vec![],
                     priv_counter: 0,
-                    apps: None,
+                    apps: Some(
+                        [
+                            ("Google.Chrome", "Google Chrome", "131.0.6778"),
+                            ("Mozilla.Firefox", "Mozilla Firefox", "133.0"),
+                            ("Valve.Steam", "Steam", "2.10.91"),
+                            ("Telegram.TelegramDesktop", "Telegram Desktop", "5.9.0"),
+                            ("VideoLAN.VLC", "VLC media player", "3.0.21"),
+                            ("Microsoft.Office", "Microsoft 365", "16.0.18129"),
+                        ]
+                        .iter()
+                        .map(|(id, name, v)| vimora_core::AppInfo {
+                            id: id.to_string(),
+                            name: name.to_string(),
+                            version: v.to_string(),
+                            available: None,
+                            source: "winget".into(),
+                            updates: true,
+                        })
+                        .collect(),
+                    ),
                     changes: demo_changes,
                     version: "0.3.7".into(),
                     cursor: 0,
@@ -660,7 +679,23 @@ impl ConsoleApp {
             title: title.to_string(),
             text,
             yes: yes.to_string(),
+            no: tr("Bekor qilish").to_string(),
             action,
+        });
+    }
+
+    /// A change takes effect after a restart: "Hozir" restarts these computers, "Keyinroq"
+    /// leaves it for their next restart.
+    pub(super) fn ask_restart(&mut self, ids: Vec<u64>) {
+        if ids.is_empty() {
+            return;
+        }
+        self.confirm = Some(Confirm {
+            title: tr("Qayta yuklash kerak").to_string(),
+            text: tr("O'zgarish kompyuter qayta yuklangach ishlaydi.").to_string(),
+            yes: tr("Hozir").to_string(),
+            no: tr("Keyinroq").to_string(),
+            action: ConfirmAction::Restart(ids),
         });
     }
 
@@ -674,6 +709,20 @@ impl ConsoleApp {
                 self.forget(&keys, &ids);
             }
             ConfirmAction::DeleteRoom(name) => self.delete_room(&name),
+            ConfirmAction::Restart(ids) => {
+                self.send_priv(
+                    &ids,
+                    PrivCommand::Power(PowerAction::Restart),
+                    tr("Qayta yuklash"),
+                );
+            }
+            ConfirmAction::UninstallApp { id, app } => {
+                self.send_priv(
+                    &[id],
+                    PrivCommand::UninstallApp(app.clone()),
+                    &tf!("Dastur o'chirilmoqda: {name}", name = app),
+                );
+            }
             ConfirmAction::ServiceControl { id, name, start } => {
                 self.send_priv(
                     &[id],
@@ -1116,7 +1165,6 @@ impl ConsoleApp {
         Dialog::Freeze {
             tab: ShadowTab::Uwf,
             chosen: self.selected.clone(),
-            restart: false,
             folders: c.persistent_folders.clone(),
             request: None,
             picked: BTreeSet::new(),

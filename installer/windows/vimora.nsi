@@ -191,12 +191,12 @@ Section "Vimora"
     ; Privileged service (SYSTEM), logon task, Shadow control, updates.
     nsExec::Exec /TIMEOUT=180000 '"$INSTDIR\vimora-client.exe" setup'
     Pop $0
-    ; Standalone updater: a script of its own (not the Vimora program), so a PC always reaches
-    ; the newest version even if a Vimora version could not update itself.
-    File "vimora-update.ps1"
-    nsExec::Exec '"$SYSDIR\schtasks.exe" /create /tn "Vimora Updater" /tr "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \"$INSTDIR\vimora-update.ps1\"" /sc hourly /mo 6 /ru SYSTEM /rl HIGHEST /f'
+    ; Update check on its own schedule (as SYSTEM, at start-up and every 4 hours), apart from
+    ; the service: installs only releases signed with the project's key.
+    Delete "$INSTDIR\vimora-update.ps1"
+    nsExec::Exec '"$SYSDIR\schtasks.exe" /create /tn "Vimora Updater" /tr "\"$INSTDIR\vimora-client.exe\" update-now" /sc hourly /mo 4 /ru SYSTEM /rl HIGHEST /f'
     Pop $0
-    nsExec::Exec '"$SYSDIR\schtasks.exe" /create /tn "Vimora Updater Boot" /tr "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \"$INSTDIR\vimora-update.ps1\"" /sc onstart /delay 0005:00 /ru SYSTEM /rl HIGHEST /f'
+    nsExec::Exec '"$SYSDIR\schtasks.exe" /create /tn "Vimora Updater Boot" /tr "\"$INSTDIR\vimora-client.exe\" update-now" /sc onstart /delay 0005:00 /ru SYSTEM /rl HIGHEST /f'
     Pop $0
   ${EndIf}
   ; The watchdog again (setup re-creates it too; this covers a failed setup).

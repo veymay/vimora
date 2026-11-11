@@ -52,6 +52,5 @@ depends = "$auto, libgl1, libxkbcommon0, libx11-6, libxcursor1, libxrandr2, libx
 maintainer-scripts = "../../installer/linux/deb/student/"
 assets = [
     ["target/release/vimora-client", "opt/vimora/bin/", "755"],
-    ["../../installer/linux/vimora-updater.sh", "opt/vimora/bin/vimora-updater", "755"],
     ["../../installer/linux/deb/vimora-agent.desktop", "etc/xdg/autostart/vimora-client.desktop", "644"],
 ]

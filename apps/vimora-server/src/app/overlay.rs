@@ -887,9 +887,7 @@ impl ConsoleApp {
                                 answer = Some(true);
                             }
                             ui.add_space(6.0);
-                            if ui_kit::button(ui, Some(icons::X), tr("Bekor qilish"), Kind::Outline)
-                                .clicked()
-                            {
+                            if ui_kit::button(ui, Some(icons::X), &c.no, Kind::Outline).clicked() {
                                 answer = Some(false);
                             }
                         });
@@ -1143,6 +1141,18 @@ impl ConsoleApp {
                 );
                 return;
             }
+            Some(MachineRequest::RefreshApps) => {
+                self.send_priv(&[id], PrivCommand::ListApps, "");
+            }
+            Some(MachineRequest::Uninstall(app, name)) => {
+                self.ask(
+                    tr("Dastur o'chirilsinmi?"),
+                    tf!("\"{name}\" shu kompyuterdan o'chiriladi.", name = name),
+                    tr("O'chirish"),
+                    ConfirmAction::UninstallApp { id, app },
+                );
+                return;
+            }
             Some(MachineRequest::Run) => {
                 let code = script.trim().to_string();
                 self.ask(
@@ -1193,7 +1203,6 @@ impl ConsoleApp {
     fn shadow_requests(&mut self, targets: &[u64]) {
         let Some(Dialog::Freeze {
             tab,
-            restart,
             folders,
             request,
             picked,
@@ -1207,7 +1216,6 @@ impl ConsoleApp {
         let Some(r) = request.take() else {
             return;
         };
-        let restart = *restart;
         let pw = password.clone();
         let folders = folders.clone();
         picked.clear();
@@ -1220,17 +1228,26 @@ impl ConsoleApp {
         self.cfg.write().unwrap().shadow_password = pw.clone();
         self.send_priv(targets, PrivCommand::SetShadowPassword(pw), "");
         match r {
-            ShadowRequest::Apply(action) => {
-                let what = match action {
-                    FreezeAction::Freeze => tr("Muzlatishni yoqish"),
-                    FreezeAction::Thaw => tr("Muzlatishni o'chirish"),
-                    FreezeAction::Maintenance => tr("Yangilab, qayta yoqish"),
+            ShadowRequest::Set { id, on } => {
+                let (action, what) = if on {
+                    (FreezeAction::Freeze, tr("Muzlatishni yoqish"))
+                } else {
+                    (FreezeAction::Thaw, tr("Muzlatishni o'chirish"))
                 };
                 // Switching on picks the filter of the tab (Windows; Ubuntu ignores it).
-                if action == FreezeAction::Freeze {
-                    self.send_priv(targets, PrivCommand::SetShieldEngine(engine), "");
+                if on {
+                    self.send_priv(&[id], PrivCommand::SetShieldEngine(engine), "");
                 }
-                self.send_priv(targets, PrivCommand::Freeze { action, restart }, what);
+                self.send_priv(
+                    &[id],
+                    PrivCommand::Freeze {
+                        action,
+                        restart: false,
+                    },
+                    what,
+                );
+                // It takes effect after a restart: now, or the next time.
+                self.ask_restart(vec![id]);
             }
             ShadowRequest::Commit => {
                 self.send_priv(targets, PrivCommand::CommitPaths(paths), tr("Commit"));
@@ -1442,7 +1459,6 @@ impl ConsoleApp {
                 alias,
                 system,
                 system_name,
-                restart,
             } => {
                 let alias = alias.trim().to_string();
                 {
@@ -1465,9 +1481,14 @@ impl ConsoleApp {
                         // Rooms and aliases are keyed by hardware id, so they survive the rename.
                         self.send_priv(
                             &[id],
-                            PrivCommand::RenameComputer { name: new, restart },
+                            PrivCommand::RenameComputer {
+                                name: new,
+                                restart: false,
+                            },
                             tr("Kompyuter nomi"),
                         );
+                        // The new name takes effect after a restart: now, or the next time.
+                        self.ask_restart(vec![id]);
                     }
                 }
             }

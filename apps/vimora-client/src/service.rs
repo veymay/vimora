@@ -45,6 +45,13 @@ pub enum IpcReq {
     Changes,
     /// The lock screen is up (`true`) or gone: switch the system's ways out off / back on.
     Kiosk(bool),
+    /// An installer the console sent over the network (saved by the agent at `path`) with the
+    /// signed list that vouches for it. The service checks the signature itself.
+    InstallUpdate {
+        path: String,
+        sums: String,
+        sig: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -140,7 +147,10 @@ pub fn port() -> u16 {
 
 /// Agent side: one request/response round-trip.
 pub async fn call(req: IpcReq) -> Result<IpcResp> {
-    let long = matches!(req, IpcReq::Privileged { .. });
+    let long = matches!(
+        req,
+        IpcReq::Privileged { .. } | IpcReq::InstallUpdate { .. }
+    );
     let mut s = tokio::time::timeout(
         Duration::from_secs(2),
         TcpStream::connect(("127.0.0.1", port())),
@@ -208,6 +218,8 @@ async fn serve(pairing: Pairing) -> Result<()> {
     exit_when_replaced();
     // An uninstall that waited for the freeze to be switched off.
     std::thread::spawn(crate::purge::finish_pending);
+    // The agent is started again in the user's session if the student ends it somehow.
+    crate::guard::keep_agent_running();
     std::thread::spawn(ensure_updater_tasks);
     crate::power::keep_awake();
     // A lock left over from before a crash or restart: release it; a still-locked agent
@@ -285,41 +297,34 @@ fn cleanup_old_binaries() {
     }
 }
 
-/// The standalone updater (`vimora-update.ps1` next to the program, run by its own tasks) must
-/// always be scheduled: re-created here when missing (a frozen PC may have rolled them back).
+/// The update check on its own schedule (`vimora-client update-now` as SYSTEM, apart from the
+/// service) must always be there: written again at every start (a frozen PC may have rolled it
+/// back, an older version may have pointed it elsewhere).
 fn ensure_updater_tasks() {
     #[cfg(windows)]
     {
-        let Some(script) = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|d| d.join("vimora-update.ps1")))
-            .filter(|p| p.exists())
-        else {
+        let Ok(exe) = std::env::current_exe() else {
             return;
         };
-        let tr = format!(
-            "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{}\"",
-            script.display()
-        );
+        // The PowerShell updater of 0.3.22–0.3.26 is replaced by the program itself.
+        if let Some(dir) = exe.parent() {
+            let _ = std::fs::remove_file(dir.join("vimora-update.ps1"));
+        }
+        let tr = format!("\"{}\" update-now", exe.display());
         for (name, schedule) in [
-            ("Vimora Updater", &["/sc", "hourly", "/mo", "6"][..]),
+            ("Vimora Updater", &["/sc", "hourly", "/mo", "4"][..]),
             (
                 "Vimora Updater Boot",
                 &["/sc", "onstart", "/delay", "0005:00"][..],
             ),
         ] {
-            let exists = crate::sh::run("schtasks", &["/query", "/tn", name])
-                .map(|(ok, _)| ok)
-                .unwrap_or(false);
-            if exists {
-                continue;
-            }
+            // Always written again: points at the current program, whatever an older version
+            // registered there.
             let mut args = vec!["/create", "/tn", name, "/tr", &tr];
             args.extend_from_slice(schedule);
             args.extend_from_slice(&["/ru", "SYSTEM", "/rl", "HIGHEST", "/f"]);
-            match crate::sh::run_ok("schtasks", &args) {
-                Ok(_) => info!("updater task {name} registered"),
-                Err(e) => tracing::warn!("updater task {name}: {e:#}"),
+            if let Err(e) = crate::sh::run_ok("schtasks", &args) {
+                tracing::warn!("updater task {name}: {e:#}");
             }
         }
     }
@@ -445,6 +450,24 @@ async fn handle(
                     ok: true,
                     message: String::new(),
                 },
+                Ok(Err(e)) => IpcResp::Done {
+                    ok: false,
+                    message: format!("{e:#}"),
+                },
+                Err(e) => IpcResp::Done {
+                    ok: false,
+                    message: e.to_string(),
+                },
+            }
+        }
+        IpcReq::InstallUpdate { path, sums, sig } => {
+            let e = engine.clone();
+            let res = tokio::task::spawn_blocking(move || {
+                e.install_pushed(std::path::Path::new(&path), &sums, &sig)
+            })
+            .await;
+            match res {
+                Ok(Ok(message)) => IpcResp::Done { ok: true, message },
                 Ok(Err(e)) => IpcResp::Done {
                     ok: false,
                     message: format!("{e:#}"),

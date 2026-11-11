@@ -110,6 +110,11 @@ step "SHA256SUMS"
   done
   sha256sum "${files[@]}" >SHA256SUMS
 )
+# The signature the installed computers check before they install anything
+# (key: ~/.config/vimora-release/release.key, never in the repository).
+step "SHA256SUMS imzosi"
+run cargo run -q -p vimora-update --example sign -- sign dist/SHA256SUMS
+[[ -f dist/SHA256SUMS.sig ]] || fail "SHA256SUMS imzolanmadi (kalit: ~/.config/vimora-release/release.key)"
 
 printf '\n%sHAMMASI TAYYOR%s  (dist/)\n' "$blue" "$off"
-(cd dist && ls -lh --time-style=+ SHA256SUMS vimora-*"$VER"* 2>/dev/null | awk '{printf "  %-45s %s\n", $NF, $5}')
+(cd dist && ls -lh --time-style=+ SHA256SUMS SHA256SUMS.sig vimora-*"$VER"* 2>/dev/null | awk '{printf "  %-45s %s\n", $NF, $5}')

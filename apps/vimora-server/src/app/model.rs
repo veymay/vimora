@@ -116,13 +116,11 @@ pub(super) enum Dialog {
         alias: String,
         system: bool,
         system_name: String,
-        restart: bool,
     },
     Freeze {
         tab: ShadowTab,
         /// Computers the drawer acts on (ticked in its list).
         chosen: std::collections::BTreeSet<u64>,
-        restart: bool,
         /// Persistent folders, one per line.
         folders: String,
         request: Option<ShadowRequest>,
@@ -190,6 +188,13 @@ pub(crate) enum ConfirmAction {
     DeleteRoom(String),
     /// Delete a saved test.
     DeleteTest(String),
+    /// Restart these computers now (a change takes effect after a restart).
+    Restart(Vec<u64>),
+    /// Uninstall a program on a student PC: (computer, program id).
+    UninstallApp {
+        id: u64,
+        app: String,
+    },
     /// Start / stop a service on a student PC.
     ServiceControl {
         id: u64,
@@ -217,6 +222,8 @@ pub(crate) struct Confirm {
     pub(super) text: String,
     /// Label of the "yes" button.
     pub(super) yes: String,
+    /// Label of the "no" button.
+    pub(super) no: String,
     pub(super) action: ConfirmAction,
 }
 
@@ -282,8 +289,11 @@ pub(super) fn engine_of(v: &View) -> u8 {
 /// Inline actions inside the Shadow drawer (they don't close it).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ShadowRequest {
-    /// Turn Shadow on / off / run the update cycle on the targets.
-    Apply(FreezeAction),
+    /// Turn the filter of the open tab on / off on one computer.
+    Set {
+        id: u64,
+        on: bool,
+    },
     /// Commit the ticked paths.
     Commit,
     SaveFolders,

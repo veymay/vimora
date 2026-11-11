@@ -634,8 +634,28 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             SetCursor(null_mut());
             1
         }
-        // Never closed by the student (the agent ends the process).
-        WM_CLOSE | WM_SYSCOMMAND if msg == WM_CLOSE || (w & 0xFFF0) == SC_CLOSE as usize => 0,
+        // Never closed or minimized by the student (the agent ends the process).
+        WM_CLOSE | WM_SYSCOMMAND
+            if msg == WM_CLOSE
+                || (w & 0xFFF0) == SC_CLOSE as usize
+                || (w & 0xFFF0) == SC_MINIMIZE as usize =>
+        {
+            0
+        }
+        // "Show desktop" (Win+D, a touchpad swipe) and the like try to hide or minimize every
+        // window: this one stays where it is.
+        WM_WINDOWPOSCHANGING => {
+            let wp = &mut *(l as *mut WINDOWPOS);
+            wp.flags &= !SWP_HIDEWINDOW;
+            if wp.x <= -30000 || wp.y <= -30000 {
+                wp.flags |= SWP_NOMOVE | SWP_NOSIZE;
+            }
+            0
+        }
+        WM_SIZE if w as u32 == SIZE_MINIMIZED => {
+            PostMessageW(hwnd, WM_SYSCOMMAND, SC_RESTORE as usize, 0);
+            0
+        }
         WM_DPICHANGED => {
             STATE.with(|s| {
                 if let Some(st) = s.borrow_mut().as_mut() {

@@ -254,6 +254,8 @@ pub enum PrivCommand {
     /// Run a command as administrator (PowerShell on Windows, sh on Ubuntu); the output comes
     /// back as the command result. Recorded in the console's activity log.
     RunScript(String),
+    /// Uninstall an application (id as in [`AppInfo::id`]), silently.
+    UninstallApp(String),
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -474,6 +476,15 @@ pub enum Command {
     EndTest,
     /// Report antivirus, firewall, hardware, sessions and services ([`ClientMsg::SecurityInfo`]).
     GetSecurityInfo,
+    /// A newer Vimora installer from the console (for computers without internet), with the
+    /// signed `SHA256SUMS` and its signature: the computer's service checks the signature against
+    /// the release key built into it before installing.
+    InstallUpdate {
+        name: String,
+        data: Vec<u8>,
+        sums: String,
+        sig: String,
+    },
 }
 
 /// Security and inventory facts about a student PC.
@@ -711,6 +722,7 @@ mod wire_tests {
         assert_eq!(tag(&PrivCommand::SetDevicePolicy(Default::default())), 16);
         assert_eq!(tag(&PrivCommand::SetAccessPolicy(Default::default())), 17);
         assert_eq!(tag(&PrivCommand::RunScript(String::new())), 19);
+        assert_eq!(tag(&PrivCommand::UninstallApp(String::new())), 20);
         assert_eq!(tag(&ClientMsg::SecurityInfo(Default::default())), 17);
         assert_eq!(
             tag(&ClientMsg::Free(ClientInfo {
@@ -728,6 +740,15 @@ mod wire_tests {
             Some(("pc-1".to_string(), 47801))
         );
         assert_eq!(tag(&Command::GetSecurityInfo), tag(&Command::ChatEnd) + 14);
+        assert_eq!(
+            tag(&Command::InstallUpdate {
+                name: String::new(),
+                data: vec![],
+                sums: String::new(),
+                sig: String::new()
+            }),
+            tag(&Command::ChatEnd) + 15
+        );
         assert_eq!(
             tag(&Command::SetAppAllowlist(vec![])),
             tag(&Command::ChatEnd) + 5

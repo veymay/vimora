@@ -6,6 +6,19 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Kompyuter yo'q.", "No computers.", "Нет компьютеров."),
+    ("Doim saqlanadigan fayllar", "Files always kept", "Всегда сохраняемые файлы"),
+    ("Ro'yxatdagi fayl va papkalar qayta yuklangandan keyin ham qoladi.", "The listed files and folders stay after a restart.", "Файлы и папки из списка остаются после перезагрузки."),
+    ("Parol yo'q bo'lsa, bo'sh qoldiring.", "Leave empty if there is no password.", "Оставьте пустым, если пароля нет."),
+    ("Dastur o'chirilsinmi?", "Uninstall the program?", "Удалить программу?"),
+    ("\"{name}\" shu kompyuterdan o'chiriladi.", "\"{name}\" will be removed from this computer.", "«{name}» будет удалена с этого компьютера."),
+    ("O'chirib tashlash", "Uninstall", "Удалить"),
+    ("Qayta yuklash kerak", "Restart needed", "Нужна перезагрузка"),
+    ("O'zgarish kompyuter qayta yuklangach ishlaydi.", "The change takes effect after the computer restarts.", "Изменение вступит в силу после перезагрузки компьютера."),
+    ("Hozir", "Now", "Сейчас"),
+    ("Keyinroq", "Later", "Позже"),
+    ("Dastur o'chirilmoqda: {name}", "Uninstalling: {name}", "Удаление: {name}"),
+    ("{name}: Vimora {v} tarmoq orqali yuborildi", "{name}: Vimora {v} sent over the network", "{name}: Vimora {v} отправлена по сети"),
     ("Ro'yxatdagi fayl va papkalar (ichidagi hamma fayllar bilan) qayta yuklashdan keyin ham saqlanib qoladi. Qo'shish yoki olib tashlash darhol kompyuterlarga yuboriladi.", "The listed files and folders (with everything inside) survive restarts. Adding or removing is sent to the computers at once.", "Файлы и папки из списка (со всем содержимым) сохраняются после перезагрузки. Добавление и удаление сразу отправляются на компьютеры."),
     ("Hozirgi o'zgarishlarni commit qilish", "Commit current changes", "Зафиксировать текущие изменения"),
     ("Ro'yxatdagi fayl va papkalarning hozirgi holati darhol saqlanadi (commit)", "The current state of the listed files and folders is saved at once (commit)", "Текущее состояние файлов и папок из списка сразу сохраняется (commit)"),
