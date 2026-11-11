@@ -848,6 +848,10 @@ fn titled(ui: &mut egui::Ui, p: &Palette, title: &str, help: &str) {
 }
 
 pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>, cx: &FormCtx<'_>) {
+    // Two tabs only: each filter has its protection, "saqlab qolish" and settings in one page.
+    if matches!(*f.tab, ShadowTab::Commit | ShadowTab::Settings) {
+        *f.tab = ShadowTab::Protection;
+    }
     // The protection tabs: Shadow Defender (1) or UWF (2). A computer counts here when it uses
     // this filter, or is not tied to one (Ubuntu, older agents).
     let engine: u8 = if *f.tab == ShadowTab::Uwf { 2 } else { 1 };
@@ -914,8 +918,6 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
             for (t, ic, label) in [
                 (ShadowTab::Protection, icons::SNOWFLAKE, "Shadow Defender"),
                 (ShadowTab::Uwf, icons::SHIELD, "UWF"),
-                (ShadowTab::Commit, icons::GIT_COMMIT, tr("Saqlab qolish")),
-                (ShadowTab::Settings, icons::SETTINGS, tr("Sozlama")),
             ] {
                 if ui_kit::tab_icon(ui, Some(ic), label, None, *f.tab == t).clicked() {
                     *f.tab = t;
@@ -1099,21 +1101,26 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
         });
     }
 
-    if *f.tab == ShadowTab::Commit {
-        commit_section(ui, p, &mut f, cx, any_frozen);
-    }
+    // Saqlab qolish: what to keep from the frozen session.
+    freeze_section(
+        ui,
+        p,
+        tr("Saqlab qolish"),
+        tr("Muzlatilgan kompyuterdagi kerakli o'zgarishlarni qayta yuklashdan keyin ham saqlab qolish."),
+    );
+    commit_section(ui, p, &mut f, cx, any_frozen);
 
-    if *f.tab == ShadowTab::Settings {
-        let label = |ui: &mut egui::Ui, text: &str, help: &str| {
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
-                ui_kit::hud(ui, text, p.muted);
-                ui_kit::info(ui, help);
-            });
-        };
-        label(
+    // Settings of this filter.
+    freeze_section(
+        ui,
+        p,
+        tr("Sozlamalar"),
+        tr("Shu himoya usulining sozlamalari."),
+    );
+    if engine == 1 {
+        caption(
             ui,
+            p,
             tr("Shadow Defender paroli"),
             tr("Windows kompyuterlardagi Shadow Defender paroli. Parol yo'q bo'lsa, bo'sh qoldiring."),
         );
@@ -1125,23 +1132,56 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
                     .desired_width(ui.available_width()),
             );
         });
-        label(
-            ui,
-            tr("Doim saqlanadigan papkalar"),
-            tr("Bu papkalar qayta yuklanganda ham o'chmaydi. Har biri yangi qatorda."),
-        );
-        ui.add(
-            ui_kit::text_area(f.folders)
-                .hint_text(tr("D:\\Darslar"))
-                .desired_rows(4)
-                .desired_width(f32::INFINITY)
-                .font(egui::TextStyle::Monospace),
-        );
-        ui.add_space(8.0);
-        if ui_kit::button(ui, Some(icons::CHECK), tr("Saqlash"), Kind::Primary).clicked() {
-            *f.request = Some(ShadowRequest::SaveFolders);
-        }
     }
+    caption(
+        ui,
+        p,
+        tr("Doim saqlanadigan papkalar"),
+        tr("Bu papkalar qayta yuklanganda ham o'chmaydi. Har biri yangi qatorda."),
+    );
+    ui.add(
+        ui_kit::text_area(f.folders)
+            .hint_text(tr("D:\\Darslar"))
+            .desired_rows(3)
+            .desired_width(f32::INFINITY)
+            .font(egui::TextStyle::Monospace),
+    );
+    ui.add_space(8.0);
+    if ui_kit::button(ui, Some(icons::CHECK), tr("Saqlash"), Kind::Primary).clicked() {
+        *f.request = Some(ShadowRequest::SaveFolders);
+    }
+}
+
+/// A section heading inside the Muzlatish page: a rule, the title and a "?".
+fn freeze_section(ui: &mut egui::Ui, p: &Palette, title: &str, help: &str) {
+    ui.add_space(22.0);
+    let w = ui.available_width();
+    let (r, _) = ui.allocate_exact_size(vec2(w, 1.0), Sense::hover());
+    ui.painter()
+        .hline(r.x_range(), r.center().y, Stroke::new(1.0_f32, p.line));
+    ui.add_space(14.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        ui.label(
+            RichText::new(title)
+                .family(ui_kit::bold())
+                .size(15.0)
+                .color(p.strong),
+        );
+        ui_kit::info(ui, help);
+    });
+    ui.add_space(8.0);
+}
+
+/// A small caption with a "?" above a field.
+fn caption(ui: &mut egui::Ui, p: &Palette, text: &str, help: &str) {
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        ui_kit::hud(ui, text, p.muted);
+        ui_kit::info(ui, help);
+    });
+    ui.add_space(4.0);
 }
 
 /// Pick what must survive restarts, press Commit.

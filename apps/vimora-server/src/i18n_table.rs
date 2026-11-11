@@ -6,6 +6,8 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Muzlatilgan kompyuterdagi kerakli o'zgarishlarni qayta yuklashdan keyin ham saqlab qolish.", "Keep the changes you need from a frozen computer after it restarts.", "Сохранить нужные изменения на замороженном компьютере после перезагрузки."),
+    ("Shu himoya usulining sozlamalari.", "Settings of this protection method.", "Настройки этого способа защиты."),
     ("Administrator", "Administrator", "Администратор"),
     ("Administrator paroli", "Administrator password", "Пароль администратора"),
     ("Administrator paroli saqlandi", "Administrator password saved", "Пароль администратора сохранён"),
