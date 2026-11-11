@@ -73,13 +73,31 @@ pub fn run() -> anyhow::Result<()> {
     #[cfg(windows)]
     input_block::install();
 
-    let opts = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
+    // Windows: not "fullscreen" but a borderless window one pixel taller than the screen.
+    // A window that covers the screen exactly is put into exclusive full-screen mode by many
+    // drivers: the picture goes black and Windows minimizes it as soon as anything (the Start
+    // menu) takes focus. The guard thread keeps it at that size, on top and restored.
+    #[cfg(windows)]
+    let viewport = {
+        let (w, h) = input_block::screen_size_logical();
+        egui::ViewportBuilder::default()
             .with_title("Vimora")
-            .with_fullscreen(true)
+            .with_position([0.0, 0.0])
+            .with_inner_size([w, h + 1.0])
+            .with_resizable(false)
             .with_always_on_top()
             .with_decorations(false)
-            .with_taskbar(false),
+            .with_taskbar(false)
+    };
+    #[cfg(not(windows))]
+    let viewport = egui::ViewportBuilder::default()
+        .with_title("Vimora")
+        .with_fullscreen(true)
+        .with_always_on_top()
+        .with_decorations(false)
+        .with_taskbar(false);
+    let opts = eframe::NativeOptions {
+        viewport,
         renderer: crate::ui_renderer(),
         ..Default::default()
     };
@@ -735,15 +753,49 @@ mod input_block {
         std::mem::take(&mut *KEYS.lock().unwrap())
     }
 
-    /// Mouse: movement passes (the pointer is hidden over us), everything else is eaten.
+    /// Mouse: everything is eaten — clicks, wheel and movement (the pointer stays still and
+    /// hidden over us).
     unsafe extern "system" fn mouse(code: i32, w: WPARAM, l: LPARAM) -> LRESULT {
         if code >= 0 {
             let m = &*(l as *const MSLLHOOKSTRUCT);
-            if w as u32 != WM_MOUSEMOVE && m.dwExtraInfo != MAGIC {
+            if m.dwExtraInfo != MAGIC {
                 return 1;
             }
         }
         CallNextHookEx(null_mut(), code, w, l)
+    }
+
+    /// The primary screen in the units egui uses before the window exists (the process is not
+    /// DPI-aware yet, so Windows reports scaled, logical pixels).
+    pub fn screen_size_logical() -> (f32, f32) {
+        unsafe {
+            (
+                GetSystemMetrics(SM_CXSCREEN).max(800) as f32,
+                GetSystemMetrics(SM_CYSCREEN).max(600) as f32,
+            )
+        }
+    }
+
+    /// Keeps our window restored and covering the primary screen (plus one pixel, see `run`).
+    unsafe fn keep_covering(ours: HWND) {
+        if IsIconic(ours) != 0 || IsWindowVisible(ours) == 0 {
+            ShowWindow(ours, SW_RESTORE);
+            ShowWindow(ours, SW_SHOW);
+        }
+        let (cx, cy) = (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+        let mut r: RECT = std::mem::zeroed();
+        GetWindowRect(ours, &mut r);
+        if r.left != 0 || r.top != 0 || r.right - r.left != cx || r.bottom - r.top != cy + 1 {
+            SetWindowPos(
+                ours,
+                HWND_TOPMOST,
+                0,
+                0,
+                cx,
+                cy + 1,
+                SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOOWNERZORDER,
+            );
+        }
     }
 
     /// Keyboard: eat everything, but remember digits for the unlock code.
@@ -786,10 +838,11 @@ mod input_block {
     unsafe extern "system" fn find_ours(hwnd: HWND, _: LPARAM) -> BOOL {
         let mut pid = 0u32;
         GetWindowThreadProcessId(hwnd, &mut pid);
-        if pid == GetCurrentProcessId() && IsWindowVisible(hwnd) != 0 {
+        // Visible or minimized (a minimized window is what must be brought back).
+        if pid == GetCurrentProcessId() && (IsWindowVisible(hwnd) != 0 || IsIconic(hwnd) != 0) {
             let mut r: RECT = std::mem::zeroed();
             GetWindowRect(hwnd, &mut r);
-            if r.right - r.left > 400 {
+            if r.right - r.left > 400 || IsIconic(hwnd) != 0 {
                 OURS.store(hwnd as isize, Ordering::Relaxed);
                 return 0;
             }
@@ -830,6 +883,7 @@ mod input_block {
                 return;
             }
         }
+        keep_covering(ours);
         let fg = GetForegroundWindow();
         if fg == ours {
             return;
@@ -861,6 +915,9 @@ mod input_block {
         std::thread::spawn(|| unsafe {
             crate::desktop::join_thread();
             let mut hooks = hook_all();
+            if hooks.0.is_null() || hooks.1.is_null() {
+                tracing::warn!("input hooks: keyboard {:?}, mouse {:?}", hooks.0, hooks.1);
+            }
             let mut renewed = std::time::Instant::now();
             let mut msg: MSG = std::mem::zeroed();
             loop {
@@ -878,9 +935,24 @@ mod input_block {
                 if renewed.elapsed() > std::time::Duration::from_secs(3) {
                     renewed = std::time::Instant::now();
                     let fresh = hook_all();
-                    UnhookWindowsHookEx(hooks.0);
-                    UnhookWindowsHookEx(hooks.1);
-                    hooks = fresh;
+                    // Only swap a hook for one that was actually installed: a failed install
+                    // must never leave the keyboard or mouse unguarded.
+                    if !fresh.0.is_null() {
+                        if !hooks.0.is_null() {
+                            UnhookWindowsHookEx(hooks.0);
+                        }
+                        hooks.0 = fresh.0;
+                    } else {
+                        tracing::warn!("keyboard hook could not be renewed");
+                    }
+                    if !fresh.1.is_null() {
+                        if !hooks.1.is_null() {
+                            UnhookWindowsHookEx(hooks.1);
+                        }
+                        hooks.1 = fresh.1;
+                    } else {
+                        tracing::warn!("mouse hook could not be renewed");
+                    }
                 }
             }
         });
