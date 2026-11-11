@@ -125,8 +125,10 @@ pub struct Hub {
     pub test: Option<TestRun>,
     /// Stars given today: computer key → (name, count).
     pub stars: BTreeMap<String, (String, u32)>,
-    /// Free computers (removed from their console) announcing themselves: key → (info,
-    /// address, last seen, known here before).
+    /// Computers waiting to be added: key → (info, address, last seen, still paired with this
+    /// console). Free ones (in no console) announce themselves every few seconds; a computer
+    /// removed here that still follows this console (it missed the "forget" command, or the
+    /// freeze restored its pairing) knocks only every minute or two.
     pub free: BTreeMap<String, (vimora_core::ClientInfo, std::net::IpAddr, Instant, bool)>,
     /// Assignments collected in the current round: student id → number of files.
     pub collected: BTreeMap<u64, usize>,
@@ -417,9 +419,8 @@ async fn session(
     // A computer removed from its console says "I am free": listed until a teacher adds it.
     if let ClientMsg::Free(info) = first {
         let mut h = hub.lock().unwrap();
-        let known = cfg.read().unwrap().known.contains_key(&info.key());
         h.free
-            .insert(info.key(), (info, addr.ip(), Instant::now(), known));
+            .insert(info.key(), (info, addr.ip(), Instant::now(), false));
         h.repaint();
         return Ok(());
     }
@@ -446,11 +447,11 @@ async fn session(
     // another console) until it is restored in the settings.
     let removed = cfg.read().unwrap().removed.contains(&info.key());
     if removed {
-        // It was removed while offline and may still be paired with us: once per run, let it
-        // in just long enough to receive a signed "forget this console", so that another
-        // console can take it. Afterwards it is turned away.
+        // It still follows this console (removed while offline, or a freeze restored its
+        // pairing after a restart): every time it knocks, let it in just long enough to
+        // receive a signed "forget this console". Then it is free, shown in every console.
         let first = hub.lock().unwrap().unpaired.insert(info.key());
-        if first {
+        {
             let payload = bincode::serialize(&vimora_core::PrivCommand::Unpair)?;
             let stream = thumb_stream(&cfg.read().unwrap());
             write_msg(
@@ -473,10 +474,22 @@ async fn session(
             // Give the agent a moment to act on it before the connection closes.
             let _ = tokio::time::timeout(Duration::from_secs(3), read_msg::<_, ClientMsg>(&mut rd))
                 .await;
-            hub.lock().unwrap().log(
-                Level::Info,
-                tf!("{v0} konsoldan ajratildi", v0 = info.label()),
+            if first {
+                hub.lock().unwrap().log(
+                    Level::Info,
+                    tf!("{v0} konsoldan ajratildi", v0 = info.label()),
+                );
+            }
+        }
+        // Still listed under "Skanerlash", so the teacher can add it back.
+        {
+            let mut h = hub.lock().unwrap();
+            let paired = h.free.get(&info.key()).is_none_or(|f| f.3);
+            h.free.insert(
+                info.key(),
+                (info.clone(), addr.ip(), Instant::now(), paired),
             );
+            h.repaint();
         }
         bail!("removed computer {} turned away", info.label());
     }
@@ -1132,11 +1145,12 @@ impl Hub {
 }
 
 impl Hub {
-    /// Free computers seen in the last 20 seconds.
+    /// Computers waiting to be added: free ones seen in the last 20 seconds, removed-but-paired
+    /// ones in the last 3 minutes (they knock less often).
     pub fn free_now(&self) -> Vec<(String, vimora_core::ClientInfo, std::net::IpAddr)> {
         self.free
             .iter()
-            .filter(|(_, v)| v.2.elapsed() < Duration::from_secs(20))
+            .filter(|(_, v)| v.2.elapsed() < Duration::from_secs(if v.3 { 180 } else { 20 }))
             .map(|(k, v)| (k.clone(), v.0.clone(), v.1))
             .collect()
     }

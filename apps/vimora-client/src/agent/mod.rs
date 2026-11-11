@@ -289,7 +289,7 @@ pub async fn run(cfg: Config) -> Result<()> {
                 }
                 if let Ok(found) = tokio::time::timeout(
                     Duration::from_secs(if targets.is_empty() { 3600 } else { 6 }),
-                    discover(pin, skip.clone()),
+                    discover(pin, skip.clone(), my_info(cfg.name.clone()).key()),
                 )
                 .await
                 {
@@ -337,14 +337,18 @@ pub async fn run(cfg: Config) -> Result<()> {
 
 /// Free mode: tells every console that announces itself "I am free" (`ClientMsg::Free`), every
 /// few seconds, until one of them claims this PC; returns that console's "ip:port".
-async fn free_mode(name: Option<String>) -> String {
-    let info = ClientInfo {
+fn my_info(name: Option<String>) -> ClientInfo {
+    ClientInfo {
         hostname: system::hostname(),
         username: system::username(),
         os: std::env::consts::OS.into(),
         display_name: name,
         machine_id: system::machine_id(),
-    };
+    }
+}
+
+async fn free_mode(name: Option<String>) -> String {
+    let info = my_info(name);
     let key = info.key();
     info!("free: waiting for a console to add this computer");
     loop {
@@ -426,7 +430,13 @@ async fn refresh_pin(ctx: &Ctx) -> Option<vimora_core::auth::ConsoleKey> {
 }
 
 /// Waits for a console beacon; once paired, only the paired console's beacon counts.
-async fn discover(pin: Option<vimora_core::auth::ConsoleKey>, skip: Vec<String>) -> String {
+/// A console that adds this computer ("Qo'shish", a claim datagram) is answered at once, even
+/// one that turned it away before (it was removed there and is now added back).
+async fn discover(
+    pin: Option<vimora_core::auth::ConsoleKey>,
+    skip: Vec<String>,
+    key: String,
+) -> String {
     loop {
         let sock = match UdpSocket::bind(("0.0.0.0", DISCOVERY_PORT)).await {
             Ok(s) => s,
@@ -441,6 +451,13 @@ async fn discover(pin: Option<vimora_core::auth::ConsoleKey>, skip: Vec<String>)
             let Ok((n, src)) = sock.recv_from(&mut buf).await else {
                 break;
             };
+            if let Some((target, port)) = vimora_core::net::decode_claim(&buf[..n]) {
+                if target == key {
+                    info!("added back by the console at {}", src.ip());
+                    return format!("{}:{port}", src.ip());
+                }
+                continue;
+            }
             let Some(b) = vimora_core::net::decode_beacon(&buf[..n]) else {
                 continue;
             };
