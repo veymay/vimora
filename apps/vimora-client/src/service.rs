@@ -282,30 +282,22 @@ fn cleanup_old_binaries() {
     }
 }
 
-/// An update replaced our program file while this service kept running from the old one
-/// (the installer moves running files aside): exit, so the new version starts (the watchdog
-/// and the "Vimora Service" task start it again).
+/// An update installed a new version while this service kept running the old one (the
+/// installer moves running files aside): start the new one and exit.
 fn exit_when_replaced() {
-    let Ok(exe) = std::env::current_exe() else {
-        return;
-    };
-    let stamp = |p: &std::path::Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
-    let Some(start) = stamp(&exe) else { return };
-    std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_secs(20));
-        match stamp(&exe) {
-            Some(t) if t != start => {
-                // Let the installer finish (it runs "setup", which starts the new service).
-                std::thread::sleep(std::time::Duration::from_secs(15));
-                info!("program file replaced by an update: restarting the service");
-                #[cfg(windows)]
-                {
-                    let _ = crate::sh::run("schtasks", &["/run", "/tn", "Vimora Service"]);
-                }
-                std::process::exit(0);
-            }
-            _ => {}
+    crate::selfcheck::watch("service", |_exe| {
+        #[cfg(windows)]
+        {
+            // Exit first is not possible here (we'd be gone): ask the task to start the new
+            // copy shortly after we left (it can't bind while we still hold the port).
+            let _ = std::process::Command::new("cmd.exe")
+                .args([
+                    "/c",
+                    "timeout /t 3 /nobreak >nul & schtasks /run /tn \"Vimora Service\"",
+                ])
+                .spawn();
         }
+        std::process::exit(0);
     });
 }
 
@@ -324,8 +316,13 @@ async fn handle(
             sig,
         } => {
             // Signature first, so a forged hello can't pair the PC with a fake console.
+            let was = pairing.get();
             let ok = auth::verify_welcome(&console_key, &client_nonce, &server_nonce, &sig)
                 && pairing.accept(&console_key);
+            if ok && was.is_none() {
+                // Newly paired: keep it on a frozen PC too.
+                engine.keep_files(&[config_path()]);
+            }
             if ok {
                 session.lock().unwrap().add(client_nonce);
             }
@@ -374,6 +371,8 @@ async fn handle(
             info!("privileged: {cmd:?}");
             if cmd == PrivCommand::Unpair {
                 pairing.clear();
+                // Released for good, also on a frozen PC.
+                engine.keep_files(&[config_path()]);
                 session.lock().unwrap().map.clear();
                 return IpcResp::Done {
                     ok: true,

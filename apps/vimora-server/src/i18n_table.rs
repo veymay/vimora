@@ -6,6 +6,13 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Bo'sh kompyuterlar", "Free computers", "Свободные компьютеры"),
+    ("Bu kompyuterlar o'z konsolidan olib tashlangan va bo'sh. Ular tarmoqdagi hamma konsollarda ko'rinadi; \"Qo'shish\" ni bosgan konsolga ulanadi.", "These computers were removed from their console and are free. Every console on the network sees them; they join the console where \"Add\" is pressed.", "Эти компьютеры удалены из своей консоли и свободны. Их видят все консоли в сети; компьютер подключится к той, где нажмут «Добавить»."),
+    ("Hammasini qo'shish ({n})", "Add all ({n})", "Добавить все ({n})"),
+    ("Hozir bo'sh kompyuter yo'q.", "No free computers right now.", "Сейчас свободных компьютеров нет."),
+    ("Konsoldan olib tashlangan kompyuterlar: qo'shish uchun bosing", "Computers removed from a console: click to add", "Компьютеры, удалённые из консоли: нажмите, чтобы добавить"),
+    ("{name} qo'shilmoqda", "Adding {name}", "Добавляется {name}"),
+    ("{n} ta bo'sh kompyuter", "{n} free computers", "Свободных компьютеров: {n}"),
     ("Bu yerda kompyuterdagi o'zgarishlar ko'rinadi (Ubuntu). Windows'da yo'lni o'zingiz yozing.", "Changes on the computer show up here (Ubuntu). On Windows, type the path yourself.", "Здесь видны изменения на компьютере (Ubuntu). В Windows введите путь сами."),
     ("Doim saqlanadigan fayl va papkalar", "Files and folders always kept", "Всегда сохраняемые файлы и папки"),
     ("Fayl yoki papkani ro'yxatga qo'shing va \"Saqlash\" ni bosing: hozir saqlanadi (commit) va keyingi qayta yuklashlarda ham doim saqlanib qoladi. Papka ichidagi hamma fayllar bilan.", "Add a file or folder to the list and press \"Save\": it is kept now (commit) and after every restart. A folder is kept with everything in it.", "Добавьте файл или папку в список и нажмите «Сохранить»: сохраняется сейчас (commit) и после каждой перезагрузки. Папка — со всем содержимым."),

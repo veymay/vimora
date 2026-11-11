@@ -173,6 +173,7 @@ pub(super) fn dialog_body(
             request,
         } => updates_form(ui, p, tab, policy, restart, request, cx),
         Dialog::Lesson(l) => lesson_form(ui, p, l, cx),
+        Dialog::FreePcs { add } => free_pcs_form(ui, p, add, cx),
         Dialog::AdminLogin {
             password, error, ..
         } => {
@@ -2700,4 +2701,83 @@ pub(super) fn parse_ports(s: &str) -> Vec<u16> {
     v.sort();
     v.dedup();
     v
+}
+
+/// Computers removed from some console: free, shown in every console until a teacher adds one.
+fn free_pcs_form(ui: &mut egui::Ui, p: &Palette, add: &mut Vec<String>, cx: &FormCtx<'_>) {
+    let free = cx.hub.lock().unwrap().free_now();
+    ui.label(
+        RichText::new(tr("Bu kompyuterlar o'z konsolidan olib tashlangan va bo'sh. Ular tarmoqdagi hamma konsollarda ko'rinadi; \"Qo'shish\" ni bosgan konsolga ulanadi."))
+            .size(12.5)
+            .color(p.muted),
+    );
+    ui.add_space(12.0);
+    if free.is_empty() {
+        ui.label(
+            RichText::new(tr("Hozir bo'sh kompyuter yo'q."))
+                .size(13.0)
+                .color(p.faint),
+        );
+        return;
+    }
+    let w = ui.available_width();
+    ui.spacing_mut().item_spacing.y = 0.0;
+    Frame::none()
+        .stroke(Stroke::new(1.0_f32, p.line))
+        .show(ui, |ui| {
+            ui.set_width(w);
+            for (i, (key, info, ip)) in free.iter().enumerate() {
+                let (r, _) = ui.allocate_exact_size(vec2(w, 52.0), Sense::hover());
+                if i > 0 {
+                    ui.painter()
+                        .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
+                }
+                ui.painter().text(
+                    pos2(r.left() + 22.0, r.center().y),
+                    Align2::CENTER_CENTER,
+                    icons::MONITOR,
+                    FontId::proportional(18.0),
+                    p.accent,
+                );
+                ui.painter().text(
+                    pos2(r.left() + 44.0, r.center().y - 9.0),
+                    Align2::LEFT_CENTER,
+                    info.label(),
+                    FontId::new(14.0, ui_kit::bold()),
+                    p.strong,
+                );
+                ui.painter().text(
+                    pos2(r.left() + 44.0, r.center().y + 10.0),
+                    Align2::LEFT_CENTER,
+                    format!("{} · {}", info.username, ip),
+                    FontId::new(12.0, ui_kit::mono()),
+                    p.muted,
+                );
+                let mut b = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(Rect::from_min_max(
+                            pos2(r.right() - 150.0, r.top()),
+                            r.max - vec2(10.0, 0.0),
+                        ))
+                        .layout(Layout::right_to_left(Align::Center)),
+                );
+                if ui_kit::button(&mut b, Some(icons::PLUS), tr("Qo'shish"), Kind::Primary)
+                    .clicked()
+                {
+                    add.push(key.clone());
+                }
+            }
+        });
+    ui.add_space(12.0);
+    if free.len() > 1
+        && ui_kit::button(
+            ui,
+            Some(icons::PLUS),
+            &tf!("Hammasini qo'shish ({n})", n = free.len()),
+            Kind::Outline,
+        )
+        .clicked()
+    {
+        add.extend(free.iter().map(|f| f.0.clone()));
+    }
 }

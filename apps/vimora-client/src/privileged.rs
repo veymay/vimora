@@ -86,6 +86,12 @@ impl Engine {
         Ok(format!("{n} ta o'zgarish topildi"))
     }
 
+    /// Makes these files survive restarts if the PC is protected right now.
+    pub fn keep_files(&self, files: &[std::path::PathBuf]) {
+        let refs: Vec<&std::path::Path> = files.iter().map(|p| p.as_path()).collect();
+        self.shield.commit_files(&refs);
+    }
+
     /// Commits what an operation changed if the PC is protected right now.
     fn commit(&self, t: &sh::Touched) {
         let files: Vec<&std::path::Path> = t.files.iter().map(|p| p.as_path()).collect();
@@ -144,14 +150,20 @@ impl Engine {
             self.push(true, format!("Vimora {current} o'rnatildi"));
             return;
         }
-        // Still the old version 10 minutes after the installer started: it failed.
-        if !p.reported && now_secs().saturating_sub(p.at) > 600 {
+        // The installer finished with an error, or it is still the old version 10 minutes
+        // later: it failed. Say why when the installer told us.
+        let code = vimora_update::install_result(&update_dir()).filter(|c| *c != 0);
+        if !p.reported && (code.is_some() || now_secs().saturating_sub(p.at) > 600) {
             p.reported = true;
             p.save();
+            let why = match code {
+                Some(c) => format!("o'rnatuvchi xato kodi {c}"),
+                None => "o'rnatuvchi tugamadi".to_string(),
+            };
             self.push(
                 false,
                 format!(
-                    "Vimora {} o'rnatilmadi ({}-urinish) — keyinroq yana urinib ko'riladi",
+                    "Vimora {} o'rnatilmadi ({why}, {}-urinish) — keyinroq yana urinib ko'riladi",
                     p.version, p.tries
                 ),
             );

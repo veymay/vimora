@@ -77,6 +77,7 @@ pub(super) async fn session(
     if pinned.is_none() {
         info!("paired with console {}", auth::fingerprint(&console_key));
         crate::config::save_pin(&console_key);
+        crate::config::set_released(false);
         *ctx.pin.lock().unwrap() = Some(console_key);
     }
     *ctx.session.lock().unwrap() = (client_nonce.clone(), 0);
@@ -419,6 +420,8 @@ pub(super) async fn privileged(
         }
         let _ = crate::config::forget_pin();
         crate::config::save_last_console("");
+        // Free now: listed in every console until a teacher adds it.
+        crate::config::set_released(true);
         *ctx.pin.lock().unwrap() = None;
         *UNPAIRED.lock().unwrap() = true;
         return Ok("Kompyuter konsoldan ajratildi".into());

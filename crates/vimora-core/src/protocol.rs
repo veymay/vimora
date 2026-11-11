@@ -660,6 +660,9 @@ pub enum ClientMsg {
         answers: Vec<TestAnswer>,
     },
     SecurityInfo(SecurityInfo),
+    /// Sent instead of `Hello` by a computer removed from its console: "I am free, add me".
+    /// The console lists it (in every console on the network) until a teacher adds it.
+    Free(ClientInfo),
 }
 
 /// Pointer shapes carried by [`ClientMsg::Cursor`].
@@ -709,6 +712,21 @@ mod wire_tests {
         assert_eq!(tag(&PrivCommand::SetAccessPolicy(Default::default())), 17);
         assert_eq!(tag(&PrivCommand::RunScript(String::new())), 19);
         assert_eq!(tag(&ClientMsg::SecurityInfo(Default::default())), 17);
+        assert_eq!(
+            tag(&ClientMsg::Free(ClientInfo {
+                hostname: String::new(),
+                username: String::new(),
+                os: String::new(),
+                display_name: None,
+                machine_id: String::new(),
+            })),
+            18
+        );
+        let c = crate::net::encode_claim("pc-1", 47801);
+        assert_eq!(
+            crate::net::decode_claim(&c),
+            Some(("pc-1".to_string(), 47801))
+        );
         assert_eq!(tag(&Command::GetSecurityInfo), tag(&Command::ChatEnd) + 14);
         assert_eq!(
             tag(&Command::SetAppAllowlist(vec![])),

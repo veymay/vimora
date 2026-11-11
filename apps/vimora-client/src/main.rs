@@ -26,6 +26,7 @@ mod popup;
 mod power;
 mod privileged;
 mod secinfo;
+mod selfcheck;
 mod service;
 mod sh;
 mod shield;

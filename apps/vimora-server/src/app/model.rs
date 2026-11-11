@@ -133,6 +133,10 @@ pub(super) enum Dialog {
         /// Shadow Defender password for the Windows student PCs.
         password: String,
     },
+    /// Free computers (removed from a console) waiting to be added; `add` = keys to add now.
+    FreePcs {
+        add: Vec<String>,
+    },
     /// Administrator password window; `then` opens after a successful login.
     AdminLogin {
         password: String,

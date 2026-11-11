@@ -323,10 +323,23 @@ pub fn install_student(path: &Path) -> Result<()> {
     let file = path.to_string_lossy().into_owned();
     #[cfg(windows)]
     {
-        let tr = format!(
-            "\"{file}\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TYPE=student /COMPONENTS=agent"
-        );
-        run(
+        // A small script runs the installer and writes its exit code next to it
+        // (`install_result`), so the service can tell whether the update really went in. The
+        // task points at the script, so there is nothing to quote in the task's command line.
+        let dir = path.parent().context("yangilanish papkasi yo'q")?;
+        let result = dir.join("install-result.txt");
+        let _ = std::fs::remove_file(&result);
+        let script = dir.join("run-update.cmd");
+        std::fs::write(
+            &script,
+            format!(
+                "@echo off\r\n\"{file}\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TYPE=student /COMPONENTS=agent\r\necho %errorlevel% > \"{}\"\r\n",
+                result.display()
+            ),
+        )
+        .context("yangilanish skriptini yozib bo'lmadi")?;
+        let tr = script.to_string_lossy().into_owned();
+        let task = run(
             "schtasks",
             &[
                 "/create",
@@ -344,8 +357,23 @@ pub fn install_student(path: &Path) -> Result<()> {
                 "HIGHEST",
                 "/f",
             ],
-        )?;
-        run("schtasks", &["/run", "/tn", "Vimora Update"])
+        )
+        .and_then(|_| run("schtasks", &["/run", "/tn", "Vimora Update"]));
+        if let Err(e) = task {
+            // No task scheduler: start the script directly, detached from this service (the
+            // installer stops the service; the script must outlive it).
+            tracing::warn!("update task: {e:#}; starting the installer directly");
+            use std::os::windows::process::CommandExt;
+            const DETACHED_PROCESS: u32 = 0x0000_0008;
+            const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            std::process::Command::new("cmd.exe")
+                .args(["/c", &tr])
+                .creation_flags(DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB | CREATE_NO_WINDOW)
+                .spawn()
+                .context("o'rnatuvchini ishga tushirib bo'lmadi")?;
+        }
+        Ok(())
     }
     #[cfg(not(windows))]
     {
@@ -366,6 +394,14 @@ pub fn install_student(path: &Path) -> Result<()> {
             ],
         )
     }
+}
+
+/// Exit code of the last student installer started by [`install_student`] (Windows), once it
+/// finished: 0 = installed.
+pub fn install_result(dir: &Path) -> Option<i32> {
+    std::fs::read_to_string(dir.join("install-result.txt"))
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
 }
 
 fn run(cmd: &str, args: &[&str]) -> Result<()> {

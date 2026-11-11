@@ -66,6 +66,24 @@ pub fn encode_beacon(b: &crate::protocol::Beacon) -> Result<Vec<u8>> {
     Ok(out)
 }
 
+/// "Take this computer": sent by a console (UDP, to the free computer's discovery port) when
+/// the teacher adds a free computer. Carries the computer's key and the console's TCP port; the
+/// console's address is the datagram's source.
+const CLAIM_MAGIC: &[u8; 8] = b"VIMCLM01";
+
+pub fn encode_claim(computer_key: &str, tcp_port: u16) -> Vec<u8> {
+    let mut out = CLAIM_MAGIC.to_vec();
+    out.extend(bincode::serialize(&(computer_key, tcp_port)).unwrap_or_default());
+    out
+}
+
+pub fn decode_claim(data: &[u8]) -> Option<(String, u16)> {
+    if data.len() <= CLAIM_MAGIC.len() || &data[..CLAIM_MAGIC.len()] != CLAIM_MAGIC {
+        return None;
+    }
+    bincode::deserialize(&data[CLAIM_MAGIC.len()..]).ok()
+}
+
 pub fn decode_beacon(data: &[u8]) -> Option<crate::protocol::Beacon> {
     let magic = crate::protocol::BEACON_MAGIC;
     if data.len() <= magic.len() || &data[..magic.len()] != magic {

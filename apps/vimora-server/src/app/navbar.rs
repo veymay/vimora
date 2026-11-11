@@ -458,6 +458,31 @@ impl ConsoleApp {
                         on = online,
                         all = total
                     ));
+                    // Free computers (removed from a console) waiting to be added.
+                    let free = self.hub.lock().unwrap().free_now().len();
+                    if free > 0 {
+                        ui.add_space(12.0);
+                        let r = ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new(with_icon(
+                                        icons::PLUS,
+                                        &tf!("{n} ta bo'sh kompyuter", n = free),
+                                    ))
+                                    .size(12.5)
+                                    .color(p.accent_ink),
+                                )
+                                .frame(false),
+                            )
+                            .tip(tr(
+                                "Konsoldan olib tashlangan kompyuterlar: qo'shish uchun bosing",
+                            ));
+                        if r.clicked() {
+                            self.open_dialog(Dialog::FreePcs { add: vec![] });
+                        }
+                        ui.ctx()
+                            .request_repaint_after(std::time::Duration::from_secs(5));
+                    }
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = BTN_GAP;

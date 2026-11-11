@@ -370,6 +370,7 @@ impl ConsoleApp {
             Dialog::Updates { .. } => (tr("Yangilanishlar"), 600.0),
             Dialog::Machine { .. } => (tr("Kompyuter holati"), 600.0),
             Dialog::Lesson(_) => (tr("Dars"), 600.0),
+            Dialog::FreePcs { .. } => (tr("Bo'sh kompyuterlar"), 600.0),
             Dialog::AdminLogin { .. } => (tr("Administrator"), 420.0),
         };
         // Every drawer has the same width, wide enough for its widest content (four tabs),
@@ -386,6 +387,7 @@ impl ConsoleApp {
                 | Dialog::Message { .. }
                 | Dialog::Machine { .. }
                 | Dialog::AdminLogin { .. }
+                | Dialog::FreePcs { .. }
         ) {
             None
         } else {
@@ -410,6 +412,7 @@ impl ConsoleApp {
             Dialog::Updates { .. } => icons::DOWNLOAD,
             Dialog::Machine { .. } => icons::GAUGE,
             Dialog::Lesson(_) => icons::GRADUATION_CAP,
+            Dialog::FreePcs { .. } => icons::MONITOR,
             Dialog::AdminLogin { .. } => icons::LOCK,
         };
         // Drawers slide in from the right; modals fade in at the centre.
@@ -532,6 +535,7 @@ impl ConsoleApp {
                         | Dialog::Updates { .. }
                         | Dialog::Machine { .. }
                         | Dialog::Lesson(_)
+                        | Dialog::FreePcs { .. }
                 );
                 let body_max = if drawer {
                     // Full window height: the drawer hangs on the right edge, top to bottom.
@@ -672,7 +676,8 @@ impl ConsoleApp {
                                         }
                                         Dialog::Updates { .. }
                                         | Dialog::Machine { .. }
-                                        | Dialog::Lesson(_) => (icons::CHECK, tr("Saqlash")),
+                                        | Dialog::Lesson(_)
+                                        | Dialog::FreePcs { .. } => (icons::CHECK, tr("Saqlash")),
                                     };
                                     let kind = if matches!(dialog, Dialog::Power(_)) {
                                         Kind::Danger
@@ -764,6 +769,7 @@ impl ConsoleApp {
         self.shadow_requests(&targets);
         self.machine_requests(ctx);
         self.lesson_requests(&targets);
+        self.free_requests();
         if let Some(Dialog::Updates {
             policy,
             restart,
@@ -1052,6 +1058,32 @@ impl ConsoleApp {
     }
 
     /// Inline actions of the Shadow drawer: they run at once and the drawer stays open.
+    /// "Bo'sh kompyuterlar": tells the chosen free computers to join this console.
+    fn free_requests(&mut self) {
+        let Some(Dialog::FreePcs { add }) = &mut self.dialog else {
+            return;
+        };
+        let keys = std::mem::take(add);
+        if keys.is_empty() {
+            return;
+        }
+        let port = self.cfg.read().unwrap().port;
+        let mut h = self.hub.lock().unwrap();
+        for key in keys {
+            if let Some((info, ip, _, _)) = h.free.remove(&key) {
+                crate::net::claim(ip, &key, port);
+                h.unpaired.remove(&key);
+                // Removed here before: welcome back.
+                self.cfg.write().unwrap().removed.remove(&key);
+                h.log(
+                    Level::Ok,
+                    tf!("{name} qo'shilmoqda", name = info.label().to_string()),
+                );
+            }
+        }
+        h.repaint();
+    }
+
     /// "Kompyuter holati": ask for a fresh report every few seconds while it is open, and
     /// confirm "end task".
     fn machine_requests(&mut self, ctx: &egui::Context) {
@@ -1373,7 +1405,10 @@ impl ConsoleApp {
                 return;
             }
             Dialog::Activity => return,
-            Dialog::Freeze { .. } | Dialog::Machine { .. } | Dialog::Lesson(_) => return,
+            Dialog::Freeze { .. }
+            | Dialog::Machine { .. }
+            | Dialog::Lesson(_)
+            | Dialog::FreePcs { .. } => return,
             Dialog::AdminLogin { password, then, .. } => {
                 if super::admin::check_password(&self.cfg.read().unwrap(), &password) {
                     self.admin = true;

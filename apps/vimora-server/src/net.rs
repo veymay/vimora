@@ -125,6 +125,9 @@ pub struct Hub {
     pub test: Option<TestRun>,
     /// Stars given today: computer key → (name, count).
     pub stars: BTreeMap<String, (String, u32)>,
+    /// Free computers (removed from their console) announcing themselves: key → (info,
+    /// address, last seen, known here before).
+    pub free: BTreeMap<String, (vimora_core::ClientInfo, std::net::IpAddr, Instant, bool)>,
     /// Assignments collected in the current round: student id → number of files.
     pub collected: BTreeMap<u64, usize>,
     /// Screens being recorded (student id → video file).
@@ -147,6 +150,7 @@ impl Hub {
             unpaired: Default::default(),
             relay: None,
             collected: BTreeMap::new(),
+            free: BTreeMap::new(),
             attendance: Default::default(),
             poll: None,
             test: None,
@@ -408,11 +412,22 @@ async fn session(
         },
     )
     .await?;
+    let first: ClientMsg =
+        tokio::time::timeout(Duration::from_secs(5), read_msg(&mut rd)).await??;
+    // A computer removed from its console says "I am free": listed until a teacher adds it.
+    if let ClientMsg::Free(info) = first {
+        let mut h = hub.lock().unwrap();
+        let known = cfg.read().unwrap().known.contains_key(&info.key());
+        h.free
+            .insert(info.key(), (info, addr.ip(), Instant::now(), known));
+        h.repaint();
+        return Ok(());
+    }
     let ClientMsg::Hello {
         version,
         nonce: client_nonce,
         info,
-    } = tokio::time::timeout(Duration::from_secs(5), read_msg(&mut rd)).await??
+    } = first
     else {
         bail!("bad hello");
     };
@@ -725,6 +740,8 @@ async fn session(
                     }
                     h.repaint();
                 }
+                // Only ever the first message of a connection (handled before the loop).
+                ClientMsg::Free(_) => {}
                 ClientMsg::SecurityInfo(sec) => {
                     let mut h = hub.lock().unwrap();
                     if let Some(s) = h.students.get_mut(&id) {
@@ -1110,6 +1127,27 @@ impl Hub {
             if let Ok(j) = serde_json::to_string(&self.attendance.1) {
                 let _ = std::fs::write(p, j);
             }
+        }
+    }
+}
+
+impl Hub {
+    /// Free computers seen in the last 20 seconds.
+    pub fn free_now(&self) -> Vec<(String, vimora_core::ClientInfo, std::net::IpAddr)> {
+        self.free
+            .iter()
+            .filter(|(_, v)| v.2.elapsed() < Duration::from_secs(20))
+            .map(|(k, v)| (k.clone(), v.0.clone(), v.1))
+            .collect()
+    }
+}
+
+/// "Take this computer": tells a free computer to join this console.
+pub fn claim(ip: std::net::IpAddr, key: &str, console_port: u16) {
+    let data = vimora_core::net::encode_claim(key, console_port);
+    if let Ok(s) = std::net::UdpSocket::bind(("0.0.0.0", 0)) {
+        for _ in 0..3 {
+            let _ = s.send_to(&data, (ip, vimora_core::DISCOVERY_PORT));
         }
     }
 }

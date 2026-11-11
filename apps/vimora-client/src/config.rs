@@ -67,6 +67,29 @@ pub fn forget_pin() -> std::io::Result<()> {
 
 /// The console address that worked last time: tried first on the next start, so the agent
 /// reconnects even if LAN broadcasts are blocked or slow.
+fn released_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join("vimora").join("released"))
+}
+
+/// Removed from its console: the PC waits to be added by a teacher (it shows up as free in
+/// every console) instead of joining the first console it hears.
+pub fn is_released() -> bool {
+    released_path().is_some_and(|p| p.exists())
+}
+
+pub fn set_released(on: bool) {
+    if let Some(p) = released_path() {
+        if on {
+            if let Some(d) = p.parent() {
+                let _ = std::fs::create_dir_all(d);
+            }
+            let _ = std::fs::write(p, "1");
+        } else {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+}
+
 pub fn last_console() -> Option<String> {
     dirs::config_dir()
         .map(|d| d.join("vimora").join("last-console"))

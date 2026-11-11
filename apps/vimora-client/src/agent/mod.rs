@@ -274,8 +274,15 @@ pub async fn run(cfg: Config) -> Result<()> {
         // Where to connect: a fixed address from the config, else the console that worked last
         // time (tried first), else whatever announces itself on the network.
         let mut targets: Vec<String> = vec![];
+        // Removed from its console: free. It shows itself to every console and joins the one
+        // whose teacher adds it.
+        if pin.is_none() && cfg.server.is_none() && crate::config::is_released() {
+            let addr = free_mode(cfg.name.clone()).await;
+            targets.push(addr);
+        }
         match &cfg.server {
             Some(s) => targets.push(s.clone()),
+            None if !targets.is_empty() => {}
             None => {
                 if let Some(last) = crate::config::last_console().filter(|l| !skip.contains(l)) {
                     targets.push(last);
@@ -326,6 +333,73 @@ pub async fn run(cfg: Config) -> Result<()> {
         failures = if connected { 0 } else { (failures + 1).min(5) };
         tokio::time::sleep(Duration::from_secs(2 + failures as u64)).await;
     }
+}
+
+/// Free mode: tells every console that announces itself "I am free" (`ClientMsg::Free`), every
+/// few seconds, until one of them claims this PC; returns that console's "ip:port".
+async fn free_mode(name: Option<String>) -> String {
+    let info = ClientInfo {
+        hostname: system::hostname(),
+        username: system::username(),
+        os: std::env::consts::OS.into(),
+        display_name: name,
+        machine_id: system::machine_id(),
+    };
+    let key = info.key();
+    info!("free: waiting for a console to add this computer");
+    loop {
+        let sock = match UdpSocket::bind(("0.0.0.0", DISCOVERY_PORT)).await {
+            Ok(s) => s,
+            Err(e) => {
+                warn!("cannot listen for discovery on UDP {DISCOVERY_PORT}: {e}");
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                continue;
+            }
+        };
+        let mut consoles: std::collections::BTreeSet<String> = Default::default();
+        let mut last_hello = Instant::now() - Duration::from_secs(60);
+        let mut buf = [0u8; 2048];
+        loop {
+            // Say hello to every console seen so far, every 5 s.
+            if last_hello.elapsed() > Duration::from_secs(5) {
+                last_hello = Instant::now();
+                for addr in consoles.clone() {
+                    let info = info.clone();
+                    tokio::spawn(async move {
+                        let _ = tokio::time::timeout(Duration::from_secs(4), say_free(&addr, info))
+                            .await;
+                    });
+                }
+            }
+            let Ok(Ok((n, src))) =
+                tokio::time::timeout(Duration::from_secs(1), sock.recv_from(&mut buf)).await
+            else {
+                continue;
+            };
+            if let Some((target, port)) = vimora_core::net::decode_claim(&buf[..n]) {
+                if target == key {
+                    let addr = format!("{}:{port}", src.ip());
+                    info!("free: added by the console at {addr}");
+                    return addr;
+                }
+                continue;
+            }
+            if let Some(b) = vimora_core::net::decode_beacon(&buf[..n]) {
+                if b.version >= MIN_PROTOCOL_VERSION {
+                    consoles.insert(format!("{}:{}", src.ip(), b.tcp_port));
+                }
+            }
+        }
+    }
+}
+
+/// One "I am free" visit: the console's hello, our `Free`, done.
+async fn say_free(addr: &str, info: ClientInfo) -> Result<()> {
+    let stream = TcpStream::connect(addr).await?;
+    let (mut rd, mut wr) = stream.into_split();
+    let _hello: ServerMsg = read_msg(&mut rd).await?;
+    write_msg(&mut wr, &ClientMsg::Free(info)).await?;
+    Ok(())
 }
 
 /// Wait for a console beacon matching our room; returns "ip:port".
@@ -383,23 +457,33 @@ async fn restart_on_update() {
         return;
     };
     let stamp = |p: &std::path::Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
-    let Some(start) = stamp(&exe) else { return };
+    let start = stamp(&exe);
+    let mut round = 0u32;
     loop {
         tokio::time::sleep(Duration::from_secs(30)).await;
-        match stamp(&exe) {
-            Some(t) if t != start => {
-                // Let the installer finish writing the file.
-                tokio::time::sleep(Duration::from_secs(10)).await;
-                let args: Vec<String> = std::env::args().skip(1).collect();
-                match std::process::Command::new(&exe).args(&args).spawn() {
-                    Ok(_) => {
-                        info!("Vimora was updated — restarting");
-                        std::process::exit(0);
-                    }
-                    Err(e) => warn!("cannot start the updated agent: {e}"),
-                }
+        round += 1;
+        // The file we run from changed, or (every minute) the installed program reports another
+        // version — the second also works when the installer moved our file aside.
+        let changed = start.is_some() && stamp(&exe) != start;
+        let other = round.is_multiple_of(2)
+            && tokio::task::spawn_blocking(crate::selfcheck::replaced)
+                .await
+                .ok()
+                .flatten()
+                .is_some();
+        if !(changed || other) {
+            continue;
+        }
+        // Let the installer finish writing the file.
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        let target = crate::selfcheck::installed_exe().unwrap_or_else(|| exe.clone());
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        match std::process::Command::new(&target).args(&args).spawn() {
+            Ok(_) => {
+                info!("Vimora was updated — restarting");
+                std::process::exit(0);
             }
-            _ => {}
+            Err(e) => warn!("cannot start the updated agent: {e}"),
         }
     }
 }
