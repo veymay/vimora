@@ -912,16 +912,13 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
                 )
         })
         .count();
-    let any_frozen = views
-        .iter()
-        .any(|v| v.status.service && v.status.freeze.is_frozen());
 
     ui_kit::segmented(p).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             for (t, ic, label) in [
-                (ShadowTab::Protection, icons::SNOWFLAKE, "Shadow Defender"),
                 (ShadowTab::Uwf, icons::SHIELD, "UWF"),
+                (ShadowTab::Protection, icons::SNOWFLAKE, "Shadow Defender"),
             ] {
                 if ui_kit::tab_icon(ui, Some(ic), label, None, *f.tab == t).clicked() {
                     *f.tab = t;
@@ -1105,6 +1102,42 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
         });
     }
 
+    // Update cycle and restart: part of switching the protection on and off.
+    ui.add_space(12.0);
+    {
+        let usable = views.iter().any(|v| v.status.service);
+        sgroup(ui, p, |ui| {
+            srow(
+                ui,
+                p,
+                true,
+                tr("Yangilab yoqish"),
+                Some(tr(
+                    "Shadow vaqtincha o'chadi, yangilanishlar o'rnatiladi, keyin Shadow o'zi yoqiladi.",
+                )),
+                |ui| {
+                    ui.add_enabled_ui(usable, |ui| {
+                        if ui_kit::button(ui, Some(icons::WRENCH), tr("Boshlash"), Kind::Outline)
+                            .clicked()
+                        {
+                            *f.request = Some(ShadowRequest::Apply(FreezeAction::Maintenance));
+                        }
+                    });
+                },
+            );
+            srow(
+                ui,
+                p,
+                false,
+                tr("Darhol qayta yuklash"),
+                Some(tr("Shadow yoqilganda yoki o'chirilganda kompyuterlar darhol qayta yuklanadi. Saqlanmagan ish yo'qolishi mumkin.")),
+                |ui| {
+                    ui_kit::toggle(ui, f.restart);
+                },
+            );
+        });
+    }
+
     // Saqlab qolish: what to keep from the frozen session.
     freeze_section(
         ui,
@@ -1112,7 +1145,7 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
         tr("Saqlab qolish"),
         tr("Muzlatilgan kompyuterdagi kerakli o'zgarishlarni qayta yuklashdan keyin ham saqlab qolish."),
     );
-    commit_section(ui, p, &mut f, cx, any_frozen);
+    commit_section(ui, p, &mut f, cx);
 
     // Settings of this filter (Shadow Defender only: UWF has none).
     if engine == 1 {
@@ -1171,56 +1204,23 @@ fn caption(ui: &mut egui::Ui, p: &Palette, text: &str, help: &str) {
     ui.add_space(4.0);
 }
 
-/// Pick what must survive restarts, press Commit.
-fn commit_section(
-    ui: &mut egui::Ui,
-    p: &Palette,
-    f: &mut ShadowForm<'_>,
-    cx: &FormCtx<'_>,
-    any_frozen: bool,
-) {
-    use vimora_core::ChangeKind;
+/// Files and folders that always survive restarts (a list like the block lists: add, remove;
+/// every change goes to the computers at once) and one button that commits them now.
+fn commit_section(ui: &mut egui::Ui, p: &Palette, f: &mut ShadowForm<'_>, cx: &FormCtx<'_>) {
     let usable = cx
         .all
         .iter()
         .any(|v| f.chosen.contains(&v.id) && v.status.service);
-    sgroup(ui, p, |ui| {
-        srow(
-            ui,
-            p,
-            true,
-            tr("Yangilab yoqish"),
-            Some(tr(
-                "Shadow vaqtincha o'chadi, yangilanishlar o'rnatiladi, keyin Shadow o'zi yoqiladi.",
-            )),
-            |ui| {
-                ui.add_enabled_ui(usable, |ui| {
-                    if ui_kit::button(ui, Some(icons::WRENCH), tr("Boshlash"), Kind::Outline)
-                        .clicked()
-                    {
-                        *f.request = Some(ShadowRequest::Apply(FreezeAction::Maintenance));
-                    }
-                });
-            },
-        );
-        srow(
-            ui,
-            p,
-            false,
-            tr("Darhol qayta yuklash"),
-            Some(tr("Shadow yoqilganda yoki o'chirilganda kompyuterlar darhol qayta yuklanadi. Saqlanmagan ish yo'qolishi mumkin.")),
-            |ui| {
-                ui_kit::toggle(ui, f.restart);
-            },
-        );
-    });
-    ui.add_space(6.0);
     titled(
         ui,
         p,
         tr("Doim saqlanadigan fayl va papkalar"),
-        tr("Fayl yoki papkani ro'yxatga qo'shing va \"Saqlash\" ni bosing: hozir saqlanadi (commit) va keyingi qayta yuklashlarda ham doim saqlanib qoladi. Papka ichidagi hamma fayllar bilan."),
+        tr("Ro'yxatdagi fayl va papkalar (ichidagi hamma fayllar bilan) qayta yuklashdan keyin ham saqlanib qoladi. Qo'shish yoki olib tashlash darhol kompyuterlarga yuboriladi."),
     );
+    // Dev aid: VIMORA_OPEN=shadow-commit shows this part (for screenshots).
+    if std::env::var("VIMORA_OPEN").as_deref() == Ok("shadow-commit") {
+        ui.scroll_to_cursor(Some(Align::TOP));
+    }
     // The list (one path per line in `folders`).
     let mut list: Vec<String> = f
         .folders
@@ -1229,16 +1229,6 @@ fn commit_section(
         .filter(|l| !l.is_empty())
         .collect();
     let before = list.clone();
-    let add = |list: &mut Vec<String>, path: &str| {
-        let path = path
-            .trim()
-            .trim_matches('"')
-            .trim_end_matches(['\\', '/'])
-            .to_string();
-        if !path.is_empty() && !list.iter().any(|x| x.eq_ignore_ascii_case(&path)) {
-            list.push(path);
-        }
-    };
     let w = ui.available_width();
     ui.allocate_ui_with_layout(
         vec2(w, ui_kit::CONTROL_H),
@@ -1255,7 +1245,15 @@ fn commit_section(
             );
             let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
             if plus.clicked() || enter {
-                add(&mut list, f.manual);
+                let path = f
+                    .manual
+                    .trim()
+                    .trim_matches('"')
+                    .trim_end_matches(['\\', '/'])
+                    .to_string();
+                if !path.is_empty() && !list.iter().any(|x| x.eq_ignore_ascii_case(&path)) {
+                    list.push(path);
+                }
                 f.manual.clear();
             }
         },
@@ -1276,7 +1274,7 @@ fn commit_section(
                 ui.spacing_mut().item_spacing.y = 0.0;
                 for (i, path) in list.iter().enumerate() {
                     let rw = ui.available_width();
-                    let (rect, _) = ui.allocate_exact_size(vec2(rw, 34.0), Sense::hover());
+                    let (rect, _) = ui.allocate_exact_size(vec2(rw, 38.0), Sense::hover());
                     if i > 0 {
                         ui.painter().hline(
                             rect.x_range(),
@@ -1284,138 +1282,67 @@ fn commit_section(
                             Stroke::new(1.0_f32, p.line),
                         );
                     }
+                    let mut child = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(rect.shrink2(vec2(10.0, 0.0)))
+                            .layout(Layout::left_to_right(Align::Center)),
+                    );
+                    child.spacing_mut().item_spacing.x = 10.0;
                     let folder = !path.rsplit(['\\', '/']).next().unwrap_or("").contains('.');
-                    ui.painter().text(
-                        pos2(rect.left() + 18.0, rect.center().y),
-                        Align2::CENTER_CENTER,
+                    child.label(ui_kit::icon(
                         if folder {
                             icons::FOLDER
                         } else {
                             icons::FILE_TEXT
                         },
-                        FontId::proportional(15.0),
-                        p.muted,
-                    );
+                        16.0,
+                        p.accent,
+                    ));
                     let g = ui_kit::truncated(
-                        ui,
+                        &child,
                         path,
                         FontId::new(13.0, ui_kit::mono()),
                         p.text,
-                        rw - 80.0,
+                        rw - 90.0,
                     );
-                    ui.painter().galley(
-                        pos2(rect.left() + 36.0, rect.center().y - g.size().y / 2.0),
-                        g,
-                        p.text,
-                    );
-                    let mut x = ui.new_child(
-                        egui::UiBuilder::new()
-                            .max_rect(Rect::from_min_max(
-                                pos2(rect.right() - 36.0, rect.top()),
-                                rect.max,
-                            ))
-                            .layout(Layout::right_to_left(Align::Center)),
-                    );
-                    if ui_kit::icon_cell(&mut x, icons::X, 30.0, false)
-                        .tip(tr("Olib tashlash"))
-                        .clicked()
-                    {
-                        remove = Some(i);
-                    }
+                    child.label(egui::WidgetText::from(g));
+                    child.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if ui_kit::icon_cell(ui, icons::X, 30.0, false)
+                            .tip(tr("Olib tashlash"))
+                            .clicked()
+                        {
+                            remove = Some(i);
+                        }
+                    });
                 }
             });
         if let Some(i) = remove {
             list.remove(i);
         }
     }
-
-    // What changed on the frozen PCs (where it can be listed): click to add to the list.
-    if any_frozen {
-        let rows = merged_changes(cx);
-        ui.add_space(10.0);
-        ui.horizontal(|ui| {
-            ui_kit::hud(ui, tr("O'zgargan fayllar"), p.muted);
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui_kit::icon_cell(ui, icons::REFRESH_CW, 28.0, false)
-                    .tip(tr("Ro'yxatni yangilash"))
-                    .clicked()
-                {
-                    *f.request = Some(ShadowRequest::ListChanges);
-                }
-            });
-        });
-        if rows.is_empty() {
-            ui.label(
-                RichText::new(tr("Bu yerda kompyuterdagi o'zgarishlar ko'rinadi (Ubuntu). Windows'da yo'lni o'zingiz yozing."))
-                    .size(12.0)
-                    .color(p.faint),
-            );
-        }
-        let candidates: Vec<(String, ChangeRow)> = rows
-            .iter()
-            .filter(|(k, _)| !list.contains(k))
-            .take(30)
-            .map(|(k, v)| (k.clone(), *v))
-            .collect();
-        for (path, info) in &candidates {
-            let (tag, col) = match info.0 {
-                ChangeKind::Added => ("+", p.accent_ink),
-                ChangeKind::Modified => ("~", p.warning),
-                ChangeKind::Deleted => ("\u{2212}", p.danger),
-            };
-            let r = ui.add(
-                egui::Button::new(
-                    RichText::new(format!("{tag}  {path}"))
-                        .family(ui_kit::mono())
-                        .size(12.0)
-                        .color(col),
-                )
-                .frame(false),
-            );
-            if r.tip(tr("Ro'yxatga qo'shish")).clicked() {
-                list.push(path.clone());
-            }
-        }
-    }
-
     if list != before {
         *f.folders = list.join("\n");
+        // No separate "save": the computers get the new list right away.
+        if usable {
+            *f.request = Some(ShadowRequest::SaveFolders);
+        }
     }
-    ui.add_space(10.0);
-    let n = list.len();
-    ui.add_enabled_ui(usable, |ui| {
+    ui.add_space(12.0);
+    ui.add_enabled_ui(usable && !list.is_empty(), |ui| {
         if ui_kit::button(
             ui,
             Some(icons::SHIELD_CHECK),
-            &tf!("Saqlash ({n})", n = n),
+            tr("Hozirgi o'zgarishlarni commit qilish"),
             Kind::Primary,
         )
         .tip(tr(
-            "Ro'yxat kompyuterlarga yuboriladi: hozir commit qilinadi va doim saqlanadi",
+            "Ro'yxatdagi fayl va papkalarning hozirgi holati darhol saqlanadi (commit)",
         ))
         .clicked()
         {
-            *f.request = Some(ShadowRequest::SaveFolders);
+            *f.request = Some(ShadowRequest::Commit);
         }
     });
-}
-
-/// Every change reported by the target PCs: path → (kind, size, on how many PCs).
-type ChangeRow = (vimora_core::ChangeKind, u64, usize);
-
-fn merged_changes(cx: &FormCtx<'_>) -> BTreeMap<String, ChangeRow> {
-    let mut rows = BTreeMap::new();
-    let h = cx.hub.lock().unwrap();
-    for id in cx.targets {
-        let Some(list) = h.students.get(id).and_then(|s| s.changes.as_ref()) else {
-            continue;
-        };
-        for c in list {
-            let e = rows.entry(c.path.clone()).or_insert((c.kind, c.size, 0));
-            e.2 += 1;
-        }
-    }
-    rows
 }
 
 pub(super) fn rename_form(

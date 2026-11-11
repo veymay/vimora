@@ -25,6 +25,7 @@ mod overlay;
 mod popup;
 mod power;
 mod privileged;
+mod purge;
 mod secinfo;
 mod selfcheck;
 mod service;
@@ -97,6 +98,9 @@ enum Cmd {
     /// Internal: fullscreen test (JSON on stdin).
     #[command(hide = true)]
     Test,
+    /// (Admin) Used by the uninstaller: removes everything Vimora left on this computer.
+    #[command(hide = true)]
+    Purge,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -122,6 +126,7 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::UiProbe) => ui_probe(),
         Some(Cmd::Setup) => service::setup(cli.server, cli.name),
         Some(Cmd::Unpair) => service::unpair(),
+        Some(Cmd::Purge) => purge::run(),
         Some(Cmd::Init) => {
             let cfg = config::load().merge_cli(cli.server, cli.name);
             let path = config::save(&cfg)?;

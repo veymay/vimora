@@ -6,6 +6,9 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Ro'yxatdagi fayl va papkalar (ichidagi hamma fayllar bilan) qayta yuklashdan keyin ham saqlanib qoladi. Qo'shish yoki olib tashlash darhol kompyuterlarga yuboriladi.", "The listed files and folders (with everything inside) survive restarts. Adding or removing is sent to the computers at once.", "Файлы и папки из списка (со всем содержимым) сохраняются после перезагрузки. Добавление и удаление сразу отправляются на компьютеры."),
+    ("Hozirgi o'zgarishlarni commit qilish", "Commit current changes", "Зафиксировать текущие изменения"),
+    ("Ro'yxatdagi fayl va papkalarning hozirgi holati darhol saqlanadi (commit)", "The current state of the listed files and folders is saved at once (commit)", "Текущее состояние файлов и папок из списка сразу сохраняется (commit)"),
     ("Yangi kompyuterlar", "New computers", "Новые компьютеры"),
     ("O'quvchi kompyuterlariga Vimora'ni o'rnating, so'ng \"Skanerlash\" ni bosib ularni qo'shing.\nBir xil tarmoqda (Wi-Fi yoki LAN) bo'lsa kifoya.", "Install Vimora on the student computers, then press \"Scan\" and add them.\nThey only need to be on the same network (Wi-Fi or LAN).", "Установите Vimora на компьютеры учеников, затем нажмите «Сканировать» и добавьте их.\nДостаточно одной сети (Wi-Fi или LAN)."),
     ("Skanerlash", "Scan", "Сканировать"),

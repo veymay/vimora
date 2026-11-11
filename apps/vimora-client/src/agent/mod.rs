@@ -288,7 +288,9 @@ pub async fn run(cfg: Config) -> Result<()> {
                     targets.push(last);
                 }
                 if let Ok(found) = tokio::time::timeout(
-                    Duration::from_secs(if targets.is_empty() { 3600 } else { 6 }),
+                    // A console that turned this PC away is skipped only for a while: look again
+                    // every minute (an hour-long wait kept removed PCs out of sight).
+                    Duration::from_secs(if targets.is_empty() { 60 } else { 6 }),
                     discover(pin, skip.clone(), my_info(cfg.name.clone()).key()),
                 )
                 .await

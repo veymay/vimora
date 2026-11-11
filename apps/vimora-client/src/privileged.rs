@@ -57,6 +57,10 @@ impl Engine {
         Arc::new(Self::default())
     }
 
+    pub fn shield(&self) -> &Shield {
+        &self.shield
+    }
+
     fn push(&self, ok: bool, msg: String) {
         self.inner.lock().unwrap().events.push((ok, msg));
     }

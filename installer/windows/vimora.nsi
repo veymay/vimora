@@ -254,6 +254,26 @@ Section "Uninstall"
   Pop $0
   nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM vimora-server.exe'
   Pop $0
+  ; Nothing of Vimora may stay: settings it changed, pairing, every user's files.
+  IfFileExists "$INSTDIR\vimora-client.exe" 0 vimora_purged
+    nsExec::Exec '"$SYSDIR\schtasks.exe" /change /tn "Vimora Service Watchdog" /disable'
+    Pop $0
+    nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM vimora-client.exe'
+    Pop $0
+    nsExec::ExecToLog '"$INSTDIR\vimora-client.exe" purge'
+    Pop $0
+    ${If} $0 == 3
+      ; Frozen (UWF / Shadow Defender): deleting now would come back after a restart. The
+      ; freeze is switched off; after the restart the service finishes the uninstall.
+      nsExec::Exec '"$SYSDIR\schtasks.exe" /change /tn "Vimora Service Watchdog" /enable'
+      Pop $0
+      nsExec::Exec '"$SYSDIR\schtasks.exe" /run /tn "Vimora Service"'
+      Pop $0
+      MessageBox MB_OK|MB_ICONINFORMATION "Bu kompyuter muzlatilgan. Muzlatish o'chirildi: kompyuterni qayta yoqing, Vimora o'zi butunlay o'chiriladi." /SD IDOK
+      SetErrorLevel 3
+      Quit
+    ${EndIf}
+  vimora_purged:
   nsExec::Exec '"$SYSDIR\netsh.exe" advfirewall firewall delete rule name="Vimora Console"'
   Pop $0
   nsExec::Exec '"$SYSDIR\netsh.exe" advfirewall firewall delete rule name="Vimora Agent"'

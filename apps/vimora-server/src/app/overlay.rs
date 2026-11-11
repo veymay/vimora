@@ -1210,11 +1210,13 @@ impl ConsoleApp {
         let restart = *restart;
         let pw = password.clone();
         let folders = folders.clone();
-        let paths: Vec<String> = if r == ShadowRequest::Commit {
-            std::mem::take(picked).into_iter().collect()
-        } else {
-            vec![]
-        };
+        picked.clear();
+        // "Hozirgi o'zgarishlarni commit qilish": the listed files and folders, now.
+        let paths: Vec<String> = folders
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect();
         self.cfg.write().unwrap().shadow_password = pw.clone();
         self.send_priv(targets, PrivCommand::SetShadowPassword(pw), "");
         match r {
@@ -1229,13 +1231,6 @@ impl ConsoleApp {
                     self.send_priv(targets, PrivCommand::SetShieldEngine(engine), "");
                 }
                 self.send_priv(targets, PrivCommand::Freeze { action, restart }, what);
-            }
-            ShadowRequest::ListChanges => {
-                self.send_priv(
-                    targets,
-                    PrivCommand::ListChanges,
-                    tr("O'zgarishlar ro'yxati"),
-                );
             }
             ShadowRequest::Commit => {
                 self.send_priv(targets, PrivCommand::CommitPaths(paths), tr("Commit"));

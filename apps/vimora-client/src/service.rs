@@ -206,6 +206,8 @@ async fn serve(pairing: Pairing) -> Result<()> {
     info!("Vimora service listening on 127.0.0.1:{}", port());
     cleanup_old_binaries();
     exit_when_replaced();
+    // An uninstall that waited for the freeze to be switched off.
+    std::thread::spawn(crate::purge::finish_pending);
     std::thread::spawn(ensure_updater_tasks);
     crate::power::keep_awake();
     // A lock left over from before a crash or restart: release it; a still-locked agent

@@ -284,7 +284,6 @@ pub(super) fn engine_of(v: &View) -> u8 {
 pub(super) enum ShadowRequest {
     /// Turn Shadow on / off / run the update cycle on the targets.
     Apply(FreezeAction),
-    ListChanges,
     /// Commit the ticked paths.
     Commit,
     SaveFolders,

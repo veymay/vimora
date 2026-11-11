@@ -28,7 +28,7 @@ use eframe::egui::{
     Rect, RichText, Rounding, Sense, Stroke, TextureHandle, TextureOptions, Vec2,
 };
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 
 use std::sync::atomic::Ordering;
 
@@ -299,12 +299,13 @@ impl ConsoleApp {
                 })
             }
             Ok("freeze") => app.dev_open = Some(app.shadow_dialog()),
-            Ok(o @ ("shadow-commit" | "shadow-settings" | "uwf")) => {
+            Ok(o @ ("shadow-commit" | "shadow-settings" | "shadow" | "uwf")) => {
                 let mut d = app.shadow_dialog();
                 if let Dialog::Freeze { tab, .. } = &mut d {
                     *tab = match o {
                         "shadow-commit" => ShadowTab::Commit,
                         "uwf" => ShadowTab::Uwf,
+                        "shadow" => ShadowTab::Protection,
                         _ => ShadowTab::Settings,
                     };
                 }
@@ -342,6 +343,14 @@ impl ConsoleApp {
 
     /// Dev aid: `VIMORA_DEMO=<n>` fills the console with fake computers (never saved to disk).
     fn demo_students(&mut self, n: usize) {
+        // Files kept across restarts (Muzlatish).
+        {
+            let mut c = self.cfg.write().unwrap();
+            if c.persistent_folders.is_empty() {
+                c.persistent_folders =
+                    "D:\\Darslar\nC:\\Users\\Public\\Desktop\\dars.pptx\nC:\\Loyihalar".into();
+            }
+        }
         // New computers waiting to be added ("Skanerlash").
         {
             let mut h = self.hub.lock().unwrap();
@@ -1105,7 +1114,7 @@ impl ConsoleApp {
     fn shadow_dialog(&self) -> Dialog {
         let c = self.cfg.read().unwrap();
         Dialog::Freeze {
-            tab: ShadowTab::Protection,
+            tab: ShadowTab::Uwf,
             chosen: self.selected.clone(),
             restart: false,
             folders: c.persistent_folders.clone(),
