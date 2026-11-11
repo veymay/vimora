@@ -23,6 +23,14 @@ const GEIST_BOLD: &[u8] = include_bytes!("../assets/Geist-Bold.ttf");
 const GEIST_MONO_MEDIUM: &[u8] = include_bytes!("../assets/GeistMono-Medium.ttf");
 const GEIST_MONO_BOLD: &[u8] = include_bytes!("../assets/GeistMono-Bold.ttf");
 
+/// Font files, for code that draws without egui (the Windows lock screen uses GDI).
+pub mod font_files {
+    pub const ICONS: &[u8] = super::LUCIDE_TTF;
+    pub const REGULAR: &[u8] = super::GEIST;
+    pub const BOLD: &[u8] = super::GEIST_BOLD;
+    pub const MONO_BOLD: &[u8] = super::GEIST_MONO_BOLD;
+}
+
 /// Height of buttons, inputs and filter cells.
 pub const CONTROL_H: f32 = 34.0;
 /// Minimum width of a labelled button.

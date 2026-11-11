@@ -141,9 +141,9 @@ pub(super) fn dialog_body(
             restart,
             folders,
             request,
-            picked,
             manual,
             password,
+            ..
         } => shadow_form(
             ui,
             p,
@@ -153,7 +153,6 @@ pub(super) fn dialog_body(
                 restart,
                 folders,
                 request,
-                picked,
                 manual,
                 password,
             },
@@ -831,7 +830,6 @@ pub(super) struct ShadowForm<'a> {
     pub(super) restart: &'a mut bool,
     pub(super) folders: &'a mut String,
     pub(super) request: &'a mut Option<ShadowRequest>,
-    pub(super) picked: &'a mut std::collections::BTreeSet<String>,
     pub(super) manual: &'a mut String,
     pub(super) password: &'a mut String,
 }
@@ -1110,14 +1108,14 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
     );
     commit_section(ui, p, &mut f, cx, any_frozen);
 
-    // Settings of this filter.
-    freeze_section(
-        ui,
-        p,
-        tr("Sozlamalar"),
-        tr("Shu himoya usulining sozlamalari."),
-    );
+    // Settings of this filter (Shadow Defender only: UWF has none).
     if engine == 1 {
+        freeze_section(
+            ui,
+            p,
+            tr("Sozlamalar"),
+            tr("Shu himoya usulining sozlamalari."),
+        );
         caption(
             ui,
             p,
@@ -1132,23 +1130,6 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
                     .desired_width(ui.available_width()),
             );
         });
-    }
-    caption(
-        ui,
-        p,
-        tr("Doim saqlanadigan papkalar"),
-        tr("Bu papkalar qayta yuklanganda ham o'chmaydi. Har biri yangi qatorda."),
-    );
-    ui.add(
-        ui_kit::text_area(f.folders)
-            .hint_text(tr("D:\\Darslar"))
-            .desired_rows(3)
-            .desired_width(f32::INFINITY)
-            .font(egui::TextStyle::Monospace),
-    );
-    ui.add_space(8.0);
-    if ui_kit::button(ui, Some(icons::CHECK), tr("Saqlash"), Kind::Primary).clicked() {
-        *f.request = Some(ShadowRequest::SaveFolders);
     }
 }
 
@@ -1231,167 +1212,185 @@ fn commit_section(
     titled(
         ui,
         p,
-        "Commit",
-        tr("Belgilangan fayllar doimiy saqlanadi, qolgan o'zgarishlar qayta yuklanganda o'chadi."),
+        tr("Doim saqlanadigan fayl va papkalar"),
+        tr("Fayl yoki papkani ro'yxatga qo'shing va \"Saqlash\" ni bosing: hozir saqlanadi (commit) va keyingi qayta yuklashlarda ham doim saqlanib qoladi. Papka ichidagi hamma fayllar bilan."),
     );
-    if !any_frozen {
-        ui.label(
-            RichText::new(tr("Shadow yoniq emas — o'zgarishlar saqlanmoqda."))
-                .size(12.5)
-                .color(p.muted),
-        );
-        return;
-    }
-    let rows = merged_changes(cx);
-    let mut shown: Vec<(String, Option<ChangeRow>)> =
-        rows.iter().map(|(k, v)| (k.clone(), Some(*v))).collect();
-    for path in f.picked.iter() {
-        if !rows.contains_key(path) {
-            shown.push((path.clone(), None));
+    // The list (one path per line in `folders`).
+    let mut list: Vec<String> = f
+        .folders
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    let before = list.clone();
+    let add = |list: &mut Vec<String>, path: &str| {
+        let path = path
+            .trim()
+            .trim_matches('"')
+            .trim_end_matches(['\\', '/'])
+            .to_string();
+        if !path.is_empty() && !list.iter().any(|x| x.eq_ignore_ascii_case(&path)) {
+            list.push(path);
         }
-    }
-    if shown.is_empty() {
+    };
+    let w = ui.available_width();
+    ui.allocate_ui_with_layout(
+        vec2(w, ui_kit::CONTROL_H),
+        Layout::right_to_left(Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            let plus = ui_kit::button(ui, Some(icons::PLUS), tr("Qo'shish"), Kind::Outline);
+            let r = ui.add(
+                ui_kit::text_field(f.manual)
+                    .hint_text(tr(
+                        "Masalan: D:\\Darslar yoki C:\\Users\\Public\\Desktop\\dars.pptx",
+                    ))
+                    .desired_width(ui.available_width()),
+            );
+            let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+            if plus.clicked() || enter {
+                add(&mut list, f.manual);
+                f.manual.clear();
+            }
+        },
+    );
+    ui.add_space(8.0);
+    if list.is_empty() {
         ui.label(
-            RichText::new(tr("Ro'yxat yo'q. Yo'lni o'zingiz qo'shing."))
+            RichText::new(tr("Ro'yxat bo'sh."))
                 .size(12.5)
                 .color(p.faint),
         );
     } else {
-        egui::ScrollArea::vertical()
-            .id_salt("shadow-changes")
-            .max_height(280.0)
-            .auto_shrink([false, true])
+        let mut remove = None;
+        Frame::none()
+            .stroke(Stroke::new(1.0_f32, p.line))
             .show(ui, |ui| {
-                Frame::none()
-                    .stroke(Stroke::new(1.0_f32, p.line))
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        ui.spacing_mut().item_spacing.y = 0.0;
-                        for (i, (path, info)) in shown.iter().take(500).enumerate() {
-                            let (rect, resp) = ui.allocate_exact_size(
-                                vec2(ui.available_width(), 32.0),
-                                Sense::click(),
-                            );
-                            if i > 0 {
-                                ui.painter().hline(
-                                    rect.x_range(),
-                                    rect.top(),
-                                    Stroke::new(1.0_f32, p.line),
-                                );
-                            }
-                            if resp.hovered() {
-                                ui.painter().rect_filled(rect, Rounding::ZERO, p.hover);
-                            }
-                            let on = f.picked.contains(path);
-                            let bx = Rect::from_center_size(
-                                pos2(rect.left() + 18.0, rect.center().y),
-                                vec2(14.0, 14.0),
-                            );
-                            ui.painter().rect(
-                                bx,
-                                Rounding::ZERO,
-                                if on { p.accent } else { p.sunken },
-                                Stroke::new(1.0_f32, if on { p.accent } else { p.line_strong }),
-                            );
-                            if on {
-                                ui.painter().text(
-                                    bx.center(),
-                                    Align2::CENTER_CENTER,
-                                    icons::CHECK,
-                                    FontId::proportional(11.0),
-                                    p.on_accent,
-                                );
-                            }
-                            let (tag, col) = match info.map(|i| i.0) {
-                                Some(ChangeKind::Added) => ("+", p.accent_ink),
-                                Some(ChangeKind::Modified) => ("~", p.warning),
-                                Some(ChangeKind::Deleted) => ("\u{2212}", p.danger),
-                                None => ("\u{2022}", p.muted),
-                            };
-                            ui.painter().text(
-                                pos2(rect.left() + 38.0, rect.center().y),
-                                Align2::CENTER_CENTER,
-                                tag,
-                                FontId::new(14.0, ui_kit::mono_bold()),
-                                col,
-                            );
-                            let size = info
-                                .filter(|i| i.0 != ChangeKind::Deleted)
-                                .map(|i| fmt_size(i.1))
-                                .unwrap_or_default();
-                            let sg = ui_kit::caps(ui, &size, 9.5, ui_kit::mono(), p.faint);
-                            let sw = sg.size().x;
-                            ui.painter().galley(
-                                pos2(
-                                    rect.right() - 10.0 - sw,
-                                    rect.center().y - sg.size().y / 2.0,
-                                ),
-                                sg,
-                                p.faint,
-                            );
-                            let name = ui_kit::truncated(
-                                ui,
-                                path,
-                                FontId::new(12.5, ui_kit::medium()),
-                                p.text,
-                                rect.width() - 62.0 - sw,
-                            );
-                            ui.painter().galley(
-                                pos2(rect.left() + 54.0, rect.center().y - name.size().y / 2.0),
-                                name,
-                                p.text,
-                            );
-                            if resp.clicked() {
-                                if on {
-                                    f.picked.remove(path);
-                                } else {
-                                    f.picked.insert(path.clone());
-                                }
-                            }
-                        }
-                    });
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for (i, path) in list.iter().enumerate() {
+                    let rw = ui.available_width();
+                    let (rect, _) = ui.allocate_exact_size(vec2(rw, 34.0), Sense::hover());
+                    if i > 0 {
+                        ui.painter().hline(
+                            rect.x_range(),
+                            rect.top(),
+                            Stroke::new(1.0_f32, p.line),
+                        );
+                    }
+                    let folder = !path.rsplit(['\\', '/']).next().unwrap_or("").contains('.');
+                    ui.painter().text(
+                        pos2(rect.left() + 18.0, rect.center().y),
+                        Align2::CENTER_CENTER,
+                        if folder {
+                            icons::FOLDER
+                        } else {
+                            icons::FILE_TEXT
+                        },
+                        FontId::proportional(15.0),
+                        p.muted,
+                    );
+                    let g = ui_kit::truncated(
+                        ui,
+                        path,
+                        FontId::new(13.0, ui_kit::mono()),
+                        p.text,
+                        rw - 80.0,
+                    );
+                    ui.painter().galley(
+                        pos2(rect.left() + 36.0, rect.center().y - g.size().y / 2.0),
+                        g,
+                        p.text,
+                    );
+                    let mut x = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(Rect::from_min_max(
+                                pos2(rect.right() - 36.0, rect.top()),
+                                rect.max,
+                            ))
+                            .layout(Layout::right_to_left(Align::Center)),
+                    );
+                    if ui_kit::icon_cell(&mut x, icons::X, 30.0, false)
+                        .tip(tr("Olib tashlash"))
+                        .clicked()
+                    {
+                        remove = Some(i);
+                    }
+                }
             });
+        if let Some(i) = remove {
+            list.remove(i);
+        }
     }
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
-        ui_kit::input_frame(p).show(ui, |ui| {
-            ui.add(
-                ui_kit::text_field(f.manual)
-                    .hint_text(tr("Fayl yoki papka yo'li"))
-                    .frame(false)
-                    .desired_width((ui.available_width() - 250.0).max(120.0)),
+
+    // What changed on the frozen PCs (where it can be listed): click to add to the list.
+    if any_frozen {
+        let rows = merged_changes(cx);
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            ui_kit::hud(ui, tr("O'zgargan fayllar"), p.muted);
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui_kit::icon_cell(ui, icons::REFRESH_CW, 28.0, false)
+                    .tip(tr("Ro'yxatni yangilash"))
+                    .clicked()
+                {
+                    *f.request = Some(ShadowRequest::ListChanges);
+                }
+            });
+        });
+        if rows.is_empty() {
+            ui.label(
+                RichText::new(tr("Bu yerda kompyuterdagi o'zgarishlar ko'rinadi (Ubuntu). Windows'da yo'lni o'zingiz yozing."))
+                    .size(12.0)
+                    .color(p.faint),
             );
-        });
-        if ui_kit::icon_cell(ui, icons::PLUS, 34.0, false)
-            .tip(tr("Yo'lni qo'shish"))
-            .clicked()
-        {
-            let path = f.manual.trim().trim_matches('"').to_string();
-            if !path.is_empty() {
-                f.picked.insert(path);
-                f.manual.clear();
+        }
+        let candidates: Vec<(String, ChangeRow)> = rows
+            .iter()
+            .filter(|(k, _)| !list.contains(k))
+            .take(30)
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
+        for (path, info) in &candidates {
+            let (tag, col) = match info.0 {
+                ChangeKind::Added => ("+", p.accent_ink),
+                ChangeKind::Modified => ("~", p.warning),
+                ChangeKind::Deleted => ("\u{2212}", p.danger),
+            };
+            let r = ui.add(
+                egui::Button::new(
+                    RichText::new(format!("{tag}  {path}"))
+                        .family(ui_kit::mono())
+                        .size(12.0)
+                        .color(col),
+                )
+                .frame(false),
+            );
+            if r.tip(tr("Ro'yxatga qo'shish")).clicked() {
+                list.push(path.clone());
             }
         }
-        if ui_kit::icon_cell(ui, icons::REFRESH_CW, 34.0, false)
-            .tip(tr("Ro'yxatni yangilash"))
-            .clicked()
+    }
+
+    if list != before {
+        *f.folders = list.join("\n");
+    }
+    ui.add_space(10.0);
+    let n = list.len();
+    ui.add_enabled_ui(usable, |ui| {
+        if ui_kit::button(
+            ui,
+            Some(icons::SHIELD_CHECK),
+            &tf!("Saqlash ({n})", n = n),
+            Kind::Primary,
+        )
+        .tip(tr(
+            "Ro'yxat kompyuterlarga yuboriladi: hozir commit qilinadi va doim saqlanadi",
+        ))
+        .clicked()
         {
-            *f.request = Some(ShadowRequest::ListChanges);
+            *f.request = Some(ShadowRequest::SaveFolders);
         }
-        let n = f.picked.len();
-        ui.add_enabled_ui(n > 0, |ui| {
-            if ui_kit::button(
-                ui,
-                Some(icons::SHIELD_CHECK),
-                &tf!("Commit ({n})", n = n),
-                Kind::Primary,
-            )
-            .clicked()
-            {
-                *f.request = Some(ShadowRequest::Commit);
-            }
-        });
     });
 }
 
@@ -1411,16 +1410,6 @@ fn merged_changes(cx: &FormCtx<'_>) -> BTreeMap<String, ChangeRow> {
         }
     }
     rows
-}
-
-fn fmt_size(b: u64) -> String {
-    if b < 1024 {
-        format!("{b} B")
-    } else if b < 1024 * 1024 {
-        format!("{} KB", b / 1024)
-    } else {
-        format!("{:.1} MB", b as f64 / 1024.0 / 1024.0)
-    }
 }
 
 pub(super) fn rename_form(

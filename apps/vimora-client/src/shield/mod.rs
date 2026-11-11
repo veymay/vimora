@@ -206,6 +206,8 @@ pub struct Shield {
     last_capacity_alert: Mutex<Option<(u32, Instant)>>,
     /// Last automatic re-arm attempt (retried at most every 10 minutes).
     last_heal: Mutex<Option<Instant>>,
+    /// Last commit of the "always kept" paths (every 5 minutes while protected).
+    last_keep: Mutex<Option<Instant>>,
 }
 
 impl Default for Shield {
@@ -231,6 +233,7 @@ impl Shield {
             store: Mutex::new(store),
             last_capacity_alert: Mutex::new(None),
             last_heal: Mutex::new(None),
+            last_keep: Mutex::new(None),
         }
     }
 
@@ -533,7 +536,30 @@ impl Shield {
             }
         }
 
-        // 2. Overlay fill level: warn at 75 %, alarm at 90 % (rate-limited).
+        // 2. "Doim saqlanadigan" files and folders: committed every 5 minutes while protected
+        //    (Shadow Defender has no exclusion list we can set; on UWF they are excluded and
+        //    the commit is a harmless no-op).
+        let keep_due = self
+            .last_keep
+            .lock()
+            .unwrap()
+            .is_none_or(|t| t.elapsed() > Duration::from_secs(300));
+        if keep_due
+            && !store.persistent.is_empty()
+            && matches!(p.state, FreezeState::Frozen | FreezeState::ThawPending)
+        {
+            *self.last_keep.lock().unwrap() = Some(Instant::now());
+            for path in &store.persistent {
+                let path = Path::new(path);
+                if path.exists() {
+                    if let Err(e) = self.backend.commit_path(path) {
+                        tracing::debug!("keep {}: {e:#}", path.display());
+                    }
+                }
+            }
+        }
+
+        // 3. Overlay fill level: warn at 75 %, alarm at 90 % (rate-limited).
         if let Some(u) = p.usage.filter(|u| u.max_mb > 0) {
             let pct = u.percent();
             let level = if pct >= CRITICAL_PCT {

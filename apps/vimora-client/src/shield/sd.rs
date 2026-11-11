@@ -296,8 +296,13 @@ impl Backend for ShadowDefender {
         Ok(())
     }
 
-    fn set_persistent(&self, _new: &[String], _old: &[String]) -> Result<String> {
-        bail!("Shadow Defender'da istisna papkalar uning o'z oynasida (Exclusion List) sozlanadi")
+    /// Shadow Defender's own exclusion list can't be set from outside: the service commits
+    /// the listed paths every few minutes instead (see `Shield::reconcile`).
+    fn set_persistent(&self, new: &[String], _old: &[String]) -> Result<String> {
+        Ok(format!(
+            "{} ta fayl/papka doim saqlanadi (har 5 daqiqada commit qilinadi)",
+            new.len()
+        ))
     }
 
     fn mount_persistent(&self, _folders: &[String]) {

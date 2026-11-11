@@ -6,6 +6,14 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Bu yerda kompyuterdagi o'zgarishlar ko'rinadi (Ubuntu). Windows'da yo'lni o'zingiz yozing.", "Changes on the computer show up here (Ubuntu). On Windows, type the path yourself.", "Здесь видны изменения на компьютере (Ubuntu). В Windows введите путь сами."),
+    ("Doim saqlanadigan fayl va papkalar", "Files and folders always kept", "Всегда сохраняемые файлы и папки"),
+    ("Fayl yoki papkani ro'yxatga qo'shing va \"Saqlash\" ni bosing: hozir saqlanadi (commit) va keyingi qayta yuklashlarda ham doim saqlanib qoladi. Papka ichidagi hamma fayllar bilan.", "Add a file or folder to the list and press \"Save\": it is kept now (commit) and after every restart. A folder is kept with everything in it.", "Добавьте файл или папку в список и нажмите «Сохранить»: сохраняется сейчас (commit) и после каждой перезагрузки. Папка — со всем содержимым."),
+    ("Masalan: D:\\Darslar yoki C:\\Users\\Public\\Desktop\\dars.pptx", "For example: D:\\Darslar or C:\\Users\\Public\\Desktop\\lesson.pptx", "Например: D:\\Darslar или C:\\Users\\Public\\Desktop\\urok.pptx"),
+    ("O'zgargan fayllar", "Changed files", "Изменённые файлы"),
+    ("Ro'yxatga qo'shish", "Add to the list", "Добавить в список"),
+    ("Ro'yxat kompyuterlarga yuboriladi: hozir commit qilinadi va doim saqlanadi", "The list goes to the computers: committed now and always kept", "Список отправляется на компьютеры: сохраняется сейчас и всегда"),
+    ("Saqlash ({n})", "Save ({n})", "Сохранить ({n})"),
     ("Muzlatilgan kompyuterdagi kerakli o'zgarishlarni qayta yuklashdan keyin ham saqlab qolish.", "Keep the changes you need from a frozen computer after it restarts.", "Сохранить нужные изменения на замороженном компьютере после перезагрузки."),
     ("Shu himoya usulining sozlamalari.", "Settings of this protection method.", "Настройки этого способа защиты."),
     ("Administrator", "Administrator", "Администратор"),

@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use vimora_ui::{icons, ThemeMode};
+use vimora_ui::icons;
+#[cfg(not(windows))]
+use vimora_ui::ThemeMode;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OverlayCmd {
@@ -33,6 +35,11 @@ pub enum OverlayCmd {
         icon: String,
     },
 }
+
+/// Windows: the screen is drawn with GDI (see `winlock`), not through the GPU.
+#[cfg(windows)]
+#[path = "winlock.rs"]
+mod native;
 
 #[derive(Clone)]
 enum Mode {
@@ -73,84 +80,92 @@ pub fn run() -> anyhow::Result<()> {
     #[cfg(windows)]
     input_block::install();
 
-    // Windows: not "fullscreen" but a borderless window one pixel taller than the screen.
-    // A window that covers the screen exactly is put into exclusive full-screen mode by many
-    // drivers: the picture goes black and Windows minimizes it as soon as anything (the Start
-    // menu) takes focus. The guard thread keeps it at that size, on top and restored.
+    // Windows: native window, drawn with GDI (works with every graphics driver).
     #[cfg(windows)]
-    let viewport = {
-        let (w, h) = input_block::screen_size_logical();
-        egui::ViewportBuilder::default()
+    {
+        if let Ok(code) = std::env::var("VIMORA_OVERLAY_DEMO") {
+            let salt = vec![1u8, 2, 3];
+            let mut sh = shared.lock().unwrap();
+            sh.code = Some((
+                salt.clone(),
+                vimora_core::pin::hash(&salt, &code),
+                code.len() as u8,
+            ));
+            sh.mode = Mode::Lock {
+                title: "Diqqat! Ekran qulflangan".into(),
+                message: "Iltimos, o'qituvchini tinglang.".into(),
+            };
+        } else {
+            spawn_stdin_reader(shared.clone(), || {});
+        }
+        native::run(shared)
+    }
+
+    #[cfg(not(windows))]
+    {
+        let viewport = egui::ViewportBuilder::default()
             .with_title("Vimora")
-            .with_position([0.0, 0.0])
-            .with_inner_size([w, h + 1.0])
-            .with_resizable(false)
+            .with_fullscreen(true)
             .with_always_on_top()
             .with_decorations(false)
-            .with_taskbar(false)
-    };
-    #[cfg(not(windows))]
-    let viewport = egui::ViewportBuilder::default()
-        .with_title("Vimora")
-        .with_fullscreen(true)
-        .with_always_on_top()
-        .with_decorations(false)
-        .with_taskbar(false);
-    let opts = eframe::NativeOptions {
-        viewport,
-        renderer: crate::ui_renderer(),
-        ..Default::default()
-    };
+            .with_taskbar(false);
+        let opts = eframe::NativeOptions {
+            viewport,
+            renderer: crate::ui_renderer(),
+            ..Default::default()
+        };
 
-    let s2 = shared.clone();
-    eframe::run_native(
-        "vimora-overlay",
-        opts,
-        Box::new(move |cc| {
-            vimora_ui::install_fonts(&cc.egui_ctx);
-            vimora_ui::apply_theme(&cc.egui_ctx, ThemeMode::Dark);
-            // Dev aid: VIMORA_OVERLAY_DEMO=<code> shows a sample lock screen without the agent;
-            // VIMORA_OVERLAY_TYPE=<digits> pretends they were typed; VIMORA_OVERLAY_SCREENSHOT=<file>.
-            let demo = std::env::var("VIMORA_OVERLAY_DEMO").ok();
-            let mut entered = String::new();
-            let mut typed_at = None;
-            if let Some(code) = &demo {
-                let salt = vec![1u8, 2, 3];
-                let mut sh = s2.lock().unwrap();
-                sh.code = Some((
-                    salt.clone(),
-                    vimora_core::pin::hash(&salt, code),
-                    code.len() as u8,
-                ));
-                sh.mode = Mode::Lock {
-                    title: "Diqqat! Ekran qulflangan".into(),
-                    message: "Iltimos, o'qituvchini tinglang.".into(),
-                };
-                if let Ok(t) = std::env::var("VIMORA_OVERLAY_TYPE") {
-                    entered = t;
-                    typed_at = Some(Instant::now());
+        let s2 = shared.clone();
+        eframe::run_native(
+            "vimora-overlay",
+            opts,
+            Box::new(move |cc| {
+                vimora_ui::install_fonts(&cc.egui_ctx);
+                vimora_ui::apply_theme(&cc.egui_ctx, ThemeMode::Dark);
+                // Dev aid: VIMORA_OVERLAY_DEMO=<code> shows a sample lock screen without the agent;
+                // VIMORA_OVERLAY_TYPE=<digits> pretends they were typed; VIMORA_OVERLAY_SCREENSHOT=<file>.
+                let demo = std::env::var("VIMORA_OVERLAY_DEMO").ok();
+                let mut entered = String::new();
+                let mut typed_at = None;
+                if let Some(code) = &demo {
+                    let salt = vec![1u8, 2, 3];
+                    let mut sh = s2.lock().unwrap();
+                    sh.code = Some((
+                        salt.clone(),
+                        vimora_core::pin::hash(&salt, code),
+                        code.len() as u8,
+                    ));
+                    sh.mode = Mode::Lock {
+                        title: "Diqqat! Ekran qulflangan".into(),
+                        message: "Iltimos, o'qituvchini tinglang.".into(),
+                    };
+                    if let Ok(t) = std::env::var("VIMORA_OVERLAY_TYPE") {
+                        entered = t;
+                        typed_at = Some(Instant::now());
+                    }
+                } else {
+                    let ctx = cc.egui_ctx.clone();
+                    spawn_stdin_reader(s2.clone(), move || ctx.request_repaint());
                 }
-            } else {
-                spawn_stdin_reader(s2.clone(), cc.egui_ctx.clone());
-            }
-            Ok(Box::new(OverlayApp {
-                shared: s2,
-                texture: None,
-                last_focus: Instant::now(),
-                started: Instant::now(),
-                entered,
-                wrong_at: None,
-                failures: 0,
-                blocked_until: None,
-                unlocked_at: None,
-                typed_at,
-            }))
-        }),
-    )
-    .map_err(|e| anyhow::anyhow!("overlay: {e}"))
+                Ok(Box::new(OverlayApp {
+                    shared: s2,
+                    texture: None,
+                    last_focus: Instant::now(),
+                    started: Instant::now(),
+                    entered,
+                    wrong_at: None,
+                    failures: 0,
+                    blocked_until: None,
+                    unlocked_at: None,
+                    typed_at,
+                }))
+            }),
+        )
+        .map_err(|e| anyhow::anyhow!("overlay: {e}"))
+    }
 }
 
-fn spawn_stdin_reader(shared: Arc<Mutex<Shared>>, ctx: egui::Context) {
+fn spawn_stdin_reader(shared: Arc<Mutex<Shared>>, wake: impl Fn() + Send + 'static) {
     std::thread::spawn(move || {
         let mut stdin = std::io::stdin().lock();
         loop {
@@ -198,13 +213,14 @@ fn spawn_stdin_reader(shared: Arc<Mutex<Shared>>, ctx: egui::Context) {
                     }
                 }
             }
-            ctx.request_repaint();
+            wake();
         }
         // Agent went away: leave.
         std::process::exit(0);
     });
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 struct OverlayApp {
     shared: Arc<Mutex<Shared>>,
     texture: Option<egui::TextureHandle>,
@@ -223,6 +239,7 @@ struct OverlayApp {
     typed_at: Option<Instant>,
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 impl OverlayApp {
     /// Digits the student typed since the last frame: from the hook on Windows (the hook eats
     /// every key before any window sees it), from the window's own events elsewhere.
@@ -306,6 +323,7 @@ impl OverlayApp {
     }
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 impl eframe::App for OverlayApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Refuse to close and keep ourselves on top.
@@ -440,6 +458,7 @@ impl eframe::App for OverlayApp {
 }
 
 /// Everything the lock screen draws besides the texts.
+#[cfg_attr(windows, allow(dead_code))]
 struct LockView {
     /// The teacher's icon (None = the lock).
     icon: Option<String>,
@@ -459,6 +478,7 @@ struct LockView {
     leave: f32,
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
     use egui::{pos2, vec2, Align2, Color32, FontId, Rect, Rounding, Stroke};
     let p = vimora_ui::DARK;
@@ -685,6 +705,7 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
 }
 
 /// A soft round glow: a triangle fan fading from `color` at the centre to nothing at `radius`.
+#[cfg_attr(windows, allow(dead_code))]
 fn glow(
     painter: &egui::Painter,
     centre: egui::Pos2,
@@ -708,6 +729,7 @@ fn glow(
     painter.add(egui::Shape::mesh(mesh));
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 fn return_blocked(painter: &egui::Painter, x: f32, y: f32, secs: u64, col: egui::Color32) {
     painter.text(
         egui::pos2(x, y),
@@ -763,17 +785,6 @@ mod input_block {
             }
         }
         CallNextHookEx(null_mut(), code, w, l)
-    }
-
-    /// The primary screen in the units egui uses before the window exists (the process is not
-    /// DPI-aware yet, so Windows reports scaled, logical pixels).
-    pub fn screen_size_logical() -> (f32, f32) {
-        unsafe {
-            (
-                GetSystemMetrics(SM_CXSCREEN).max(800) as f32,
-                GetSystemMetrics(SM_CYSCREEN).max(600) as f32,
-            )
-        }
     }
 
     /// Keeps our window restored and covering the primary screen (plus one pixel, see `run`).
@@ -1067,6 +1078,7 @@ mod input_block {
     }
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 fn overlay_dev_screenshot(ctx: &egui::Context) {
     let Ok(path) = std::env::var("VIMORA_OVERLAY_SCREENSHOT") else {
         return;

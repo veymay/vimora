@@ -1192,12 +1192,22 @@ impl ConsoleApp {
                 self.send_priv(targets, PrivCommand::CommitPaths(paths), tr("Commit"));
             }
             ShadowRequest::SaveFolders => {
+                // One list: kept from now on (exclusions / periodic commits on the PC) and
+                // committed right away.
                 self.cfg.write().unwrap().persistent_folders = folders.clone();
+                let list: Vec<String> = folders
+                    .lines()
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect();
                 self.send_priv(
                     targets,
-                    PrivCommand::SetPersistentFolders(split_list(&folders)),
+                    PrivCommand::SetPersistentFolders(list.clone()),
                     tr("Saqlanadigan papkalar"),
                 );
+                if !list.is_empty() {
+                    self.send_priv(targets, PrivCommand::CommitPaths(list), "");
+                }
             }
         }
     }
