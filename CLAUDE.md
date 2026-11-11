@@ -18,6 +18,8 @@ The owner writes in Uzbek; answer in Uzbek.
 `VIMORA_OPEN=settings|settings:appearance|power|net|room|...` opens a dialog;
 `VIMORA_MENU=1` opens a context menu; `VIMORA_SCREENSHOT=out.jpg` (+ `VIMORA_SCREENSHOT_DELAY`) saves a
 screenshot and exits. Use `XDG_CONFIG_HOME=<dir>` to run with a throw-away config.
+`VIMORA_AUTOADD=1` adds new computers at once (no clicking). Test console + agent together without
+touching the real console: run both inside `unshare -rn` with a veth pair (`ip addr add ... brd +`).
 
 ## CI / release
 - CI needs: `cargo fmt --all --check`, `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`.

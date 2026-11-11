@@ -419,7 +419,8 @@ pub(super) async fn privileged(
             verify_locally(ctx, counter, &payload, &sig)?;
         }
         let _ = crate::config::forget_pin();
-        crate::config::save_last_console("");
+        // The console's address is kept: the free PC tells it "I am free" directly, even where
+        // broadcasts do not get through.
         // Free now: listed in every console until a teacher adds it.
         crate::config::set_released(true);
         *ctx.pin.lock().unwrap() = None;

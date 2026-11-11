@@ -84,6 +84,30 @@ pub fn decode_claim(data: &[u8]) -> Option<(String, u16)> {
     bincode::deserialize(&data[CLAIM_MAGIC.len()..]).ok()
 }
 
+/// Where a broadcast must go to reach every computer on the classroom network: the limited
+/// broadcast (255.255.255.255) and the broadcast address of each IPv4 network this computer is
+/// on (e.g. 192.168.1.255). The limited broadcast alone fails on networks without a default
+/// gateway ("network unreachable"), and Windows sends it out one adapter only (often a
+/// VirtualBox / VPN one), so computers that are not paired yet never heard the console.
+pub fn broadcast_targets() -> Vec<std::net::Ipv4Addr> {
+    let mut v = vec![std::net::Ipv4Addr::BROADCAST];
+    for iface in if_addrs::get_if_addrs().unwrap_or_default() {
+        if let if_addrs::IfAddr::V4(a) = iface.addr {
+            if a.ip.is_loopback() || a.ip.is_link_local() {
+                continue;
+            }
+            let b = match a.broadcast {
+                Some(b) if !b.is_unspecified() => b,
+                _ => std::net::Ipv4Addr::from(u32::from(a.ip) | !u32::from(a.netmask)),
+            };
+            if b != a.ip && !b.is_unspecified() && !v.contains(&b) {
+                v.push(b);
+            }
+        }
+    }
+    v
+}
+
 /// "Who is waiting to be added?": broadcast by a console when the teacher presses "Skanerlash".
 /// Computers that belong to no console answer at once with `ClientMsg::Free` over TCP to the
 /// datagram's source address and the console TCP port it carries.
@@ -117,5 +141,15 @@ mod scan_tests {
         let d = super::encode_scan(47801);
         assert_eq!(super::decode_scan(&d), Some(47801));
         assert_eq!(super::decode_scan(&super::encode_claim("k", 1)), None);
+    }
+}
+
+#[cfg(test)]
+mod bcast_tests {
+    #[test]
+    fn broadcast_targets_start_with_limited() {
+        let t = super::broadcast_targets();
+        println!("targets: {t:?}");
+        assert_eq!(t[0], std::net::Ipv4Addr::BROADCAST);
     }
 }

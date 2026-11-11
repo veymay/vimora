@@ -363,6 +363,10 @@ async fn free_mode(name: Option<String>) -> String {
             }
         };
         let mut consoles: std::collections::BTreeSet<String> = Default::default();
+        // The console used last (if any) hears "I am free" even without its broadcasts.
+        if let Some(last) = crate::config::last_console() {
+            consoles.insert(last);
+        }
         let mut last_hello = Instant::now() - Duration::from_secs(60);
         let mut buf = [0u8; 2048];
         loop {

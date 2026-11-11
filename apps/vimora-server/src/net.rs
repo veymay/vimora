@@ -366,10 +366,17 @@ async fn beacon_task(cfg: SharedConfig, console_key: auth::ConsoleKey) {
             }
         };
         if let Ok(pkt) = vimora_core::net::encode_beacon(&b) {
-            if let Err(e) = sock
-                .send_to(&pkt, ("255.255.255.255", DISCOVERY_PORT))
-                .await
-            {
+            // Every network's broadcast address, not only 255.255.255.255: computers that are
+            // not paired yet find the console only through this.
+            let mut sent = false;
+            let mut last_err = None;
+            for ip in vimora_core::net::broadcast_targets() {
+                match sock.send_to(&pkt, (ip, DISCOVERY_PORT)).await {
+                    Ok(_) => sent = true,
+                    Err(e) => last_err = Some(e),
+                }
+            }
+            if let (false, Some(e)) = (sent, last_err) {
                 warn!("beacon: {e}");
             }
         }
@@ -419,6 +426,10 @@ async fn session(
     // A computer removed from its console says "I am free": listed until a teacher adds it.
     if let ClientMsg::Free(info) = first {
         let mut h = hub.lock().unwrap();
+        // Dev aid: VIMORA_AUTOADD=1 adds every new computer at once (tests without clicking).
+        if std::env::var_os("VIMORA_AUTOADD").is_some() {
+            claim(addr.ip(), &info.key(), cfg.read().unwrap().port);
+        }
         h.free
             .insert(info.key(), (info, addr.ip(), Instant::now(), false));
         h.repaint();
@@ -1161,8 +1172,10 @@ pub fn scan(console_port: u16) {
     let data = vimora_core::net::encode_scan(console_port);
     if let Ok(s) = std::net::UdpSocket::bind(("0.0.0.0", 0)) {
         let _ = s.set_broadcast(true);
-        for _ in 0..2 {
-            let _ = s.send_to(&data, ("255.255.255.255", vimora_core::DISCOVERY_PORT));
+        for ip in vimora_core::net::broadcast_targets() {
+            for _ in 0..2 {
+                let _ = s.send_to(&data, (ip, vimora_core::DISCOVERY_PORT));
+            }
         }
     }
 }
