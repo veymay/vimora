@@ -6,6 +6,7 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Kompyuterlarda sayt yoki dastur ochish", "Open a website or a program on the computers", "Открыть сайт или программу на компьютерах"),
     ("Bajarish uchun ikki marta bosing", "Double-click to run", "Дважды щёлкните, чтобы выполнить"),
     ("o'rnatildi", "installed", "установлено"),
     ("o'rnatilmoqda", "installing", "устанавливается"),

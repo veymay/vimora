@@ -714,9 +714,9 @@ impl TeacherApp {
                     None,
                 ),
                 a(
-                    icons::GLOBE,
-                    tr("Sayt"),
-                    tr("Barcha ekranlarda bir sahifa ochish"),
+                    icons::TERMINAL,
+                    tr("Buyruq"),
+                    tr("Kompyuterlarda sayt yoki dastur ochish"),
                     Menu::Web,
                     false,
                     None,

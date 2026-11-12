@@ -18,8 +18,8 @@ use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-const FADE_IN: f32 = 0.45;
-const FADE_OUT: f32 = 0.35;
+const FADE_IN: f32 = 0.2;
+const FADE_OUT: f32 = 0.15;
 
 fn rgb(c: egui::Color32) -> COLORREF {
     c.r() as u32 | (c.g() as u32) << 8 | (c.b() as u32) << 16

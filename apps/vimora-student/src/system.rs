@@ -79,7 +79,106 @@ pub fn power(action: PowerAction) -> Result<()> {
 }
 
 /// Hardware identity: MAC of the first physical network card (lower-case, no separators).
+/// The computer's identity for the teacher (its key): the MAC of a *physical* network card.
+///
+/// Disk images (AOMEI Backupper & co.) copy everything, so the identity must come from the
+/// hardware, never from what was installed: virtual adapters (VirtualBox, VPN, Hyper-V) keep
+/// their MAC in a clone. The chosen id is kept with a fingerprint of the physical cards; when the
+/// disk turns up on other hardware (a clone), a new id is chosen. A computer that already has an
+/// id keeps it (its name and room stay with the teacher).
 pub fn machine_id() -> String {
+    static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ID.get_or_init(compute_machine_id).clone()
+}
+
+fn compute_machine_id() -> String {
+    let physical = physical_macs();
+    let fingerprint = physical.join(",");
+    let file = dirs::config_dir().map(|d| d.join("vimora").join("machine-id"));
+    let saved = file
+        .as_ref()
+        .and_then(|f| std::fs::read_to_string(f).ok())
+        .map(|t| {
+            let mut l = t.lines();
+            (
+                l.next().unwrap_or("").trim().to_string(),
+                l.next().unwrap_or("").trim().to_string(),
+            )
+        });
+    if let Some((id, hw)) = &saved {
+        if !id.is_empty() && *hw == fingerprint {
+            return id.clone();
+        }
+    }
+    let legacy = legacy_mac();
+    let id = match (&saved, physical.first()) {
+        // No physical card found: the old way.
+        (_, None) => legacy,
+        // First run of this version on a computer: keep the id it had, if that is a real card.
+        (None, Some(first)) => {
+            if physical.contains(&legacy) {
+                legacy
+            } else {
+                first.clone()
+            }
+        }
+        // Saved on other hardware: this disk was cloned onto a new computer.
+        (Some(_), Some(first)) => first.clone(),
+    };
+    if let Some(f) = file {
+        if let Some(d) = f.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        let _ = std::fs::write(f, format!("{id}\n{fingerprint}\n"));
+    }
+    id
+}
+
+/// MACs of the physical network cards (PCI / USB devices), sorted, lowercase hex.
+fn physical_macs() -> Vec<String> {
+    #[cfg(windows)]
+    {
+        let out = crate::sh::script(
+            "Get-CimInstance Win32_NetworkAdapter -Filter 'PhysicalAdapter=TRUE' | \
+             Where-Object { $_.MACAddress -and $_.PNPDeviceID -match '^(PCI|USB)\\\\' } | \
+             ForEach-Object { $_.MACAddress }",
+        )
+        .map(|(_, o)| o)
+        .unwrap_or_default();
+        let mut v: Vec<String> = out
+            .lines()
+            .map(|m| m.trim().replace([':', '-'], "").to_lowercase())
+            .filter(|m| m.len() == 12 && m != "000000000000")
+            .collect();
+        v.sort();
+        v.dedup();
+        v
+    }
+    #[cfg(not(windows))]
+    {
+        let mut ifaces: Vec<_> = std::fs::read_dir("/sys/class/net")
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .collect();
+        ifaces.sort();
+        let mut v: Vec<String> = ifaces
+            .iter()
+            .filter(|p| p.join("device").exists()) // physical NICs only
+            .filter_map(|p| std::fs::read_to_string(p.join("address")).ok())
+            .map(|m| m.trim().replace(':', "").to_lowercase())
+            .filter(|m| m.len() == 12 && m != "000000000000")
+            .collect();
+        v.sort();
+        v.dedup();
+        v
+    }
+}
+
+/// The id of 0.3.28 and older: the first MAC `getmac` lists (Windows), the first physical card
+/// (Ubuntu).
+fn legacy_mac() -> String {
     #[cfg(windows)]
     {
         // getmac /fo csv /nh → "AA-BB-CC-DD-EE-FF","\Device\Tcpip_{…}"
@@ -103,7 +202,7 @@ pub fn machine_id() -> String {
         ifaces.sort();
         ifaces
             .iter()
-            .filter(|p| p.join("device").exists()) // physical NICs only
+            .filter(|p| p.join("device").exists())
             .filter_map(|p| std::fs::read_to_string(p.join("address")).ok())
             .map(|m| m.trim().replace(':', "").to_lowercase())
             .find(|m| m.len() == 12 && m != "000000000000")

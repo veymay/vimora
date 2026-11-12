@@ -355,7 +355,7 @@ impl eframe::App for OverlayApp {
         // Enter: fade in from black; leave: fade to black, then exit. Every frame is drawn while
         // that happens (the screen otherwise repaints only twice a second, which made the
         // background and the glow jump in instead of fading).
-        const LEAVE_SECS: f32 = 0.35;
+        const LEAVE_SECS: f32 = 0.15;
         let leave = self
             .shared
             .lock()
@@ -366,7 +366,7 @@ impl eframe::App for OverlayApp {
         if leave >= 1.0 {
             std::process::exit(0);
         }
-        let entering = self.started.elapsed() < Duration::from_millis(900);
+        let entering = self.started.elapsed() < Duration::from_millis(400);
         if entering || leave > 0.0 {
             ctx.request_repaint_after(Duration::from_millis(16));
         }
@@ -484,8 +484,8 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
     let p = vimora_ui::DARK;
     let rect = ui.max_rect();
     let painter = ui.painter();
-    // Ease-out fade in over 0.6 s, ease-in fade out while leaving.
-    let t_in = (v.time / 0.6).clamp(0.0, 1.0);
+    // Ease-out fade in over 0.25 s, ease-in fade out while leaving.
+    let t_in = (v.time / 0.25).clamp(0.0, 1.0);
     let fade = (1.0 - (1.0 - t_in).powi(3)) * (1.0 - v.leave * v.leave);
 
     // Background: a calm vertical gradient with a soft green glow behind the lock tile.

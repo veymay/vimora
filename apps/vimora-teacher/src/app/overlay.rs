@@ -357,7 +357,7 @@ impl TeacherApp {
         );
         let (title, width) = match dialog {
             Dialog::Message { .. } => (tr("Xabarlar"), 460.0),
-            Dialog::Launch { .. } => (tr("Sayt yoki dasturni ochish"), 520.0),
+            Dialog::Launch { .. } => (tr("Buyruq"), 520.0),
             Dialog::File(_) => (tr("Fayl yuborish"), 500.0),
             Dialog::Net { .. } => (tr("Bloklash"), 540.0),
             Dialog::Power(_) => (tr("Kompyuterlarni boshqarish"), 540.0),
@@ -400,7 +400,7 @@ impl TeacherApp {
         };
         let header_icon = match dialog {
             Dialog::Message { .. } => icons::MESSAGE_SQUARE_TEXT,
-            Dialog::Launch { .. } => icons::GLOBE,
+            Dialog::Launch { .. } => icons::TERMINAL,
             Dialog::File(_) => icons::FILE_UP,
             Dialog::Net { .. } => icons::SHIELD_BAN,
             Dialog::Power(_) => icons::POWER,

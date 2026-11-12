@@ -25,6 +25,7 @@ const CLIENT_FILES: &[&str] = &[
     "overlay-plan-2",
     "lock-state.json",
     "app-rules.json",
+    "machine-id",
 ];
 
 /// Where the marker "uninstall after the restart" is kept.

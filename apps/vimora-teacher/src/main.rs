@@ -62,7 +62,10 @@ fn main() -> eframe::Result<()> {
         .with_app_id("vimora-teacher")
         .with_inner_size(MIN_WINDOW)
         .with_min_inner_size(MIN_WINDOW)
-        .with_resizable(false)
+        // Resizable from the start: fullscreen then happens in one step, from where the window
+        // is (making it resizable first made X11 window managers move it to the corner). The
+        // size itself stays fixed: `keep_window_size` snaps it back.
+        .with_resizable(true)
         .with_maximize_button(false);
     if let Ok(icon) =
         eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/brand/vimora-256.png"))

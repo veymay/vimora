@@ -783,36 +783,25 @@ impl TeacherApp {
     /// half-resized teacher would squeeze the navbar. Dragging an edge snaps back.
     /// The only way to change the window's size: fullscreen on / off (F11 or the status bar).
     pub(super) fn toggle_fullscreen(&mut self, ctx: &egui::Context) {
-        let full = self.fullscreen;
-        self.fullscreen = !full;
-        if full {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
-        } else {
-            // A window that can't be resized can't go fullscreen either (X11 window managers
-            // only move it to the corner): make it resizable first, then go fullscreen a moment
-            // later, once the window manager has seen the new size limits.
-            ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
-            ctx.send_viewport_cmd(egui::ViewportCommand::MaxInnerSize(egui::vec2(
-                16384.0, 16384.0,
-            )));
-        }
+        self.fullscreen = !self.fullscreen;
+        // Straight from where the window is, in one step.
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.fullscreen));
+        // The size keeper waits until the window manager is done.
         self.fs_step = Some(Instant::now());
         ctx.request_repaint();
     }
 
-    /// Second half of [`toggle_fullscreen`], a few frames later.
+    /// After a fullscreen change: let the size keeper work again once it settled; back from
+    /// fullscreen, the window returns to its fixed size.
     fn finish_fullscreen(&mut self, ctx: &egui::Context) {
         let Some(t) = self.fs_step else { return };
-        if t.elapsed() < Duration::from_millis(150) {
+        if t.elapsed() < Duration::from_millis(300) {
             ctx.request_repaint_after(Duration::from_millis(50));
             return;
         }
         self.fs_step = None;
-        if self.fullscreen {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
-        } else {
+        if !self.fullscreen {
             ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(crate::MIN_WINDOW.into()));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
         }
     }
 
