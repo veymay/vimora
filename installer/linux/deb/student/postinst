@@ -1,11 +1,18 @@
 #!/bin/sh
 set -e
 if [ "$1" = configure ]; then
-    ln -sf /opt/vimora/bin/vimora-client /usr/local/bin/vimora-client
+    ln -sf /opt/vimora/bin/vimora-student /usr/local/bin/vimora-student
+    # Up to 0.3.27 the program was called vimora-client: programs still running under that
+    # name restart through this link and land on the new one.
+    rm -f /usr/local/bin/vimora-client
+    ln -sf /opt/vimora/bin/vimora-student /opt/vimora/bin/vimora-client
     # Writes /etc/vimora (keeps an existing pairing and name), installs and (re)starts
     # vimora-service.service — the root part: Shadow, updates, NetControl.
-    /opt/vimora/bin/vimora-client setup || echo "vimora: service setup failed" >&2
+    /opt/vimora/bin/vimora-student setup || echo "vimora: service setup failed" >&2
     chmod 644 /etc/vimora/client.json 2>/dev/null || true
+    # Files the teacher sends: inside Vimora's own folder, writable by every user (sticky).
+    mkdir -p /opt/vimora/files
+    chmod 1777 /opt/vimora/files
     # Update check on its own timer, apart from the service (signed releases only).
     rm -f /opt/vimora/bin/vimora-updater
     cat > /etc/systemd/system/vimora-updater.service <<'UNIT'
@@ -16,7 +23,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/vimora/bin/vimora-client update-now
+ExecStart=/opt/vimora/bin/vimora-student update-now
 UNIT
     cat > /etc/systemd/system/vimora-updater.timer <<'UNIT'
 [Unit]

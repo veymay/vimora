@@ -4716,7 +4716,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
-name = "vimora-client"
+name = "vimora-core"
+version = "0.3.27"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "ed25519-dalek",
+ "if-addrs",
+ "image",
+ "rand 0.8.8",
+ "serde",
+ "sha2",
+ "tokio",
+ "windows-sys 0.59.0",
+ "x11rb",
+]
+
+[[package]]
+name = "vimora-student"
 version = "0.3.27"
 dependencies = [
  "anyhow",
@@ -4744,24 +4761,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "vimora-core"
-version = "0.3.27"
-dependencies = [
- "anyhow",
- "bincode",
- "ed25519-dalek",
- "if-addrs",
- "image",
- "rand 0.8.8",
- "serde",
- "sha2",
- "tokio",
- "windows-sys 0.59.0",
- "x11rb",
-]
-
-[[package]]
-name = "vimora-server"
+name = "vimora-teacher"
 version = "0.3.27"
 dependencies = [
  "anyhow",

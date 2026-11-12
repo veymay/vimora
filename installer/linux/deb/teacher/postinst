@@ -1,8 +1,11 @@
 #!/bin/sh
 set -e
 if [ "$1" = configure ]; then
-    ln -sf /opt/vimora/bin/vimora-server /usr/local/bin/vimora-server
-    # Student computers connect to the console on TCP 47801.
+    ln -sf /opt/vimora/bin/vimora-teacher /usr/local/bin/vimora-teacher
+    # Up to 0.3.27 the program was called vimora-server.
+    rm -f /usr/local/bin/vimora-server
+    ln -sf /opt/vimora/bin/vimora-teacher /opt/vimora/bin/vimora-server
+    # Student computers connect to the teacher program on TCP 47801.
     if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
         ufw allow 47801/tcp >/dev/null || true
     fi

@@ -1,4 +1,4 @@
-//! Notification-area ("tray") icon with a small menu, for the console and the student agent.
+//! Notification-area ("tray") icon with a small menu, for the teacher and the student agent.
 //!
 //! * Windows: `tray-icon` on its own thread with its own message loop.
 //! * Linux: StatusNotifierItem over D-Bus (`ksni`, pure Rust) — shown by Ubuntu's AppIndicator
@@ -48,10 +48,13 @@ pub enum Event {
     Open,
     /// A menu item was chosen (its id).
     Menu(&'static str),
+    /// A tray without menu items: the icon was clicked (left or right) at this screen position
+    /// (pixels).
+    Click(i32, i32),
 }
 
 pub struct Spec {
-    /// Stable id ("vimora-console", "vimora-agent").
+    /// Stable id ("vimora-teacher", "vimora-agent").
     pub id: &'static str,
     pub title: String,
     pub tooltip: String,
@@ -117,8 +120,12 @@ mod imp {
                 ..Default::default()
             }
         }
-        fn activate(&mut self, _x: i32, _y: i32) {
-            (self.cb)(Event::Open);
+        fn activate(&mut self, x: i32, y: i32) {
+            if self.spec.items.is_empty() {
+                (self.cb)(Event::Click(x, y));
+            } else {
+                (self.cb)(Event::Open);
+            }
         }
         fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
             self.spec
@@ -211,12 +218,15 @@ mod imp {
                     Err(e) => return tracing::warn!("tray icon: {e}"),
                 };
                 let mut items = spec.items.clone();
-                let tray = match TrayIconBuilder::new()
+                // No items: no menu — every click (left or right) is reported with its position.
+                let clicks_only = items.is_empty();
+                let mut builder = TrayIconBuilder::new()
                     .with_icon(icon)
-                    .with_tooltip(&spec.tooltip)
-                    .with_menu(Box::new(menu(&items)))
-                    .build()
-                {
+                    .with_tooltip(&spec.tooltip);
+                if !clicks_only {
+                    builder = builder.with_menu(Box::new(menu(&items)));
+                }
+                let tray = match builder.build() {
                     Ok(t) => t,
                     Err(e) => return tracing::warn!("tray: {e}"),
                 };
@@ -231,12 +241,19 @@ mod imp {
                     }
                     while let Ok(ev) = TrayIconEvent::receiver().try_recv() {
                         if let TrayIconEvent::Click {
-                            button: MouseButton::Left,
+                            button,
                             button_state: MouseButtonState::Up,
+                            position,
                             ..
                         } = ev
                         {
-                            cb(Event::Open);
+                            if clicks_only {
+                                if matches!(button, MouseButton::Left | MouseButton::Right) {
+                                    cb(Event::Click(position.x as i32, position.y as i32));
+                                }
+                            } else if button == MouseButton::Left {
+                                cb(Event::Open);
+                            }
                         }
                     }
                     while let Ok(ev) = MenuEvent::receiver().try_recv() {
@@ -251,8 +268,10 @@ mod imp {
                                 let _ = tray.set_tooltip(Some(&t));
                             }
                             Ok(Update::Items(new)) => {
-                                tray.set_menu(Some(Box::new(menu(&new))));
-                                items = new;
+                                if !clicks_only {
+                                    tray.set_menu(Some(Box::new(menu(&new))));
+                                    items = new;
+                                }
                             }
                             Err(mpsc::TryRecvError::Empty) => break,
                             // Owner gone: remove the icon.

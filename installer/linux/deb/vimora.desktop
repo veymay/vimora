@@ -1,14 +1,14 @@
 [Desktop Entry]
 Type=Application
 Name=Vimora
-GenericName=Teacher console
-GenericName[uz]=O'qituvchi konsoli
-GenericName[ru]=Консоль учителя
+GenericName=Teacher
+GenericName[uz]=O'qituvchi
+GenericName[ru]=Учитель
 Comment=Classroom management
 Comment[uz]=Kompyuter xonalarini boshqarish
 Comment[ru]=Управление компьютерным классом
-Exec=/opt/vimora/bin/vimora-server
+Exec=/opt/vimora/bin/vimora-teacher
 Icon=vimora
 Terminal=false
 Categories=Education;Network;
-StartupWMClass=vimora-server
+StartupWMClass=vimora-teacher

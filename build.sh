@@ -73,9 +73,9 @@ echo "Tayyor. Versiya: $VER"
 # --- Ubuntu ----------------------------------------------------------------------------------
 if [[ $WHAT != windows ]]; then
   step "Ubuntu: dastur yig'ilmoqda (glibc $GLIBC uchun)"
-  run cargo zigbuild --release --target "x86_64-unknown-linux-gnu.$GLIBC" -p vimora-server -p vimora-client
+  run cargo zigbuild --release --target "x86_64-unknown-linux-gnu.$GLIBC" -p vimora-teacher -p vimora-student
   step "Ubuntu: .deb paketlar"
-  for pkg in vimora-server vimora-client; do
+  for pkg in vimora-teacher vimora-student; do
     run cargo deb -p "$pkg" --no-build --target x86_64-unknown-linux-gnu --output dist/
   done
   # Check what we promise: no glibc symbol newer than the target.
@@ -91,7 +91,7 @@ if [[ $WHAT != linux ]]; then
   step "Windows: dastur yig'ilmoqda"
   # Static C runtime: the programs need only the DLLs every Windows has.
   RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-static-libgcc" \
-    run cargo build --release --target x86_64-pc-windows-gnu -p vimora-server -p vimora-client
+    run cargo build --release --target x86_64-pc-windows-gnu -p vimora-teacher -p vimora-student
   step "Windows: o'rnatuvchi (NSIS)"
   run makensis -V2 -DVERSION="$VER" \
     -DBINDIR="../../target/x86_64-pc-windows-gnu/release" \

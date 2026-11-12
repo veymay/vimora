@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Vimora
+Exec=/opt/vimora/bin/vimora-student
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Phase=Applications

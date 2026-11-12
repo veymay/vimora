@@ -1,19 +1,19 @@
 //! Zero-configuration pairing: no key or port to type in.
 //!
-//! * The console creates an **Ed25519 identity** on first start and keeps the secret half.
-//! * A student PC **pins** the public key of the first console it connects to (trust on first
-//!   use) and from then on obeys only that console — every session and every privileged command
+//! * The teacher creates an **Ed25519 identity** on first start and keeps the secret half.
+//! * A student PC **pins** the public key of the first teacher it connects to (trust on first
+//!   use) and from then on obeys only that teacher — every session and every privileged command
 //!   must carry a valid signature from it.
 //!
-//! So installing the agent is enough for it to appear in the console, while a student who
-//! starts their own console on the same network still can't control anyone's PC.
+//! So installing the agent is enough for it to appear in the teacher, while a student who
+//! starts their own teacher on the same network still can't control anyone's PC.
 
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 
-/// A console's public key (what student PCs pin).
-pub type ConsoleKey = [u8; 32];
+/// A teacher's public key (what student PCs pin).
+pub type TeacherKey = [u8; 32];
 
 pub fn nonce() -> Vec<u8> {
     let mut n = vec![0u8; 32];
@@ -21,7 +21,7 @@ pub fn nonce() -> Vec<u8> {
     n
 }
 
-/// The console's secret identity.
+/// The teacher's secret identity.
 pub struct Identity(SigningKey);
 
 impl Identity {
@@ -41,7 +41,7 @@ impl Identity {
         to_hex(&self.0.to_bytes())
     }
 
-    pub fn public(&self) -> ConsoleKey {
+    pub fn public(&self) -> TeacherKey {
         self.0.verifying_key().to_bytes()
     }
 
@@ -49,17 +49,17 @@ impl Identity {
         self.0.sign(&message(parts)).to_bytes().to_vec()
     }
 
-    /// Proves to a student PC that this session comes from the pinned console.
-    pub fn sign_welcome(&self, client_nonce: &[u8], server_nonce: &[u8]) -> Vec<u8> {
-        self.sign(&[b"vimora-welcome", client_nonce, server_nonce])
+    /// Proves to a student PC that this session comes from the pinned teacher.
+    pub fn sign_welcome(&self, student_nonce: &[u8], teacher_nonce: &[u8]) -> Vec<u8> {
+        self.sign(&[b"vimora-welcome", student_nonce, teacher_nonce])
     }
 
     /// Signs a privileged command, bound to the session nonce and an increasing counter
     /// (no replay into another session, no replay at all).
-    pub fn sign_priv(&self, client_nonce: &[u8], counter: u64, payload: &[u8]) -> Vec<u8> {
+    pub fn sign_priv(&self, student_nonce: &[u8], counter: u64, payload: &[u8]) -> Vec<u8> {
         self.sign(&[
             b"vimora-priv",
-            client_nonce,
+            student_nonce,
             &counter.to_be_bytes(),
             payload,
         ])
@@ -76,7 +76,7 @@ fn message(parts: &[&[u8]]) -> Vec<u8> {
     m
 }
 
-fn verify(key: &ConsoleKey, parts: &[&[u8]], sig: &[u8]) -> bool {
+fn verify(key: &TeacherKey, parts: &[&[u8]], sig: &[u8]) -> bool {
     let (Ok(vk), Ok(sig)) = (VerifyingKey::from_bytes(key), Signature::from_slice(sig)) else {
         return false;
     };
@@ -84,17 +84,17 @@ fn verify(key: &ConsoleKey, parts: &[&[u8]], sig: &[u8]) -> bool {
 }
 
 pub fn verify_welcome(
-    key: &ConsoleKey,
-    client_nonce: &[u8],
-    server_nonce: &[u8],
+    key: &TeacherKey,
+    student_nonce: &[u8],
+    teacher_nonce: &[u8],
     sig: &[u8],
 ) -> bool {
-    verify(key, &[b"vimora-welcome", client_nonce, server_nonce], sig)
+    verify(key, &[b"vimora-welcome", student_nonce, teacher_nonce], sig)
 }
 
 pub fn verify_priv(
-    key: &ConsoleKey,
-    client_nonce: &[u8],
+    key: &TeacherKey,
+    student_nonce: &[u8],
     counter: u64,
     payload: &[u8],
     sig: &[u8],
@@ -103,7 +103,7 @@ pub fn verify_priv(
         key,
         &[
             b"vimora-priv",
-            client_nonce,
+            student_nonce,
             &counter.to_be_bytes(),
             payload,
         ],
@@ -112,7 +112,7 @@ pub fn verify_priv(
 }
 
 /// Short human-readable fingerprint, e.g. "3F2A-91C0-7B44".
-pub fn fingerprint(key: &ConsoleKey) -> String {
+pub fn fingerprint(key: &TeacherKey) -> String {
     let h = Sha256::digest(key);
     let hex = to_hex(&h[..6]).to_uppercase();
     format!("{}-{}-{}", &hex[0..4], &hex[4..8], &hex[8..12])
@@ -133,7 +133,7 @@ pub fn from_hex(s: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-pub fn key_from_hex(s: &str) -> Option<ConsoleKey> {
+pub fn key_from_hex(s: &str) -> Option<TeacherKey> {
     from_hex(s)?.try_into().ok()
 }
 

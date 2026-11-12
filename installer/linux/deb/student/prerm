@@ -7,8 +7,8 @@ if [ "$1" = remove ]; then
     rm -f /etc/systemd/system/vimora-service.service
     rm -f /etc/systemd/system/vimora-updater.service /etc/systemd/system/vimora-updater.timer
     systemctl daemon-reload 2>/dev/null || true
-    pkill -x vimora-client 2>/dev/null || true
+    pkill -x vimora-student 2>/dev/null || true
     # Nothing of Vimora may stay: settings it changed, pairing, every user's files.
-    /opt/vimora/bin/vimora-client purge 2>/dev/null || true
+    /opt/vimora/bin/vimora-student purge 2>/dev/null || true
 fi
 #DEBHELPER#

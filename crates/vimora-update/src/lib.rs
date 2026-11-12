@@ -4,13 +4,13 @@
 //!
 //! | file                                  | used by                         |
 //! |---------------------------------------|---------------------------------|
-//! | `vimora-<v>-windows-x64-setup.exe`    | Windows console and agent       |
-//! | `vimora-teacher_<v>_amd64.deb`        | Ubuntu console                  |
+//! | `vimora-<v>-windows-x64-setup.exe`    | Windows teacher and agent       |
+//! | `vimora-teacher_<v>_amd64.deb`        | Ubuntu teacher                  |
 //! | `vimora-student_<v>_amd64.deb`        | Ubuntu agent (installed by the service) |
 //!
 //! Every download is checked against `SHA256SUMS` before it is run, and `SHA256SUMS` itself must
 //! carry a valid signature (`SHA256SUMS.sig`) made with the project's release key: nobody else
-//! can make the computers install anything — not a changed GitHub release, not a fake console on
+//! can make the computers install anything — not a changed GitHub release, not a fake teacher on
 //! the network. Files are found by their name pattern, so later renames of versions keep working.
 
 use anyhow::{bail, Context, Result};
@@ -159,7 +159,7 @@ pub fn current() -> &'static str {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
-    /// Teacher console.
+    /// Teacher.
     Teacher,
     /// Student agent + service.
     Student,
@@ -375,7 +375,7 @@ pub fn download(
     download_package(rel, role, dir, progress).map(|p| p.path)
 }
 
-/// [`download`], keeping the signed list (a console passes it on to computers without internet).
+/// [`download`], keeping the signed list (a teacher passes it on to computers without internet).
 pub fn download_package(
     rel: &Release,
     role: Role,
@@ -385,7 +385,7 @@ pub fn download_package(
     download_target(rel, Target::here(role), dir, progress)
 }
 
-/// The installer for any `target` (a console fetches the students' one), checked.
+/// The installer for any `target` (a teacher fetches the students' one), checked.
 pub fn download_target(
     rel: &Release,
     target: Target,
@@ -420,7 +420,7 @@ pub fn download_target(
     })
 }
 
-/// Checks a package that came from elsewhere (a console on the network): the signature of its
+/// Checks a package that came from elsewhere (a teacher on the network): the signature of its
 /// list, its SHA-256, and that it is newer than this build. Returns its version.
 pub fn verify_package(name: &str, data: &[u8], sums: &str, sig: &str) -> Result<String> {
     verify_sums(sums.as_bytes(), sig)?;
@@ -480,10 +480,10 @@ pub fn clear_old(dir: &Path) {
     }
 }
 
-/// Starts installing a downloaded console update. On Windows the installer takes over (the caller
+/// Starts installing a downloaded teacher update. On Windows the installer takes over (the caller
 /// should exit right away); on Ubuntu this waits for `pkexec apt-get install` (password prompt)
 /// and returns once the new version is on disk.
-pub fn install_console(path: &Path) -> Result<()> {
+pub fn install_teacher(path: &Path) -> Result<()> {
     #[cfg(windows)]
     {
         std::process::Command::new(path)
@@ -492,7 +492,7 @@ pub fn install_console(path: &Path) -> Result<()> {
                 "/SUPPRESSMSGBOXES",
                 "/NORESTART",
                 "/TYPE=teacher",
-                "/COMPONENTS=console",
+                "/COMPONENTS=teacher",
             ])
             .spawn()
             .context("o'rnatuvchini ishga tushirib bo'lmadi")?;

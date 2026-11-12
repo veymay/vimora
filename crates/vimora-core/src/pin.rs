@@ -1,8 +1,8 @@
 //! Offline unlock code for the lock screen.
 //!
-//! The teacher sets a short numeric code; the console sends the student PCs only a salted,
+//! The teacher sets a short numeric code; the teacher sends the student PCs only a salted,
 //! iterated SHA-256 hash of it. The lock screen checks what a student types against that hash,
-//! so the screen can still be opened when the console or the network is gone.
+//! so the screen can still be opened when the teacher or the network is gone.
 
 use sha2::{Digest, Sha256};
 

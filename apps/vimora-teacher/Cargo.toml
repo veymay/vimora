@@ -1,0 +1,61 @@
+[package]
+name = "vimora-teacher"
+description = "Vimora teacher program"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "vimora-teacher"
+path = "src/main.rs"
+
+[dependencies]
+vimora-core.workspace = true
+vimora-ui.workspace = true
+vimora-update.workspace = true
+vimora-tray.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+bincode.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+eframe.workspace = true
+egui.workspace = true
+image.workspace = true
+dirs.workspace = true
+hostname.workspace = true
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+# Wayland screen capture for presenting: the desktop portal hands out a PipeWire stream.
+ashpd = "0.11"
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+# Ubuntu/Debian package: `cargo deb -p vimora-teacher` → vimora-teacher_<v>_amd64.deb
+[package.metadata.deb]
+name = "vimora-teacher"
+maintainer = "VEYMAY"
+copyright = "2026, VEYMAY"
+extended-description = "Vimora teacher program: watch, lock and control the student computers of a classroom on the same network."
+section = "education"
+priority = "optional"
+revision = ""
+depends = "$auto, libgl1, libxkbcommon0, libx11-6, libxcursor1, libxrandr2, libxi6"
+recommends = "pkexec | policykit-1, gstreamer1.0-tools, gstreamer1.0-pipewire, gstreamer1.0-plugins-good, gstreamer1.0-plugins-base"
+maintainer-scripts = "../../installer/linux/deb/teacher/"
+assets = [
+    ["target/release/vimora-teacher", "opt/vimora/bin/", "755"],
+    ["../../installer/linux/deb/vimora.desktop", "usr/share/applications/vimora.desktop", "644"],
+    ["../../installer/linux/deb/vimora-autostart.desktop", "etc/xdg/autostart/vimora-teacher.desktop", "644"],
+    ["../../assets/brand/vimora.svg", "usr/share/icons/hicolor/scalable/apps/vimora.svg", "644"],
+    ["../../assets/brand/vimora-256.png", "usr/share/icons/hicolor/256x256/apps/vimora.png", "644"],
+]

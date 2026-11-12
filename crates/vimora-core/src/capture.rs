@@ -64,7 +64,7 @@ pub fn encode_jpeg(frame: &Frame, max_width: u32, quality: u8) -> Result<(u32, u
     Ok((w, h, out))
 }
 
-/// Decode a JPEG into RGBA (used by the console for thumbnails and by the student for "show").
+/// Decode a JPEG into RGBA (used by the teacher for thumbnails and by the student for "show").
 pub fn decode_jpeg(data: &[u8]) -> Result<Frame> {
     let img = image::load_from_memory_with_format(data, image::ImageFormat::Jpeg)?.to_rgba8();
     let (width, height) = img.dimensions();
@@ -219,7 +219,7 @@ mod imp {
             {
                 Ok(r) => r,
                 Err(e) if std::env::var("XDG_SESSION_TYPE").is_ok_and(|t| t == "wayland") => {
-                    // The console turns this marker into a plain-language hint.
+                    // The teacher turns this marker into a plain-language hint.
                     let _ = &e;
                     bail!("WAYLAND")
                 }

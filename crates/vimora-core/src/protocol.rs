@@ -1,4 +1,4 @@
-//! Wire protocol shared by the teacher console (server) and the student agent (client).
+//! Wire protocol shared by the teacher (server) and the student agent (student).
 //!
 //! Every message is a bincode-encoded enum, framed with a big-endian `u32` length prefix
 //! (see [`crate::net`]).
@@ -13,25 +13,25 @@ pub const PROTOCOL_VERSION: u32 = 10;
 /// Oldest wire family this build still talks to.
 pub const MIN_PROTOCOL_VERSION: u32 = 10;
 
-/// UDP port the teacher console broadcasts discovery beacons on.
+/// UDP port the teacher broadcasts discovery beacons on.
 pub const DISCOVERY_PORT: u16 = 47800;
-/// Default TCP port the teacher console listens on.
+/// Default TCP port the teacher listens on.
 pub const DEFAULT_TCP_PORT: u16 = 47801;
 /// Magic prefix of discovery beacons.
 pub const BEACON_MAGIC: &[u8; 8] = b"VIMORA01";
 
-/// Broadcast by the teacher console so students on the LAN can find it.
+/// Broadcast by the teacher so students on the LAN can find it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Beacon {
     pub version: u32,
     pub server_name: String,
     pub tcp_port: u16,
-    /// The console's public key: paired PCs connect only to the console they pinned.
-    pub console_key: crate::auth::ConsoleKey,
+    /// The teacher's public key: paired PCs connect only to the teacher they pinned.
+    pub teacher_key: crate::auth::TeacherKey,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct ClientInfo {
+pub struct StudentInfo {
     pub hostname: String,
     pub username: String,
     pub os: String,
@@ -42,8 +42,8 @@ pub struct ClientInfo {
     pub machine_id: String,
 }
 
-impl ClientInfo {
-    /// Stable key the console uses for rooms and names.
+impl StudentInfo {
+    /// Stable key the teacher uses for rooms and names.
     pub fn key(&self) -> String {
         let base = if self.machine_id.is_empty() {
             self.hostname.as_str()
@@ -57,14 +57,14 @@ impl ClientInfo {
     }
 }
 
-impl ClientInfo {
+impl StudentInfo {
     pub fn label(&self) -> &str {
         self.display_name.as_deref().unwrap_or(&self.hostname)
     }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct ClientStatus {
+pub struct StudentStatus {
     pub locked: bool,
     pub showing_teacher: bool,
     pub app_blocklist: usize,
@@ -176,7 +176,7 @@ pub enum FreezeAction {
 pub enum OsUpdateMode {
     /// Windows installs updates by itself.
     Auto,
-    /// Only download/notify; the teacher installs from the console.
+    /// Only download/notify; the teacher installs from the teacher.
     #[default]
     Manual,
     /// Windows Update / unattended-upgrades off.
@@ -197,7 +197,7 @@ fn yes() -> bool {
     true
 }
 
-/// Commands that need administrator/root rights. They are signed by the console and executed
+/// Commands that need administrator/root rights. They are signed by the teacher and executed
 /// by the privileged Vimora service, so a student can't fake them locally.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PrivCommand {
@@ -216,7 +216,7 @@ pub enum PrivCommand {
     },
     Power(PowerAction),
     SetNetPolicy(NetPolicy),
-    /// Collect the installed applications (reported with `ClientMsg::Apps`).
+    /// Collect the installed applications (reported with `StudentMsg::Apps`).
     ListApps,
     /// Allow / forbid updates per application id.
     SetAppUpdates(Vec<(String, bool)>),
@@ -231,17 +231,17 @@ pub enum PrivCommand {
     // builds keep understanding each other.
     /// Password of the Shadow Defender installed on the student PC (Windows).
     SetShadowPassword(String),
-    /// List what the Shadow overlay holds (reported with `ClientMsg::Changes`).
+    /// List what the Shadow overlay holds (reported with `StudentMsg::Changes`).
     ListChanges,
     /// Make these paths survive restarts (a "commit" in the Shadow overlay).
     CommitPaths(Vec<String>),
-    /// Forget the paired console: the next console found may pair with this PC.
+    /// Forget the paired teacher: the next teacher found may pair with this PC.
     Unpair,
     /// Which write filter "freezing" uses on Windows: 0 = automatic (Shadow Defender if it is
     /// installed, else UWF), 1 = Shadow Defender, 2 = Unified Write Filter.
     SetShieldEngine(u8),
     /// What the student may use: USB drives, CD/DVD, printer, camera, microphone, Bluetooth,
-    /// sound. Kept until changed (also with no console connected).
+    /// sound. Kept until changed (also with no teacher connected).
     SetDevicePolicy(DevicePolicy),
     /// Stricter internet rules: internet off (the local network keeps working), only listed
     /// sites allowed, blocked network ports.
@@ -252,15 +252,17 @@ pub enum PrivCommand {
         start: bool,
     },
     /// Run a command as administrator (PowerShell on Windows, sh on Ubuntu); the output comes
-    /// back as the command result. Recorded in the console's activity log.
+    /// back as the command result. Recorded in the teacher's activity log.
     RunScript(String),
     /// Uninstall an application (id as in [`AppInfo::id`]), silently.
     UninstallApp(String),
+    /// Remove Vimora from this computer (only the teacher can; nothing is left behind).
+    UninstallVimora,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AccessPolicy {
-    /// No internet at all; the classroom network (console) keeps working.
+    /// No internet at all; the classroom network (teacher) keeps working.
     pub internet_off: bool,
     /// Only these sites open in browsers (empty = no such limit).
     pub allow_sites: Vec<String>,
@@ -426,7 +428,7 @@ pub enum Command {
     /// the next message.
     ChatEnd,
     // Append-only (see PrivCommand).
-    /// Code that opens the lock screen on the student PC without the console (internet lost).
+    /// Code that opens the lock screen on the student PC without the teacher (internet lost).
     /// Only a salted hash travels; `digits` = code length (the lock screen draws that many
     /// cells). An empty `hash` removes the code.
     UnlockCode {
@@ -439,7 +441,7 @@ pub enum Command {
     LockStyle {
         icon: String,
     },
-    /// Report the PC's technical state once ([`ClientMsg::SystemInfo`]); the console asks
+    /// Report the PC's technical state once ([`StudentMsg::SystemInfo`]); the teacher asks
     /// every couple of seconds while its "Kompyuter holati" drawer is open.
     GetSystemInfo,
     /// End a process (Task Manager's "End task").
@@ -454,10 +456,10 @@ pub enum Command {
     },
     /// Open a file the teacher sent (name as in `SendFile`).
     OpenFile(String),
-    /// Send back what is in the student's "Topshiriq" folder ([`ClientMsg::Collected`]).
+    /// Send back what is in the student's "Topshiriq" folder ([`StudentMsg::Collected`]).
     CollectFiles,
     /// A quick question: answer with one of `options`, or with text when there are none
-    /// ([`ClientMsg::PollAnswer`]).
+    /// ([`StudentMsg::PollAnswer`]).
     Poll {
         id: u32,
         question: String,
@@ -470,13 +472,13 @@ pub enum Command {
         goal: String,
         end_unix: u64,
     },
-    /// Start a test in a fullscreen window ([`ClientMsg::TestResult`] when handed in).
+    /// Start a test in a fullscreen window ([`StudentMsg::TestResult`] when handed in).
     StartTest(TestDef),
     /// Time is up: hand in what is answered.
     EndTest,
-    /// Report antivirus, firewall, hardware, sessions and services ([`ClientMsg::SecurityInfo`]).
+    /// Report antivirus, firewall, hardware, sessions and services ([`StudentMsg::SecurityInfo`]).
     GetSecurityInfo,
-    /// A newer Vimora installer from the console (for computers without internet), with the
+    /// A newer Vimora installer from the teacher (for computers without internet), with the
     /// signed `SHA256SUMS` and its signature: the computer's service checks the signature against
     /// the release key built into it before installing.
     InstallUpdate {
@@ -484,6 +486,11 @@ pub enum Command {
         data: Vec<u8>,
         sums: String,
         sig: String,
+    },
+    /// Sent by the teacher program right after connecting: its computer's name (shown in the
+    /// student's tray window).
+    TeacherInfo {
+        name: String,
     },
 }
 
@@ -588,13 +595,13 @@ pub struct ProcInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ServerMsg {
+pub enum TeacherMsg {
     Hello {
         version: u32,
         nonce: Vec<u8>,
-        console_key: crate::auth::ConsoleKey,
+        teacher_key: crate::auth::TeacherKey,
     },
-    /// `sig` = console's signature over (client nonce, server nonce).
+    /// `sig` = teacher's signature over (student nonce, server nonce).
     Welcome {
         sig: Vec<u8>,
         stream: StreamConfig,
@@ -617,18 +624,18 @@ pub enum ServerMsg {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ClientMsg {
+pub enum StudentMsg {
     Hello {
         version: u32,
         nonce: Vec<u8>,
-        info: ClientInfo,
+        info: StudentInfo,
     },
     Frame {
         width: u32,
         height: u32,
         jpeg: Vec<u8>,
     },
-    Status(ClientStatus),
+    Status(StudentStatus),
     CommandResult {
         ok: bool,
         message: String,
@@ -671,12 +678,12 @@ pub enum ClientMsg {
         answers: Vec<TestAnswer>,
     },
     SecurityInfo(SecurityInfo),
-    /// Sent instead of `Hello` by a computer removed from its console: "I am free, add me".
-    /// The console lists it (in every console on the network) until a teacher adds it.
-    Free(ClientInfo),
+    /// Sent instead of `Hello` by a computer removed from its teacher: "I am free, add me".
+    /// The teacher lists it (in every teacher on the network) until a teacher adds it.
+    Free(StudentInfo),
 }
 
-/// Pointer shapes carried by [`ClientMsg::Cursor`].
+/// Pointer shapes carried by [`StudentMsg::Cursor`].
 pub mod cursor_kind {
     pub const ARROW: u8 = 0;
     pub const TEXT: u8 = 1;
@@ -723,9 +730,10 @@ mod wire_tests {
         assert_eq!(tag(&PrivCommand::SetAccessPolicy(Default::default())), 17);
         assert_eq!(tag(&PrivCommand::RunScript(String::new())), 19);
         assert_eq!(tag(&PrivCommand::UninstallApp(String::new())), 20);
-        assert_eq!(tag(&ClientMsg::SecurityInfo(Default::default())), 17);
+        assert_eq!(tag(&PrivCommand::UninstallVimora), 21);
+        assert_eq!(tag(&StudentMsg::SecurityInfo(Default::default())), 17);
         assert_eq!(
-            tag(&ClientMsg::Free(ClientInfo {
+            tag(&StudentMsg::Free(StudentInfo {
                 hostname: String::new(),
                 username: String::new(),
                 os: String::new(),
@@ -750,6 +758,12 @@ mod wire_tests {
             tag(&Command::ChatEnd) + 15
         );
         assert_eq!(
+            tag(&Command::TeacherInfo {
+                name: String::new()
+            }),
+            tag(&Command::ChatEnd) + 16
+        );
+        assert_eq!(
             tag(&Command::SetAppAllowlist(vec![])),
             tag(&Command::ChatEnd) + 5
         );
@@ -765,10 +779,10 @@ mod wire_tests {
             tag(&Command::ChatEnd) + 7
         );
         assert_eq!(tag(&Command::CollectFiles), tag(&Command::ChatEnd) + 8);
-        assert_eq!(tag(&ClientMsg::Collected(vec![])), 14);
+        assert_eq!(tag(&StudentMsg::Collected(vec![])), 14);
         assert_eq!(tag(&Command::EndTest), tag(&Command::ChatEnd) + 13);
         assert_eq!(
-            tag(&ClientMsg::TestResult {
+            tag(&StudentMsg::TestResult {
                 id: 0,
                 answers: vec![]
             }),
@@ -781,17 +795,17 @@ mod wire_tests {
             tag(&Command::ChatEnd) + 2
         );
         assert_eq!(
-            tag(&ClientMsg::Chat {
+            tag(&StudentMsg::Chat {
                 text: String::new()
             }),
             7
         );
-        assert_eq!(tag(&ClientMsg::Pong), 8);
-        assert_eq!(tag(&ClientMsg::Changes(vec![])), 9);
-        assert_eq!(tag(&ClientMsg::AgentVersion(String::new())), 10);
-        assert_eq!(tag(&ClientMsg::Cursor(0)), 11);
-        assert_eq!(tag(&ClientMsg::ChatRead), 12);
-        assert_eq!(tag(&ClientMsg::SystemInfo(Default::default())), 13);
+        assert_eq!(tag(&StudentMsg::Pong), 8);
+        assert_eq!(tag(&StudentMsg::Changes(vec![])), 9);
+        assert_eq!(tag(&StudentMsg::AgentVersion(String::new())), 10);
+        assert_eq!(tag(&StudentMsg::Cursor(0)), 11);
+        assert_eq!(tag(&StudentMsg::ChatRead), 12);
+        assert_eq!(tag(&StudentMsg::SystemInfo(Default::default())), 13);
         assert_eq!(tag(&Command::GetSystemInfo), tag(&Command::ChatEnd) + 3);
         assert_eq!(tag(&Command::KillProcess(0)), tag(&Command::ChatEnd) + 4);
         // Command: ChatEnd was the last one before the unlock code was added.

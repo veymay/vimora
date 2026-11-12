@@ -1,7 +1,8 @@
 #!/bin/sh
 set -e
 if [ "$1" = remove ] || [ "$1" = purge ]; then
-    rm -f /usr/local/bin/vimora-client
+    rm -f /usr/local/bin/vimora-student /opt/vimora/bin/vimora-client
+    rm -rf /opt/vimora/files
     # Give the network back: our hosts block and browser policies.
     if [ -f /etc/hosts ]; then
         sed -i '/^# >>> vimora netcontrol/,/^# <<< vimora netcontrol/d' /etc/hosts

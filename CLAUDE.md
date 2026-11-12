@@ -4,11 +4,14 @@ Open-source classroom management (NetSupport School / Veyon alternative), Rust +
 The owner writes in Uzbek; answer in Uzbek.
 
 ## Layout
-- `apps/vimora-server` – teacher console (egui). UI in `src/app/`: `navbar.rs` (navbar, tabs row,
+Only two programs exist: **teacher** and **student** (never "console", "client", "server",
+"agent" in texts or names; "o'qituvchi" / "o'quvchi" in Uzbek).
+- `apps/vimora-teacher` – the teacher program (egui). UI in `src/app/`: `navbar.rs` (navbar, tabs row,
   status bar), `grid.rs` (cards + list view, filters, context menu), `settings.rs`, `forms.rs`
   (dialogs), `overlay.rs`, `viewer.rs`. Translations: `src/i18n_table.rs` (Uzbek text is the key;
   every `tr()`/`tf!()` string needs a row, a test checks it).
-- `apps/vimora-client` – student agent. `crates/vimora-core` (protocol), `crates/vimora-ui`
+- `apps/vimora-student` – the student program (agent + privileged service, setup window
+  `wizard.rs`, tray window `about.rs`, small-window frame `smallwin.rs`, folders `layout.rs`). `crates/vimora-core` (protocol), `crates/vimora-ui`
   (design system: palette, fonts, icons, arrow popups), `crates/vimora-update` (self-update).
 - UI rules: no border radius anywhere, accent #7dba28, uppercase button/tab labels, constant font
   weight in every state, tooltips without delay (`.tip()` with an arrow).
@@ -35,7 +38,21 @@ touching the real console: run both inside `unshare -rn` with a veth pair (`ip a
     missing tools with winget). `build.bat upload` / `windows-release.bat` also upload the `.exe`
     to the existing `v<ver>` release and update its `SHA256SUMS` (needs `gh`).
   - The NSIS installer takes the silent switches the self-updater passes
-    (`/VERYSILENT /TYPE=student ...`). The Inno Setup script `vimora.iss` is only a fallback.
+    (`/VERYSILENT /TYPE=student ...`, plus `/LANG=uz|ru|en`, `/LAUNCH`). Interactive runs open
+    `vimora-student setup-wizard <installer>` (language with flags → teacher/student → silent
+    install); exit code 2 = no window possible, then the plain NSIS page is shown.
+  - Windows folder: `C:\Program Files (x86)\Vimora` (fixed). Up to 0.3.27: `C:\Program Files\Vimora`
+    with `vimora-client.exe` / `vimora-server.exe`. The installer moves such PCs, except a frozen
+    student PC (`vimora-student is-frozen`): updated in place under the old name; the service
+    moves it once the freeze is off (`layout::migrate`). Keep both names in process checks.
+  - Student registrations (service tasks, Run `VimoraStudent`, firewall `Vimora Student`,
+    updater tasks, `Files` folder, hidden uninstall entry) are done by `vimora-student setup`,
+    not by NSIS, so the move can redo them. Files the teacher sends: `<install dir>\Files`
+    (Ubuntu `/opt/vimora/files`), no folder in Downloads.
+  - Only the teacher removes Vimora from a student PC (`PrivCommand::UninstallVimora` →
+    `uninstall.exe /S /BYTEACHER`); the uninstaller refuses without `/BYTEACHER`.
+  - Saved names that must not change: `service.json` field `console_key` (serde alias),
+    per-user files `paired-console`, `last-console`, `client.json`.
 - Release 0.3.8's `.deb` files were built before this and require glibc 2.44 (do not install on
   Ubuntu 22.04/24.04); rebuild with `./build.sh linux` before publishing.
 - Do not move or recreate existing tags; do not force push; ask before publishing releases.
@@ -45,7 +62,7 @@ touching the real console: run both inside `unshare -rn` with a veth pair (`ip a
   Losing the key = PCs never update again; to rotate, add the new public key to `RELEASE_KEYS`
   first and keep the old one for a long time. Every release must upload `SHA256SUMS.sig`.
 - Update paths on a PC: the service (every 30 min), the "Vimora Updater" tasks
-  (`vimora-client update-now`, boot + every 4 h) and the console's LAN push (`lanupdate.rs`,
+  (`vimora-student update-now`, boot + every 4 h) and the console's LAN push (`lanupdate.rs`,
   `Command::InstallUpdate`). Future installers must keep accepting
   `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TYPE=student /COMPONENTS=agent`, and asset names
   must keep matching `*windows*.exe` / `vimora-student*.deb`.
@@ -61,7 +78,7 @@ touching the real console: run both inside `unshare -rn` with a veth pair (`ip a
   builds); update all PCs to 0.3.4 or newer.
 - The agent is single-instance per user (`single.rs`): a new copy ends the previous one.
 - Student windows (lock screen, chat, popup) pick a graphics backend that works on the PC:
-  the agent runs `vimora-client ui-probe` with `VIMORA_RENDERER=glow`, then `wgpu`, and passes the
+  the agent runs `vimora-student ui-probe` with `VIMORA_RENDERER=glow`, then `wgpu`, and passes the
   winner to its children. A lock screen that dies at once switches backend and reports an alert.
 - Dev aids (agent): `VIMORA_OVERLAY_DEMO=<code>` shows the lock screen without a console
   (`VIMORA_OVERLAY_TYPE`, `VIMORA_OVERLAY_SCREENSHOT`).

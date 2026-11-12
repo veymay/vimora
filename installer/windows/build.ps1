@@ -72,7 +72,7 @@ try {
 
     # --- Yig'ish --------------------------------------------------------------------------------
     Step "Dastur yig'ilmoqda"
-    & $cargo build --release -p vimora-server -p vimora-client
+    & $cargo build --release -p vimora-teacher -p vimora-student
     if ($LASTEXITCODE -ne 0) { throw "cargo build xato bilan tugadi (yuqoridagi xabarga qarang)." }
 
     Step "O'rnatuvchi (NSIS)"

@@ -66,9 +66,9 @@ pub fn encode_beacon(b: &crate::protocol::Beacon) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-/// "Take this computer": sent by a console (UDP, to the free computer's discovery port) when
-/// the teacher adds a free computer. Carries the computer's key and the console's TCP port; the
-/// console's address is the datagram's source.
+/// "Take this computer": sent by a teacher (UDP, to the free computer's discovery port) when
+/// the teacher adds a free computer. Carries the computer's key and the teacher's TCP port; the
+/// teacher's address is the datagram's source.
 const CLAIM_MAGIC: &[u8; 8] = b"VIMCLM01";
 
 pub fn encode_claim(computer_key: &str, tcp_port: u16) -> Vec<u8> {
@@ -88,7 +88,7 @@ pub fn decode_claim(data: &[u8]) -> Option<(String, u16)> {
 /// broadcast (255.255.255.255) and the broadcast address of each IPv4 network this computer is
 /// on (e.g. 192.168.1.255). The limited broadcast alone fails on networks without a default
 /// gateway ("network unreachable"), and Windows sends it out one adapter only (often a
-/// VirtualBox / VPN one), so computers that are not paired yet never heard the console.
+/// VirtualBox / VPN one), so computers that are not paired yet never heard the teacher.
 pub fn broadcast_targets() -> Vec<std::net::Ipv4Addr> {
     let mut v = vec![std::net::Ipv4Addr::BROADCAST];
     for iface in if_addrs::get_if_addrs().unwrap_or_default() {
@@ -108,9 +108,9 @@ pub fn broadcast_targets() -> Vec<std::net::Ipv4Addr> {
     v
 }
 
-/// "Who is waiting to be added?": broadcast by a console when the teacher presses "Skanerlash".
-/// Computers that belong to no console answer at once with `ClientMsg::Free` over TCP to the
-/// datagram's source address and the console TCP port it carries.
+/// "Who is waiting to be added?": broadcast by a teacher when the teacher presses "Skanerlash".
+/// Computers that belong to no teacher answer at once with `StudentMsg::Free` over TCP to the
+/// datagram's source address and the teacher TCP port it carries.
 const SCAN_MAGIC: &[u8; 8] = b"VIMSCN01";
 
 pub fn encode_scan(tcp_port: u16) -> Vec<u8> {

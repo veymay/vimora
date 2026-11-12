@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/vimora-core", "crates/vimora-ui", "crates/vimora-update", "crates/vimora-tray", "apps/vimora-server", "apps/vimora-client"]
+members = ["crates/vimora-core", "crates/vimora-ui", "crates/vimora-update", "crates/vimora-tray", "apps/vimora-teacher", "apps/vimora-student"]
 
 [workspace.package]
 version = "0.3.27"

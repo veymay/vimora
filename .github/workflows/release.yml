@@ -32,7 +32,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build
-        run: cargo build --release -p vimora-server -p vimora-client
+        run: cargo build --release -p vimora-teacher -p vimora-student
       - name: Installer (Inno Setup)
         shell: pwsh
         run: |
@@ -64,12 +64,12 @@ jobs:
         with:
           tool: cargo-deb
       - name: Build
-        run: cargo build --release -p vimora-server -p vimora-client
+        run: cargo build --release -p vimora-teacher -p vimora-student
       - name: Packages (.deb)
         run: |
           mkdir -p dist
-          cargo deb -p vimora-server --no-build --output dist/
-          cargo deb -p vimora-client --no-build --output dist/
+          cargo deb -p vimora-teacher --no-build --output dist/
+          cargo deb -p vimora-student --no-build --output dist/
           ls -l dist
       - uses: actions/upload-artifact@v4
         with:

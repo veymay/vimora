@@ -41,15 +41,15 @@ Uch til (o'zbek, ingliz, rus), sichqoncha bilan belgilash (File Explorer kabi), 
 
 Ikki qism bor:
 
-- **`vimora-server`** — o'qituvchi kompyuteridagi konsol.
-- **`vimora-client`** — har bir o'quvchi kompyuteridagi agent.
+- **`vimora-teacher`** — o'qituvchi kompyuteridagi konsol.
+- **`vimora-student`** — har bir o'quvchi kompyuteridagi agent.
 
 Hech narsa sozlash shart emas: o'rnatsangiz bas. O'quvchi kompyuterlari konsolni tarmoqda
 (Wi-Fi yoki LAN) o'zi topadi va konsolda paydo bo'ladi — xonalarga o'qituvchi o'zi taqsimlaydi.
 
 Har bir kompyuter **birinchi topgan konsoliga bog'lanadi** va keyin faqat unga bo'ysunadi —
 boshqa kompyuterda ochilgan konsol uni boshqara olmaydi. Konsolni almashtirish kerak bo'lsa,
-o'quvchi kompyuterida administrator sifatida `vimora-client unpair` ni ishga tushiring.
+o'quvchi kompyuterida administrator sifatida `vimora-student unpair` ni ishga tushiring.
 
 ---
 
@@ -105,8 +105,8 @@ o'rnatiladi. Ubuntu paketlari Ubuntu 22.04 va undan yangilarida ishlaydi.
 [Rust](https://rustup.rs) kerak. Linux'da qo'shimcha paket shart emas.
 
 ```bash
-cargo run -p vimora-server                                 # konsol
-cargo run -p vimora-client -- --server 127.0.0.1:47801     # agent (sinov uchun)
+cargo run -p vimora-teacher                                 # konsol
+cargo run -p vimora-student -- --server 127.0.0.1:47801     # agent (sinov uchun)
 cargo test --workspace
 ```
 
@@ -114,8 +114,8 @@ cargo test --workspace
 crates/vimora-core   protokol, imzolangan ulanish, ekran olish
 crates/vimora-ui     dizayn: ranglar, shriftlar, ikonlar, tarjimalar
 crates/vimora-update GitHub Releases'dan o'zini yangilash
-apps/vimora-server   o'qituvchi konsoli
-apps/vimora-client   o'quvchi agenti + Vimora xizmati (Shadow, yangilanishlar, internet)
+apps/vimora-teacher   o'qituvchi konsoli
+apps/vimora-student   o'quvchi agenti + Vimora xizmati (Shadow, yangilanishlar, internet)
 installer/           Windows va Ubuntu o'rnatuvchilari
 ```
 
