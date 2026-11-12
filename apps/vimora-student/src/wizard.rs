@@ -13,7 +13,7 @@ use eframe::egui::{self, pos2, vec2, Align2, Color32, FontId, Rect, Sense, Strok
 use std::process::{Child, Command};
 use vimora_ui::{icons, Kind};
 
-const SIZE: [f32; 2] = [440.0, 330.0];
+const SIZE: [f32; 2] = [640.0, 380.0];
 /// Exit code of a window process whose graphics could not start.
 const NO_WINDOW: i32 = 3;
 
@@ -100,6 +100,21 @@ fn t(l: Lang, key: &str) -> &'static str {
         ("retry", Lang::Uz) => "Qayta urinish",
         ("retry", Lang::Ru) => "Повторить",
         ("retry", Lang::En) => "Try again",
+        ("next", Lang::Uz) => "Keyingi",
+        ("next", Lang::Ru) => "Далее",
+        ("next", Lang::En) => "Next",
+        ("install", Lang::Uz) => "O'rnatish",
+        ("install", Lang::Ru) => "Установить",
+        ("install", Lang::En) => "Install",
+        ("s_lang", Lang::Uz) => "Til",
+        ("s_lang", Lang::Ru) => "Язык",
+        ("s_lang", Lang::En) => "Language",
+        ("s_role", Lang::Uz) => "Dastur",
+        ("s_role", Lang::Ru) => "Программа",
+        ("s_role", Lang::En) => "Program",
+        ("s_install", Lang::Uz) => "O'rnatish",
+        ("s_install", Lang::Ru) => "Установка",
+        ("s_install", Lang::En) => "Install",
         _ => "",
     }
 }
@@ -115,6 +130,8 @@ enum Step {
 struct Wizard {
     installer: String,
     lang: Lang,
+    /// Chosen program: Some(true) teacher, Some(false) student.
+    role: Option<bool>,
     step: Step,
     exit: i32,
 }
@@ -130,12 +147,16 @@ fn window(installer: String) -> anyhow::Result<i32> {
             let mut w = Wizard {
                 installer,
                 lang: Lang::Uz,
+                role: None,
                 step: Step::Language,
                 exit: 1,
             };
             // Dev aid (screenshots): VIMORA_WIZARD_STEP=role|done.
             match std::env::var("VIMORA_WIZARD_STEP").as_deref() {
-                Ok("role") => w.step = Step::Role,
+                Ok("role") => {
+                    w.step = Step::Role;
+                    w.role = Some(false);
+                }
                 Ok("done") => w.step = Step::Done,
                 _ => {}
             }
@@ -198,11 +219,157 @@ impl Wizard {
         }
         let p = vimora_ui::palette(ctx);
         let l = self.lang;
+        let step_no = match self.step {
+            Step::Language => 0,
+            Step::Role => 1,
+            _ => 2,
+        };
+
+        // Left: the steps.
+        egui::SidePanel::left("steps")
+            .exact_width(170.0)
+            .resizable(false)
+            .frame(
+                egui::Frame::none()
+                    .fill(p.panel)
+                    .inner_margin(egui::Margin::same(20.0)),
+            )
+            .show(ctx, |ui| {
+                ui.add_space(4.0);
+                for (i, key) in ["s_lang", "s_role", "s_install"].into_iter().enumerate() {
+                    let (r, _) =
+                        ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::hover());
+                    let (ink, num_fill, num_ink) = match i.cmp(&step_no) {
+                        std::cmp::Ordering::Less => (p.muted, p.accent, p.invert_fg),
+                        std::cmp::Ordering::Equal => (p.strong, p.accent, p.invert_fg),
+                        std::cmp::Ordering::Greater => (p.faint, p.sunken, p.faint),
+                    };
+                    let dot = Rect::from_center_size(
+                        pos2(r.left() + 11.0, r.center().y),
+                        vec2(22.0, 22.0),
+                    );
+                    ui.painter().rect_filled(dot, 0.0, num_fill);
+                    ui.painter().text(
+                        dot.center(),
+                        Align2::CENTER_CENTER,
+                        if i < step_no {
+                            icons::CHECK.to_string()
+                        } else {
+                            (i + 1).to_string()
+                        },
+                        if i < step_no {
+                            FontId::proportional(12.0)
+                        } else {
+                            FontId::new(12.0, vimora_ui::mono_bold())
+                        },
+                        num_ink,
+                    );
+                    ui.painter().text(
+                        pos2(dot.right() + 12.0, r.center().y),
+                        Align2::LEFT_CENTER,
+                        t(l, key),
+                        FontId::new(13.5, vimora_ui::bold()),
+                        ink,
+                    );
+                    ui.add_space(6.0);
+                }
+            });
+
+        // Bottom: back / next.
+        egui::TopBottomPanel::bottom("nav")
+            .exact_height(56.0)
+            .frame(
+                egui::Frame::none()
+                    .fill(p.bg)
+                    .inner_margin(egui::Margin::symmetric(20.0, 11.0)),
+            )
+            .show(ctx, |ui| {
+                let r = ui.max_rect();
+                ui.painter()
+                    .hline(r.x_range(), r.top() - 11.0, Stroke::new(1.0_f32, p.line));
+                ui.horizontal(|ui| match &self.step {
+                    Step::Language => {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if vimora_ui::button(
+                                ui,
+                                Some(icons::CHEVRON_RIGHT),
+                                t(l, "next"),
+                                Kind::Primary,
+                            )
+                            .clicked()
+                            {
+                                self.step = Step::Role;
+                            }
+                        });
+                    }
+                    Step::Role => {
+                        if vimora_ui::button(
+                            ui,
+                            Some(icons::CHEVRON_LEFT),
+                            t(l, "back"),
+                            Kind::Outline,
+                        )
+                        .clicked()
+                        {
+                            self.step = Step::Language;
+                        }
+                        let role = self.role;
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.add_enabled_ui(role.is_some(), |ui| {
+                                if vimora_ui::button(
+                                    ui,
+                                    Some(icons::DOWNLOAD),
+                                    t(l, "install"),
+                                    Kind::Primary,
+                                )
+                                .clicked()
+                                {
+                                    if let Some(teacher) = role {
+                                        self.start(teacher);
+                                    }
+                                }
+                            });
+                        });
+                    }
+                    Step::Installing(..) => {}
+                    Step::Done => {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if vimora_ui::button(
+                                ui,
+                                Some(icons::CHECK),
+                                t(l, "close"),
+                                Kind::Primary,
+                            )
+                            .clicked()
+                            {
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
+                        });
+                    }
+                    Step::Failed(teacher) => {
+                        let teacher = *teacher;
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if vimora_ui::button(
+                                ui,
+                                Some(icons::REFRESH_CW),
+                                t(l, "retry"),
+                                Kind::Primary,
+                            )
+                            .clicked()
+                            {
+                                self.start(teacher);
+                            }
+                        });
+                    }
+                });
+            });
+
+        // The step itself.
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::none()
                     .fill(p.bg)
-                    .inner_margin(egui::Margin::same(22.0)),
+                    .inner_margin(egui::Margin::symmetric(26.0, 22.0)),
             )
             .show(ctx, |ui| match &self.step {
                 Step::Language => {
@@ -212,108 +379,83 @@ impl Wizard {
                         (Lang::Ru, "Русский"),
                         (Lang::En, "English"),
                     ] {
-                        if choice(ui, &p, |painter, r| flag(painter, r, lang), name, None) {
+                        let picked = self.lang == lang;
+                        if choice(
+                            ui,
+                            &p,
+                            picked,
+                            |painter, r| flag(painter, r, lang),
+                            name,
+                            None,
+                            44.0,
+                        ) {
                             self.lang = lang;
-                            self.step = Step::Role;
                         }
-                        ui.add_space(8.0);
+                        ui.add_space(6.0);
                     }
                 }
                 Step::Role => {
                     heading(ui, &p, t(l, "who"));
-                    let mut picked = None;
-                    for (teacher, icon) in [(true, icons::GRADUATION_CAP), (false, icons::MONITOR)]
-                    {
-                        let (name, desc) = if teacher {
-                            (t(l, "teacher"), t(l, "teacher_d"))
-                        } else {
-                            (t(l, "student"), t(l, "student_d"))
-                        };
-                        let draw = |painter: &egui::Painter, r: Rect| {
-                            painter.text(
-                                r.center(),
-                                Align2::CENTER_CENTER,
-                                icon,
-                                FontId::proportional(22.0),
-                                p.accent,
-                            );
-                        };
-                        if choice(ui, &p, draw, name, Some(desc)) {
-                            picked = Some(teacher);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 10.0;
+                        let w = (ui.available_width() - 10.0) / 2.0;
+                        for (teacher, icon) in
+                            [(true, icons::GRADUATION_CAP), (false, icons::MONITOR)]
+                        {
+                            let (name, desc) = if teacher {
+                                (t(l, "teacher"), t(l, "teacher_d"))
+                            } else {
+                                (t(l, "student"), t(l, "student_d"))
+                            };
+                            if role_card(ui, &p, w, self.role == Some(teacher), icon, name, desc) {
+                                self.role = Some(teacher);
+                            }
                         }
-                        ui.add_space(8.0);
-                    }
-                    ui.add_space(4.0);
-                    if vimora_ui::button(ui, Some(icons::ARROW_LEFT), t(l, "back"), Kind::Ghost)
-                        .clicked()
-                    {
-                        self.step = Step::Language;
-                    }
-                    if let Some(teacher) = picked {
-                        self.start(teacher);
-                    }
+                    });
                 }
                 Step::Installing(..) => {
-                    ui.add_space(70.0);
+                    ui.add_space(64.0);
                     ui.vertical_centered(|ui| {
-                        ui.add(egui::Spinner::new().size(34.0).color(p.accent));
-                        ui.add_space(16.0);
+                        ui.add(egui::Spinner::new().size(30.0).color(p.accent));
+                        ui.add_space(14.0);
                         ui.label(
                             egui::RichText::new(t(l, "installing"))
                                 .family(vimora_ui::bold())
-                                .size(16.0)
+                                .size(15.0)
                                 .color(p.strong),
                         );
                     });
                 }
                 Step::Done => {
-                    ui.add_space(46.0);
+                    ui.add_space(50.0);
                     ui.vertical_centered(|ui| {
-                        ui.label(vimora_ui::icon(icons::CIRCLE_CHECK, 46.0, p.accent));
+                        ui.label(vimora_ui::icon(icons::CIRCLE_CHECK, 40.0, p.accent));
                         ui.add_space(10.0);
                         ui.label(
                             egui::RichText::new(t(l, "done"))
                                 .family(vimora_ui::bold())
-                                .size(20.0)
+                                .size(18.0)
                                 .color(p.strong),
                         );
                         ui.add_space(4.0);
                         ui.label(
                             egui::RichText::new(t(l, "done_d"))
-                                .size(13.0)
+                                .size(12.5)
                                 .color(p.muted),
                         );
-                        ui.add_space(18.0);
-                        if vimora_ui::button(ui, Some(icons::CHECK), t(l, "close"), Kind::Primary)
-                            .clicked()
-                        {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
                     });
                 }
-                Step::Failed(teacher) => {
-                    let teacher = *teacher;
-                    ui.add_space(46.0);
+                Step::Failed(_) => {
+                    ui.add_space(56.0);
                     ui.vertical_centered(|ui| {
-                        ui.label(vimora_ui::icon(icons::TRIANGLE_ALERT, 42.0, p.danger));
+                        ui.label(vimora_ui::icon(icons::TRIANGLE_ALERT, 38.0, p.danger));
                         ui.add_space(10.0);
                         ui.label(
                             egui::RichText::new(t(l, "failed"))
                                 .family(vimora_ui::bold())
-                                .size(18.0)
+                                .size(16.0)
                                 .color(p.strong),
                         );
-                        ui.add_space(18.0);
-                        if vimora_ui::button(
-                            ui,
-                            Some(icons::REFRESH_CW),
-                            t(l, "retry"),
-                            Kind::Primary,
-                        )
-                        .clicked()
-                        {
-                            self.start(teacher);
-                        }
                     });
                 }
             });
@@ -324,58 +466,120 @@ fn heading(ui: &mut egui::Ui, p: &vimora_ui::Palette, text: &str) {
     ui.label(
         egui::RichText::new(text)
             .family(vimora_ui::bold())
-            .size(17.0)
+            .size(15.0)
             .color(p.strong),
     );
-    ui.add_space(14.0);
+    ui.add_space(12.0);
 }
 
-/// One big clickable row: a picture on the left (flag / icon), a title and a short line.
+/// One clickable row: a picture on the left (a flag), a title. The chosen one: accent border and
+/// a check mark.
 fn choice(
     ui: &mut egui::Ui,
     p: &vimora_ui::Palette,
+    picked: bool,
     picture: impl FnOnce(&egui::Painter, Rect),
     title: &str,
-    desc: Option<&str>,
+    _desc: Option<&str>,
+    h: f32,
 ) -> bool {
-    let h = if desc.is_some() { 64.0 } else { 52.0 };
     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), h), Sense::click());
     let hover = resp.hovered();
     ui.painter().rect(
         r,
         0.0,
-        if hover { p.hover } else { p.card },
-        Stroke::new(1.0_f32, if hover { p.accent } else { p.line }),
+        if picked || hover { p.card } else { p.bg },
+        Stroke::new(
+            1.0_f32,
+            if picked {
+                p.accent
+            } else if hover {
+                p.line_strong
+            } else {
+                p.line
+            },
+        ),
     );
-    let pic = Rect::from_center_size(pos2(r.left() + 34.0, r.center().y), vec2(36.0, 24.0));
+    let pic = Rect::from_center_size(pos2(r.left() + 30.0, r.center().y), vec2(30.0, 20.0));
     picture(ui.painter(), pic);
-    let x = r.left() + 68.0;
-    match desc {
-        Some(d) => {
-            ui.painter().text(
-                pos2(x, r.center().y - 9.0),
-                Align2::LEFT_CENTER,
-                title,
-                FontId::new(15.0, vimora_ui::bold()),
-                p.strong,
-            );
-            ui.painter().text(
-                pos2(x, r.center().y + 11.0),
-                Align2::LEFT_CENTER,
-                d,
-                FontId::proportional(12.5),
-                p.muted,
-            );
-        }
-        None => {
-            ui.painter().text(
-                pos2(x, r.center().y),
-                Align2::LEFT_CENTER,
-                title,
-                FontId::new(15.0, vimora_ui::bold()),
-                p.strong,
-            );
-        }
+    ui.painter().text(
+        pos2(r.left() + 58.0, r.center().y),
+        Align2::LEFT_CENTER,
+        title,
+        FontId::new(13.5, vimora_ui::bold()),
+        if picked { p.strong } else { p.text },
+    );
+    if picked {
+        ui.painter().text(
+            pos2(r.right() - 18.0, r.center().y),
+            Align2::CENTER_CENTER,
+            icons::CHECK,
+            FontId::proportional(15.0),
+            p.accent,
+        );
+    }
+    if hover {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp.clicked()
+}
+
+/// One of the two programs: icon, name, a short line. The chosen one: accent border and a check.
+fn role_card(
+    ui: &mut egui::Ui,
+    p: &vimora_ui::Palette,
+    w: f32,
+    picked: bool,
+    icon: &str,
+    name: &str,
+    desc: &str,
+) -> bool {
+    let (r, resp) = ui.allocate_exact_size(vec2(w, 132.0), Sense::click());
+    let hover = resp.hovered();
+    ui.painter().rect(
+        r,
+        0.0,
+        if picked || hover { p.card } else { p.bg },
+        Stroke::new(
+            1.0_f32,
+            if picked {
+                p.accent
+            } else if hover {
+                p.line_strong
+            } else {
+                p.line
+            },
+        ),
+    );
+    ui.painter().text(
+        pos2(r.left() + 18.0, r.top() + 30.0),
+        Align2::LEFT_CENTER,
+        icon,
+        FontId::proportional(24.0),
+        if picked { p.accent } else { p.muted },
+    );
+    ui.painter().text(
+        pos2(r.left() + 18.0, r.top() + 74.0),
+        Align2::LEFT_CENTER,
+        name,
+        FontId::new(15.0, vimora_ui::bold()),
+        p.strong,
+    );
+    ui.painter().text(
+        pos2(r.left() + 18.0, r.top() + 98.0),
+        Align2::LEFT_CENTER,
+        desc,
+        FontId::proportional(12.5),
+        p.muted,
+    );
+    if picked {
+        ui.painter().text(
+            pos2(r.right() - 18.0, r.top() + 22.0),
+            Align2::CENTER_CENTER,
+            icons::CHECK,
+            FontId::proportional(15.0),
+            p.accent,
+        );
     }
     if hover {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);

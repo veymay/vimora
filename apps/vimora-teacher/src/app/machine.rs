@@ -162,40 +162,36 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
     let online = cx.all.iter().any(|v| v.id == f.id && v.online);
     let n_procs = report.as_ref().map(|(i, _)| i.processes.len());
 
-    // Six tabs are wider than the drawer: they scroll sideways instead of widening the page.
-    egui::ScrollArea::horizontal()
-        .id_salt("machine-tabs")
-        .auto_shrink([false, true])
-        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-        .show(ui, |ui| {
-            ui_kit::segmented(p).show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    for (t, ic, label, n) in [
-                        (MachineTab::Overview, icons::GAUGE, tr("Umumiy holat"), None),
-                        (
-                            MachineTab::Processes,
-                            icons::LIST,
-                            tr("Jarayonlar"),
-                            n_procs,
-                        ),
-                        (
-                            MachineTab::Security,
-                            icons::SHIELD_CHECK,
-                            tr("Xavfsizlik"),
-                            None,
-                        ),
-                        (MachineTab::Apps, icons::LAYOUT_GRID, tr("Dasturlar"), None),
-                        (MachineTab::Services, icons::SETTINGS, tr("Xizmatlar"), None),
-                        (MachineTab::Command, icons::TERMINAL, tr("Buyruq"), None),
-                    ] {
-                        if ui_kit::tab_icon(ui, Some(ic), label, n, *f.tab == t).clicked() {
-                            *f.tab = t;
-                        }
-                    }
-                });
-            });
-        });
+    let tabs = [
+        (MachineTab::Overview, icons::GAUGE, tr("Umumiy holat"), None),
+        (
+            MachineTab::Processes,
+            icons::LIST,
+            tr("Jarayonlar"),
+            n_procs,
+        ),
+        (
+            MachineTab::Security,
+            icons::SHIELD_CHECK,
+            tr("Xavfsizlik"),
+            None,
+        ),
+        (MachineTab::Apps, icons::LAYOUT_GRID, tr("Dasturlar"), None),
+        (MachineTab::Services, icons::SETTINGS, tr("Xizmatlar"), None),
+        (MachineTab::Command, icons::TERMINAL, tr("Buyruq"), None),
+    ];
+    let items: Vec<ui_kit::TabItem> = tabs
+        .iter()
+        .map(|(_, ic, label, n)| ui_kit::TabItem {
+            icon: Some(*ic),
+            label,
+            count: *n,
+        })
+        .collect();
+    let current = tabs.iter().position(|x| x.0 == *f.tab).unwrap_or(0);
+    if let Some(i) = ui_kit::tab_strip(ui, &items, current) {
+        *f.tab = tabs[i].0;
+    }
     ui.add_space(12.0);
 
     // The IT tabs are for the administrator.

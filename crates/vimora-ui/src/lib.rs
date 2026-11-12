@@ -541,9 +541,19 @@ pub fn icon_cell(ui: &mut Ui, icon: &str, height: f32, active: bool) -> Response
     resp
 }
 
-/// Selectable mono tab (filter cells).
+/// Height of the compact choice cells ([`tab`]): they sit inside rows and leave room around.
+pub const CHOICE_H: f32 = 28.0;
+
+/// Selectable mono cell of a small choice (allowed / read only / blocked, minutes …): compact,
+/// the chosen one lifted with an accent line below.
 pub fn tab(ui: &mut Ui, label: &str, count: Option<usize>, selected: bool) -> Response {
-    tab_icon(ui, None, label, count, selected)
+    let parts = TabParts::new(ui, None, label, count, selected);
+    let (rect, resp) = ui.allocate_exact_size(
+        vec2(parts.content_w(false) + 20.0, CHOICE_H),
+        Sense::click(),
+    );
+    parts.paint(ui, rect, &resp, false, true);
+    resp
 }
 
 /// [`tab`] with an optional icon before the label.
@@ -554,65 +564,158 @@ pub fn tab_icon(
     count: Option<usize>,
     selected: bool,
 ) -> Response {
-    let p = palette(ui.ctx());
-    let ink = if selected { p.strong } else { p.muted };
-    let g = caps(ui, label, HUD, mono_bold(), ink);
-    let cg = count.map(|c| {
-        caps(
-            ui,
-            &c.to_string(),
-            HUD,
-            mono(),
-            if selected { p.accent_ink } else { p.faint },
-        )
-    });
-    let extra = cg.as_ref().map_or(0.0, |c| c.size().x + 8.0);
-    let icon_w = if icon.is_some() { 20.0 } else { 0.0 };
+    let parts = TabParts::new(ui, icon, label, count, selected);
     let (rect, resp) = ui.allocate_exact_size(
-        vec2(g.size().x + extra + icon_w + 24.0, CONTROL_H),
+        vec2(parts.content_w(true) + 24.0, CONTROL_H),
         Sense::click(),
     );
-    let fill = if selected {
-        p.card
-    } else if resp.hovered() {
-        p.hover
-    } else {
-        Color32::TRANSPARENT
-    };
-    let stroke = if selected {
-        Stroke::new(1.0_f32, p.line_strong)
-    } else {
-        Stroke::NONE
-    };
-    let _ = stroke;
-    ui.painter().rect_filled(rect, Rounding::ZERO, fill);
-    ui.painter().vline(
-        rect.right() - 0.5,
-        rect.y_range(),
-        Stroke::new(1.0_f32, p.line),
-    );
-    let y = rect.center().y - g.size().y / 2.0;
-    let gx = g.size().x;
-    if let Some(ic) = icon {
-        ui.painter().text(
-            egui::pos2(rect.left() + 12.0, rect.center().y),
-            Align2::LEFT_CENTER,
-            ic,
-            FontId::proportional(13.0),
-            if selected { p.accent_ink } else { p.muted },
-        );
-    }
-    ui.painter()
-        .galley(egui::pos2(rect.left() + 12.0 + icon_w, y), g, ink);
-    if let Some(c) = cg {
-        let col = if selected { p.accent_ink } else { p.faint };
-        ui.painter().galley(
-            egui::pos2(rect.left() + 12.0 + icon_w + gx + 8.0, y),
-            c,
-            col,
-        );
-    }
+    parts.paint(ui, rect, &resp, true, true);
     resp
+}
+
+/// One tab of a strip: its measured texts.
+struct TabParts<'a> {
+    icon: Option<&'a str>,
+    g: Arc<Galley>,
+    cg: Option<Arc<Galley>>,
+    selected: bool,
+}
+
+impl<'a> TabParts<'a> {
+    fn new(
+        ui: &Ui,
+        icon: Option<&'a str>,
+        label: &str,
+        count: Option<usize>,
+        selected: bool,
+    ) -> Self {
+        let p = palette(ui.ctx());
+        let ink = if selected { p.strong } else { p.muted };
+        let g = caps(ui, label, HUD, mono_bold(), ink);
+        let cg = count.map(|c| {
+            caps(
+                ui,
+                &c.to_string(),
+                HUD,
+                mono(),
+                if selected { p.accent_ink } else { p.faint },
+            )
+        });
+        Self {
+            icon,
+            g,
+            cg,
+            selected,
+        }
+    }
+
+    fn content_w(&self, with_icon: bool) -> f32 {
+        let extra = self.cg.as_ref().map_or(0.0, |c| c.size().x + 8.0);
+        let icon_w = if with_icon && self.icon.is_some() {
+            20.0
+        } else {
+            0.0
+        };
+        self.g.size().x + extra + icon_w
+    }
+
+    /// Content centred in `rect`. The selected tab: lifted surface and an accent line below.
+    fn paint(&self, ui: &Ui, rect: Rect, resp: &Response, with_icon: bool, divider: bool) {
+        let p = palette(ui.ctx());
+        let fill = if self.selected {
+            p.card
+        } else if resp.hovered() {
+            p.hover
+        } else {
+            Color32::TRANSPARENT
+        };
+        ui.painter().rect_filled(rect, Rounding::ZERO, fill);
+        if self.selected {
+            ui.painter().rect_filled(
+                Rect::from_min_max(egui::pos2(rect.left(), rect.bottom() - 2.0), rect.max),
+                Rounding::ZERO,
+                p.accent,
+            );
+        }
+        if divider {
+            ui.painter().vline(
+                rect.right() - 0.5,
+                rect.y_range(),
+                Stroke::new(1.0_f32, p.line),
+            );
+        }
+        let ink = if self.selected { p.strong } else { p.muted };
+        let mut x = rect.center().x - self.content_w(with_icon) / 2.0;
+        let y = rect.center().y - self.g.size().y / 2.0;
+        if let (Some(ic), true) = (self.icon, with_icon) {
+            ui.painter().text(
+                egui::pos2(x, rect.center().y),
+                Align2::LEFT_CENTER,
+                ic,
+                FontId::proportional(13.0),
+                if self.selected { p.accent_ink } else { p.muted },
+            );
+            x += 20.0;
+        }
+        let gx = self.g.size().x;
+        ui.painter().galley(egui::pos2(x, y), self.g.clone(), ink);
+        if let Some(c) = &self.cg {
+            let col = if self.selected { p.accent_ink } else { p.faint };
+            ui.painter()
+                .galley(egui::pos2(x + gx + 8.0, y), c.clone(), col);
+        }
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+    }
+}
+
+/// A tab of [`tab_strip`].
+pub struct TabItem<'a> {
+    pub icon: Option<&'a str>,
+    pub label: &'a str,
+    pub count: Option<usize>,
+}
+
+/// The tabs of a drawer: one row across the whole width, never wider than it. Spare room is
+/// shared out; when room is short the side padding shrinks first, then the icons go. Returns
+/// the index of a clicked tab.
+pub fn tab_strip(ui: &mut Ui, items: &[TabItem<'_>], selected: usize) -> Option<usize> {
+    let p = palette(ui.ctx());
+    let parts: Vec<TabParts> = items
+        .iter()
+        .enumerate()
+        .map(|(i, t)| TabParts::new(ui, t.icon, t.label, t.count, i == selected))
+        .collect();
+    let avail = ui.available_width();
+    let n = parts.len().max(1) as f32;
+    let mut with_icon = true;
+    let mut content: f32 = parts.iter().map(|t| t.content_w(true)).sum();
+    if content + n * 12.0 > avail {
+        with_icon = false;
+        content = parts.iter().map(|t| t.content_w(false)).sum();
+    }
+    let spare = ((avail - content) / n).max(4.0);
+    let (row, _) = ui.allocate_exact_size(vec2(avail, CONTROL_H), Sense::hover());
+    ui.painter()
+        .rect(row, Rounding::ZERO, p.sunken, Stroke::new(1.0_f32, p.line));
+    let mut clicked = None;
+    let mut x = row.left();
+    for (i, t) in parts.iter().enumerate() {
+        let w = if i + 1 == parts.len() {
+            row.right() - x
+        } else {
+            t.content_w(with_icon) + spare
+        };
+        let rect = Rect::from_min_size(egui::pos2(x, row.top()), vec2(w, CONTROL_H));
+        let resp = ui.interact(rect, ui.id().with(("tab-strip", i)), Sense::click());
+        t.paint(ui, rect.shrink(0.5), &resp, with_icon, i + 1 < parts.len());
+        if resp.clicked() {
+            clicked = Some(i);
+        }
+        x += w;
+    }
+    clicked
 }
 
 /// Segmented-control container for [`tab`]s.
@@ -1042,5 +1145,92 @@ pub fn tip_at_pointer(resp: &Response, text: &str) {
                 ui.label(RichText::new(text).size(12.5).color(p.text));
             },
         );
+    }
+}
+
+/// The state of a job, drawn the same way everywhere ([`progress`]).
+pub enum Progress<'a> {
+    /// Running, how far unknown: a spinner and a word.
+    Waiting(&'a str),
+    /// Running, this far (0–100).
+    Percent(f32),
+    /// Finished: the bar full.
+    Done(&'a str),
+    /// Did not work: red, with why.
+    Failed(&'a str),
+    /// Nothing running: just a word in a colour.
+    Idle(&'a str, Color32),
+}
+
+/// One progress cell inside `rect` (a table cell, a row's right part).
+pub fn progress(ui: &Ui, rect: Rect, state: Progress<'_>) {
+    let p = palette(ui.ctx());
+    let y = rect.center().y;
+    let bar_w = (rect.width() - 64.0).clamp(40.0, 220.0);
+    let bar = Rect::from_min_size(egui::pos2(rect.left(), y - 3.0), vec2(bar_w, 6.0));
+    let label = |text: &str, color: Color32, x: f32| {
+        let g = truncated(
+            ui,
+            text,
+            FontId::proportional(12.5),
+            color,
+            rect.right() - x - 4.0,
+        );
+        ui.painter()
+            .galley(egui::pos2(x, y - g.size().y / 2.0), g, color);
+    };
+    match state {
+        Progress::Waiting(text) => {
+            let s = Rect::from_center_size(egui::pos2(rect.left() + 8.0, y), vec2(14.0, 14.0));
+            egui::Spinner::new()
+                .size(14.0)
+                .color(p.accent)
+                .paint_at(ui, s);
+            label(text, p.text, rect.left() + 24.0);
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(60));
+        }
+        Progress::Percent(pct) => {
+            ui.painter().rect_filled(bar, Rounding::ZERO, p.sunken);
+            ui.painter().rect_filled(
+                Rect::from_min_size(
+                    bar.min,
+                    vec2(bar.width() * pct.clamp(0.0, 100.0) / 100.0, 6.0),
+                ),
+                Rounding::ZERO,
+                p.accent,
+            );
+            ui.painter().text(
+                egui::pos2(bar.right() + 10.0, y),
+                Align2::LEFT_CENTER,
+                format!("{pct:.0}%"),
+                FontId::new(12.0, mono()),
+                p.accent_ink,
+            );
+        }
+        Progress::Done(text) => {
+            ui.painter().rect_filled(bar, Rounding::ZERO, p.accent);
+            ui.painter().text(
+                egui::pos2(bar.right() + 10.0, y),
+                Align2::LEFT_CENTER,
+                crate::icons::CHECK,
+                FontId::proportional(13.0),
+                p.accent_ink,
+            );
+            if !text.is_empty() {
+                label(text, p.success, bar.right() + 28.0);
+            }
+        }
+        Progress::Failed(text) => {
+            ui.painter().text(
+                egui::pos2(rect.left(), y),
+                Align2::LEFT_CENTER,
+                crate::icons::TRIANGLE_ALERT,
+                FontId::proportional(13.0),
+                p.danger,
+            );
+            label(text, p.danger, rect.left() + 20.0);
+        }
+        Progress::Idle(text, color) => label(text, color, rect.left()),
     }
 }

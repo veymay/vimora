@@ -175,7 +175,7 @@ impl Engine {
     }
 
     /// Installs the newest GitHub release if it is newer than this build.
-    fn update_vimora(&self) -> Result<String> {
+    fn update_vimora(self: &Arc<Self>) -> Result<String> {
         use vimora_update::Role;
         let rel = vimora_update::latest()?;
         if !rel.is_newer() {
@@ -209,7 +209,7 @@ impl Engine {
     }
 
     /// The student's own "check for updates" (tray window): the same signed-only update, now.
-    pub fn update_from_student(&self) -> Result<String> {
+    pub fn update_from_student(self: &Arc<Self>) -> Result<String> {
         if let Some(b) = self.inner.lock().unwrap().busy.clone() {
             return Ok(b);
         }
@@ -220,7 +220,12 @@ impl Engine {
 
     /// An installer the teacher sent over the network (for computers without internet): the
     /// signature of its list and its checksum are checked here, so a fake one is refused.
-    pub fn install_pushed(&self, file: &std::path::Path, sums: &str, sig: &str) -> Result<String> {
+    pub fn install_pushed(
+        self: &Arc<Self>,
+        file: &std::path::Path,
+        sums: &str,
+        sig: &str,
+    ) -> Result<String> {
         let res = self.install_pushed_inner(file, sums, sig);
         // Shown as "busy" while it runs; nobody else clears it.
         self.inner.lock().unwrap().busy = None;
@@ -231,7 +236,7 @@ impl Engine {
     }
 
     fn install_pushed_inner(
-        &self,
+        self: &Arc<Self>,
         file: &std::path::Path,
         sums: &str,
         sig: &str,
@@ -260,7 +265,7 @@ impl Engine {
     }
 
     /// Starts a checked installer and remembers it (see `check_pending_update`).
-    fn start_install(&self, path: &std::path::Path, version: &str) -> Result<String> {
+    fn start_install(self: &Arc<Self>, path: &std::path::Path, version: &str) -> Result<String> {
         if self.shield.protected_now() {
             if !cfg!(windows) {
                 bail!(
@@ -290,6 +295,21 @@ impl Engine {
         }
         .save();
         vimora_update::install_student(path)?;
+        // The installer replaces this service when it works. When it fails, the teacher hears
+        // it at once (not only at the next update check).
+        let me = self.clone();
+        std::thread::spawn(move || {
+            for _ in 0..180 {
+                std::thread::sleep(Duration::from_secs(5));
+                if let Some(code) = vimora_update::install_result(&update_dir()) {
+                    if code != 0 {
+                        me.check_pending_update();
+                    }
+                    return;
+                }
+            }
+            me.check_pending_update();
+        });
         Ok(format!("Vimora {version} o'rnatilmoqda"))
     }
 
@@ -528,7 +548,11 @@ impl Engine {
             shield_note: i.shield_note.clone(),
             os_updates: i.os_updates,
             app_updates: i.app_updates,
-            busy: i.busy.clone(),
+            // While an installer runs (after the job itself ended): still "o'rnatilmoqda".
+            busy: i
+                .busy
+                .clone()
+                .or_else(|| PendingUpdate::load().and_then(|p| install_running(&p.version))),
             queued: store.queue.len() as u32,
             persistent_folders: store.persistent,
             apps: i.apps.clone(),

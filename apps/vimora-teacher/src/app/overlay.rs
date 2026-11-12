@@ -529,6 +529,7 @@ impl TeacherApp {
                 let has_footer = !matches!(
                     dialog,
                     Dialog::Activity
+                        | Dialog::Power(_)
                         | Dialog::Message { .. }
                         | Dialog::Settings(_)
                         | Dialog::Freeze { .. }
@@ -553,10 +554,13 @@ impl TeacherApp {
                             dialog: &mut Dialog,
                             confirm: &mut bool,
                             clear_help: &mut Option<u64>| {
+                    // The same space on the left and the right: the width actually left inside
+                    // (the scroll bar's strip is not taken from the right margin).
                     Frame::none()
                         .inner_margin(Margin::symmetric(22.0, 18.0))
                         .show(ui, |ui| {
-                            ui.set_width(width - 44.0);
+                            let w = ui.available_width().min(width - 44.0);
+                            ui.set_width(w);
                             dialog_body(
                                 ui,
                                 p,
@@ -788,11 +792,31 @@ impl TeacherApp {
                             self.hub.lock().unwrap().students.keys().copied().collect();
                         self.send_priv(&everyone, PrivCommand::SetUpdatePolicy(policy), "");
                     }
-                    UpdateRequest::Vimora => self.send_priv(
-                        &targets,
-                        PrivCommand::UpdateVimora,
-                        tr("Vimora yangilanishi"),
-                    ),
+                    UpdateRequest::Vimora => {
+                        // Remembered per computer: the table follows it to "o'rnatildi" or an
+                        // error.
+                        {
+                            let mut h = self.hub.lock().unwrap();
+                            let keys: Vec<String> = targets
+                                .iter()
+                                .filter_map(|id| h.students.get(id).map(|s| s.info.key()))
+                                .collect();
+                            for k in keys {
+                                h.vimora_jobs.insert(
+                                    k,
+                                    crate::net::VimoraJob {
+                                        at: std::time::Instant::now(),
+                                        failed: None,
+                                    },
+                                );
+                            }
+                        }
+                        self.send_priv(
+                            &targets,
+                            PrivCommand::UpdateVimora,
+                            tr("Vimora yangilanishi"),
+                        )
+                    }
                     UpdateRequest::Check => self.send_priv(
                         &targets,
                         PrivCommand::CheckUpdates,

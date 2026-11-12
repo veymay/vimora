@@ -6,6 +6,11 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Bajarish uchun ikki marta bosing", "Double-click to run", "Дважды щёлкните, чтобы выполнить"),
+    ("o'rnatildi", "installed", "установлено"),
+    ("o'rnatilmoqda", "installing", "устанавливается"),
+    ("o'rnatilmadi — qayta urinib ko'ring", "not installed — try again", "не установлено — попробуйте снова"),
+    ("So'zlar", "Words", "Слова"),
     ("Vimora'ni o'chirish", "Remove Vimora", "Удалить Vimora"),
     ("Vimora o'chirilsinmi?", "Remove Vimora?", "Удалить Vimora?"),
     ("Vimora \"{name}\" kompyuteridan butunlay o'chiriladi.", "Vimora will be removed from \"{name}\" completely.", "Vimora будет полностью удалена с компьютера «{name}»."),

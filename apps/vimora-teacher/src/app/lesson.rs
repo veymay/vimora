@@ -62,22 +62,25 @@ pub(super) struct Lesson {
 }
 
 pub(super) fn lesson_form(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<'_>) {
-    ui_kit::segmented(p).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            for (t, ic, label) in [
-                (LessonTab::Files, icons::FOLDER, tr("Fayllar")),
-                (LessonTab::Attendance, icons::USERS, tr("Davomat")),
-                (LessonTab::Poll, icons::MESSAGE_SQUARE_TEXT, tr("So'rov")),
-                (LessonTab::Test, icons::FILE_TEXT, tr("Test")),
-                (LessonTab::Timer, icons::TIMER, tr("Taymer")),
-            ] {
-                if ui_kit::tab_icon(ui, Some(ic), label, None, l.tab == t).clicked() {
-                    l.tab = t;
-                }
-            }
-        });
-    });
+    let tabs = [
+        (LessonTab::Files, icons::FOLDER, tr("Fayllar")),
+        (LessonTab::Attendance, icons::USERS, tr("Davomat")),
+        (LessonTab::Poll, icons::MESSAGE_SQUARE_TEXT, tr("So'rov")),
+        (LessonTab::Test, icons::FILE_TEXT, tr("Test")),
+        (LessonTab::Timer, icons::TIMER, tr("Taymer")),
+    ];
+    let items: Vec<ui_kit::TabItem> = tabs
+        .iter()
+        .map(|(_, ic, label)| ui_kit::TabItem {
+            icon: Some(*ic),
+            label,
+            count: None,
+        })
+        .collect();
+    let current = tabs.iter().position(|x| x.0 == l.tab).unwrap_or(0);
+    if let Some(i) = ui_kit::tab_strip(ui, &items, current) {
+        l.tab = tabs[i].0;
+    }
     ui.add_space(12.0);
     match l.tab {
         LessonTab::Files => files(ui, p, l, cx),

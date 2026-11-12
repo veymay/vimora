@@ -315,12 +315,27 @@ pub(super) fn dialog_body(
                         p.danger,
                     ),
                 ] {
-                    if power_tile(ui, p, ic, label, *a == act, 4.0, col).clicked() {
+                    let r = power_tile(ui, p, ic, label, *a == act, 4.0, col);
+                    if r.clicked() {
                         *a = act;
+                    }
+                    // No confirm button: a double click is the confirmation.
+                    if r.double_clicked() {
+                        *a = act;
+                        *confirm = true;
                     }
                 }
             });
             ui.add_space(10.0);
+            ui.label(
+                RichText::new(with_icon(
+                    icons::MOUSE_POINTER_2,
+                    tr("Bajarish uchun ikki marta bosing"),
+                ))
+                .size(12.5)
+                .color(p.muted),
+            );
+            ui.add_space(6.0);
             if *a == PowerChoice::Wake {
                 let (off, with_mac) = (cx.offline, cx.offline_with_mac);
                 ui.label(
@@ -736,19 +751,22 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
         e == 0 || e == engine
     };
 
-    ui_kit::segmented(p).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            for (t, ic, label) in [
-                (ShadowTab::Uwf, icons::SHIELD, "UWF"),
-                (ShadowTab::Protection, icons::SNOWFLAKE, "Shadow Defender"),
-            ] {
-                if ui_kit::tab_icon(ui, Some(ic), label, None, *f.tab == t).clicked() {
-                    *f.tab = t;
-                }
-            }
-        });
-    });
+    let tabs = [
+        (ShadowTab::Uwf, icons::SHIELD, "UWF"),
+        (ShadowTab::Protection, icons::SNOWFLAKE, "Shadow Defender"),
+    ];
+    let items: Vec<ui_kit::TabItem> = tabs
+        .iter()
+        .map(|(_, ic, label)| ui_kit::TabItem {
+            icon: Some(*ic),
+            label,
+            count: None,
+        })
+        .collect();
+    let current = tabs.iter().position(|x| x.0 == *f.tab).unwrap_or(0);
+    if let Some(i) = ui_kit::tab_strip(ui, &items, current) {
+        *f.tab = tabs[i].0;
+    }
     ui.add_space(12.0);
 
     // The computers picked in the grid (all of them when none is picked): each has its own
@@ -838,28 +856,42 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
                     );
                     child.spacing_mut().item_spacing.x = 10.0;
                     let mut on = waiting.map_or(mine(v) && frozen, |(t, _)| t);
-                    child.add_enabled_ui(usable && waiting.is_none(), |ui| {
-                        let was = on;
-                        if ui_kit::toggle(ui, &mut on).changed() && on != was {
-                            *f.request = Some(ShadowRequest::Set { id: v.id, on });
-                            ui.data_mut(|d| d.insert_temp(wait_id, (on, now)));
-                        }
-                    });
+                    // Frozen: a snowflake; not frozen: a plain computer.
+                    let is_frozen = mine(v) && frozen;
+                    child.label(ui_kit::icon(
+                        if is_frozen {
+                            icons::SNOWFLAKE
+                        } else {
+                            icons::MONITOR
+                        },
+                        16.0,
+                        if is_frozen {
+                            p.accent
+                        } else if usable {
+                            p.muted
+                        } else {
+                            p.faint
+                        },
+                    ));
                     let g = ui_kit::truncated(
                         &child,
                         &v.label,
                         FontId::new(13.0, ui_kit::mono()),
                         if usable { p.text } else { p.faint },
-                        rw - 220.0,
+                        rw - 300.0,
                     );
                     child.label(egui::WidgetText::from(g));
+                    // Right end: the switch, the state just before it.
                     child.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(
-                            RichText::new(status.to_uppercase())
-                                .family(ui_kit::mono_bold())
-                                .size(11.0)
-                                .color(col),
-                        );
+                        ui.spacing_mut().item_spacing.x = 10.0;
+                        ui.add_enabled_ui(usable && waiting.is_none(), |ui| {
+                            let was = on;
+                            if ui_kit::toggle(ui, &mut on).changed() && on != was {
+                                *f.request = Some(ShadowRequest::Set { id: v.id, on });
+                                ui.data_mut(|d| d.insert_temp(wait_id, (on, now)));
+                            }
+                        });
+                        ui_kit::chip(ui, &status.to_uppercase(), col);
                     });
                 }
             });
@@ -1110,7 +1142,17 @@ fn srow(
     if let Some(h) = help {
         ui_kit::info(&mut child, h);
     }
-    child.with_layout(Layout::right_to_left(Align::Center), control);
+    // The control in a strip only as tall as a choice: frames around it (a segmented choice)
+    // don't stretch to the row's height.
+    let mut c = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(Rect::from_center_size(
+                rect.center(),
+                vec2(rect.width() - 24.0, ui_kit::CHOICE_H + 2.0),
+            ))
+            .layout(Layout::right_to_left(Align::Center)),
+    );
+    control(&mut c);
 }
 
 /// A bordered group of [`srow`]s.
@@ -1122,6 +1164,14 @@ fn sgroup(ui: &mut egui::Ui, p: &Palette, add: impl FnOnce(&mut egui::Ui)) {
             ui.spacing_mut().item_spacing.y = 0.0;
             add(ui);
         });
+}
+
+/// The state column of an update table (a running job is shown from the computer's status).
+pub(super) enum UpdCell {
+    Text(String, Color32),
+    Waiting(String),
+    Done(String),
+    Failed(String),
 }
 
 /// "…45%" at the end of a status line → 45.
@@ -1138,7 +1188,7 @@ fn update_table(
     p: &Palette,
     views: &[&View],
     head: [&str; 3],
-    cell: impl Fn(&View) -> (String, String, Color32),
+    cell: impl Fn(&View) -> (String, UpdCell),
     // Is this computer's running job part of this tab?
     mine: impl Fn(&str) -> bool,
 ) {
@@ -1183,7 +1233,7 @@ fn update_table(
                 );
                 ui.painter()
                     .galley(pos2(r.left() + 12.0, y - name.size().y / 2.0), name, p.text);
-                let (value, state, col) = cell(v);
+                let (value, state) = cell(v);
                 ui.painter().text(
                     pos2(r.left() + 12.0 + c1, y),
                     Align2::LEFT_CENTER,
@@ -1191,60 +1241,23 @@ fn update_table(
                     FontId::new(12.0, ui_kit::mono()),
                     p.muted,
                 );
-                let right = Rect::from_min_max(pos2(r.left() + 12.0 + c1 + c2, r.top()), r.max);
-                match v.status.busy.as_deref().filter(|b| mine(b)) {
-                    Some(b) => {
-                        // Running: a bar (exact when the agent reports a percent).
-                        let bar = Rect::from_min_size(
-                            pos2(right.left(), y - 3.0),
-                            vec2(right.width() - 58.0, 6.0),
-                        );
-                        ui.painter().rect_filled(bar, Rounding::ZERO, p.sunken);
-                        match percent_of(b) {
-                            Some(pct) => {
-                                ui.painter().rect_filled(
-                                    Rect::from_min_size(
-                                        bar.min,
-                                        vec2(bar.width() * pct / 100.0, 6.0),
-                                    ),
-                                    Rounding::ZERO,
-                                    p.accent,
-                                );
-                                ui.painter().text(
-                                    pos2(right.right() - 12.0, y),
-                                    Align2::RIGHT_CENTER,
-                                    format!("{pct:.0}%"),
-                                    FontId::new(12.0, ui_kit::mono()),
-                                    p.accent_ink,
-                                );
-                            }
-                            None => {
-                                // No percent known: a block sliding along the bar.
-                                let t = (ui.input(|i| i.time) as f32 * 0.7).fract();
-                                let bw = bar.width() * 0.3;
-                                let x = bar.left() + (bar.width() - bw) * t;
-                                ui.painter().rect_filled(
-                                    Rect::from_min_size(pos2(x, bar.top()), vec2(bw, 6.0)),
-                                    Rounding::ZERO,
-                                    p.accent,
-                                );
-                            }
-                        }
-                        ui.ctx()
-                            .request_repaint_after(std::time::Duration::from_millis(60));
-                    }
-                    None => {
-                        let g = ui_kit::truncated(
-                            ui,
-                            &state,
-                            FontId::proportional(12.5),
-                            col,
-                            right.width() - 12.0,
-                        );
-                        ui.painter()
-                            .galley(pos2(right.left(), y - g.size().y / 2.0), g, col);
-                    }
-                }
+                let right = Rect::from_min_max(
+                    pos2(r.left() + 12.0 + c1 + c2, r.top()),
+                    r.max - vec2(12.0, 0.0),
+                );
+                // A job running on the computer for this tab wins over the plain state.
+                let busy = v.status.busy.as_deref().filter(|b| mine(b));
+                let progress = match (busy, &state) {
+                    (Some(b), _) => match percent_of(b) {
+                        Some(pct) => ui_kit::Progress::Percent(pct),
+                        None => ui_kit::Progress::Waiting(b),
+                    },
+                    (None, UpdCell::Text(t, c)) => ui_kit::Progress::Idle(t, *c),
+                    (None, UpdCell::Waiting(t)) => ui_kit::Progress::Waiting(t),
+                    (None, UpdCell::Done(t)) => ui_kit::Progress::Done(t),
+                    (None, UpdCell::Failed(t)) => ui_kit::Progress::Failed(t),
+                };
+                ui_kit::progress(ui, right, progress);
             }
         });
 }
@@ -1265,20 +1278,23 @@ pub(super) fn updates_form(
         .filter(|v| v.online && cx.targets.contains(&v.id))
         .collect();
     let before = *policy;
-    ui_kit::segmented(p).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            for (t, ic, label) in [
-                (UpdateTab::Apps, icons::LAYOUT_GRID, tr("Dasturlar")),
-                (UpdateTab::System, icons::MONITOR, "Windows"),
-                (UpdateTab::Vimora, icons::CLOUD_DOWNLOAD, "Vimora"),
-            ] {
-                if ui_kit::tab_icon(ui, Some(ic), label, None, *tab == t).clicked() {
-                    *tab = t;
-                }
-            }
-        });
-    });
+    let tabs = [
+        (UpdateTab::Apps, icons::LAYOUT_GRID, tr("Dasturlar")),
+        (UpdateTab::System, icons::MONITOR, "Windows"),
+        (UpdateTab::Vimora, icons::CLOUD_DOWNLOAD, "Vimora"),
+    ];
+    let items: Vec<ui_kit::TabItem> = tabs
+        .iter()
+        .map(|(_, ic, label)| ui_kit::TabItem {
+            icon: Some(*ic),
+            label,
+            count: None,
+        })
+        .collect();
+    let current = tabs.iter().position(|x| x.0 == *tab).unwrap_or(0);
+    if let Some(i) = ui_kit::tab_strip(ui, &items, current) {
+        *tab = tabs[i].0;
+    }
     ui.add_space(12.0);
     match tab {
         UpdateTab::Vimora => {
@@ -1330,11 +1346,24 @@ pub(super) fn updates_form(
                     };
                     let current =
                         !v.version.is_empty() && !vimora_update::is_newer(cx.latest, &v.version);
-                    if current {
-                        (ver, tr("eng so'nggi").to_string(), p.success)
-                    } else {
-                        (ver, tr("yangilash kerak").to_string(), p.warning)
-                    }
+                    // An update the teacher started: how it went, until the computer reports the
+                    // new version (or 15 minutes pass without it).
+                    let job = cx.hub.lock().unwrap().vimora_jobs.get(&v.key).cloned();
+                    let state = match (current, job) {
+                        (true, Some(_)) => UpdCell::Done(tr("o'rnatildi").into()),
+                        (true, None) => UpdCell::Done(tr("eng so'nggi").into()),
+                        (false, Some(j)) => match j.failed {
+                            Some(why) => UpdCell::Failed(why),
+                            None if j.at.elapsed() < std::time::Duration::from_secs(15 * 60) => {
+                                UpdCell::Waiting(tr("o'rnatilmoqda").into())
+                            }
+                            None => {
+                                UpdCell::Failed(tr("o'rnatilmadi — qayta urinib ko'ring").into())
+                            }
+                        },
+                        (false, None) => UpdCell::Text(tr("yangilash kerak").into(), p.warning),
+                    };
+                    (ver, state)
                 },
                 |b| b.contains("Vimora"),
             );
@@ -1396,9 +1425,15 @@ pub(super) fn updates_form(
                 &views,
                 [tr("Kompyuter"), tr("Kutmoqda"), tr("Holat")],
                 |v| match v.status.os_updates {
-                    None => ("—".into(), tr("tekshirilmagan").to_string(), p.faint),
-                    Some(0) => ("0".into(), tr("yangi").to_string(), p.success),
-                    Some(n) => (n.to_string(), tr("yangilash kerak").to_string(), p.warning),
+                    None => (
+                        "—".into(),
+                        UpdCell::Text(tr("tekshirilmagan").into(), p.faint),
+                    ),
+                    Some(0) => ("0".into(), UpdCell::Done(tr("yangi").into())),
+                    Some(n) => (
+                        n.to_string(),
+                        UpdCell::Text(tr("yangilash kerak").into(), p.warning),
+                    ),
                 },
                 |b| !b.contains("Vimora"),
             );
@@ -1438,9 +1473,15 @@ pub(super) fn updates_form(
                 &views,
                 [tr("Kompyuter"), tr("Kutmoqda"), tr("Holat")],
                 |v| match v.status.app_updates {
-                    None => ("—".into(), tr("tekshirilmagan").to_string(), p.faint),
-                    Some(0) => ("0".into(), tr("yangi").to_string(), p.success),
-                    Some(n) => (n.to_string(), tr("yangilash kerak").to_string(), p.warning),
+                    None => (
+                        "—".into(),
+                        UpdCell::Text(tr("tekshirilmagan").into(), p.faint),
+                    ),
+                    Some(0) => ("0".into(), UpdCell::Done(tr("yangi").into())),
+                    Some(n) => (
+                        n.to_string(),
+                        UpdCell::Text(tr("yangilash kerak").into(), p.warning),
+                    ),
                 },
                 |b| !b.contains("Vimora"),
             );
@@ -1809,42 +1850,45 @@ pub(super) fn net_form(
     import: &mut bool,
 ) {
     let before = *tab;
-    ui_kit::segmented(p).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            for (t, ic, label, n) in [
-                (
-                    NetTab::Domains,
-                    icons::GLOBE_LOCK,
-                    tr("Saytlar"),
-                    Some(crate::blockcat::effective(domains, site_cats).len()),
-                ),
-                (
-                    NetTab::Keywords,
-                    icons::TEXT_SEARCH,
-                    tr("Kalit so'zlar"),
-                    Some(crate::config::active_list(keywords).len()),
-                ),
-                (
-                    NetTab::Apps,
-                    icons::APP_WINDOW,
-                    tr("Dasturlar"),
-                    Some(crate::blockcat::effective(apps, app_cats).len()),
-                ),
-                (
-                    NetTab::Devices,
-                    icons::USB,
-                    tr("Qurilmalar"),
-                    Some(devices_blocked(devices)),
-                ),
-                (NetTab::Search, icons::SHIELD_CHECK, tr("Tarmoq"), None),
-            ] {
-                if ui_kit::tab_icon(ui, Some(ic), label, n, *tab == t).clicked() {
-                    *tab = t;
-                }
-            }
+    let tabs = [
+        (
+            NetTab::Domains,
+            icons::GLOBE_LOCK,
+            tr("Saytlar"),
+            Some(crate::blockcat::effective(domains, site_cats).len()),
+        ),
+        (
+            NetTab::Keywords,
+            icons::TEXT_SEARCH,
+            tr("So'zlar"),
+            Some(crate::config::active_list(keywords).len()),
+        ),
+        (
+            NetTab::Apps,
+            icons::APP_WINDOW,
+            tr("Dasturlar"),
+            Some(crate::blockcat::effective(apps, app_cats).len()),
+        ),
+        (
+            NetTab::Devices,
+            icons::USB,
+            tr("Qurilmalar"),
+            Some(devices_blocked(devices)),
+        ),
+        (NetTab::Search, icons::SHIELD_CHECK, tr("Tarmoq"), None),
+    ];
+    let items: Vec<ui_kit::TabItem> = tabs
+        .iter()
+        .map(|(_, ic, label, n)| ui_kit::TabItem {
+            icon: Some(*ic),
+            label,
+            count: *n,
         })
-    });
+        .collect();
+    let current = tabs.iter().position(|x| x.0 == *tab).unwrap_or(0);
+    if let Some(i) = ui_kit::tab_strip(ui, &items, current) {
+        *tab = tabs[i].0;
+    }
     if *tab != before {
         entry.clear();
         *open_cat = None;

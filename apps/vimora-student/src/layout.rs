@@ -184,15 +184,3 @@ pub fn language() -> &'static str {
         "uz"
     }
 }
-
-/// Screen scale (Windows: the system DPI / 96), to place a window at the mouse pointer.
-pub fn scale() -> f32 {
-    #[cfg(windows)]
-    unsafe {
-        let dpi = windows_sys::Win32::UI::HiDpi::GetDpiForSystem();
-        if dpi > 0 {
-            return dpi as f32 / 96.0;
-        }
-    }
-    1.0
-}

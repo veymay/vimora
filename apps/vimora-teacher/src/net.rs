@@ -52,6 +52,14 @@ pub struct Student {
     pub last_result: Option<(bool, String)>,
 }
 
+/// A Vimora update the teacher started on a computer.
+#[derive(Clone)]
+pub struct VimoraJob {
+    pub at: Instant,
+    /// Why it failed, as the computer reported it.
+    pub failed: Option<String>,
+}
+
 pub fn unix_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -129,6 +137,8 @@ pub struct Hub {
     /// teacher). Free ones (in no teacher) announce themselves every few seconds; a computer
     /// removed here that still follows this teacher (it missed the "forget" command, or the
     /// freeze restored its pairing) knocks only every minute or two.
+    /// Vimora updates started from the Updates drawer: computer key → job.
+    pub vimora_jobs: BTreeMap<String, VimoraJob>,
     pub free: BTreeMap<String, (vimora_core::StudentInfo, std::net::IpAddr, Instant, bool)>,
     /// Assignments collected in the current round: student id → number of files.
     pub collected: BTreeMap<u64, usize>,
@@ -153,6 +163,7 @@ impl Hub {
             relay: None,
             collected: BTreeMap::new(),
             free: BTreeMap::new(),
+            vimora_jobs: BTreeMap::new(),
             attendance: Default::default(),
             poll: None,
             test: None,
@@ -688,6 +699,12 @@ async fn session(
                     let mut h = hub.lock().unwrap();
                     if let Some(s) = h.students.get_mut(&id) {
                         s.last_result = Some((ok, message.clone()));
+                    }
+                    // A Vimora update that failed: shown in the Updates drawer's table.
+                    if !ok && message.contains("Vimora") {
+                        if let Some(j) = h.vimora_jobs.get_mut(&info.key()) {
+                            j.failed = Some(message.clone());
+                        }
                     }
                     h.log(
                         if ok { Level::Info } else { Level::Warn },
