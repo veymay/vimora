@@ -312,6 +312,10 @@ impl TeacherApp {
         };
         let latest = scx.latest.clone();
         let admin = self.admin;
+        let policies = {
+            let c = self.cfg.read().unwrap();
+            (c.update_policies.clone(), c.update_policy)
+        };
         let mut settings_out = SettingsOut::default();
         let mut settings_before: Option<TeacherConfig> = None;
 
@@ -575,6 +579,7 @@ impl TeacherApp {
                                     all,
                                     targets: &targets,
                                     admin,
+                                    policies: &policies,
                                 },
                             );
                         });
@@ -613,6 +618,7 @@ impl TeacherApp {
                                 all,
                                 targets: &targets,
                                 admin,
+                                policies: &policies,
                             },
                         );
                     });
@@ -774,64 +780,9 @@ impl TeacherApp {
         self.machine_requests(ctx);
         self.lesson_requests(&targets);
         self.free_requests(ctx);
-        if let Some(Dialog::Updates {
-            policy,
-            restart,
-            request,
-            ..
-        }) = &mut self.dialog
-        {
+        if let Some(Dialog::Updates { request, .. }) = &mut self.dialog {
             if let Some(r) = request.take() {
-                let (policy, restart) = (*policy, *restart);
-                match r {
-                    UpdateRequest::Policy => {
-                        self.cfg.write().unwrap().update_policy = policy;
-                        config::save(&self.cfg.read().unwrap());
-                        // The policy is one for the whole class, not only the targets.
-                        let everyone: Vec<u64> =
-                            self.hub.lock().unwrap().students.keys().copied().collect();
-                        self.send_priv(&everyone, PrivCommand::SetUpdatePolicy(policy), "");
-                    }
-                    UpdateRequest::Vimora => {
-                        // Remembered per computer: the table follows it to "o'rnatildi" or an
-                        // error.
-                        {
-                            let mut h = self.hub.lock().unwrap();
-                            let keys: Vec<String> = targets
-                                .iter()
-                                .filter_map(|id| h.students.get(id).map(|s| s.info.key()))
-                                .collect();
-                            for k in keys {
-                                h.vimora_jobs.insert(
-                                    k,
-                                    crate::net::VimoraJob {
-                                        at: std::time::Instant::now(),
-                                        failed: None,
-                                    },
-                                );
-                            }
-                        }
-                        self.send_priv(
-                            &targets,
-                            PrivCommand::UpdateVimora,
-                            tr("Vimora yangilanishi"),
-                        )
-                    }
-                    UpdateRequest::Check => self.send_priv(
-                        &targets,
-                        PrivCommand::CheckUpdates,
-                        tr("Yangilanishlarni tekshirish"),
-                    ),
-                    UpdateRequest::InstallSystem | UpdateRequest::InstallApps => self.send_priv(
-                        &targets,
-                        PrivCommand::InstallUpdates {
-                            os: r == UpdateRequest::InstallSystem,
-                            apps: r == UpdateRequest::InstallApps,
-                            restart,
-                        },
-                        tr("Yangilanishlarni o'rnatish"),
-                    ),
-                }
+                self.update_request(r);
             }
         }
         if !live {
@@ -854,6 +805,81 @@ impl TeacherApp {
             let d = self.dialog.take().unwrap();
             self.closing = Some(d.clone());
             self.run_dialog(d, &targets, clear);
+        }
+    }
+
+    /// What the Updates drawer asked for.
+    fn update_request(&mut self, r: UpdateRequest) {
+        match r {
+            UpdateRequest::Auto { id, on } => {
+                let Some(key) = self
+                    .hub
+                    .lock()
+                    .unwrap()
+                    .students
+                    .get(&id)
+                    .map(|s| s.info.key())
+                else {
+                    return;
+                };
+                let policy = UpdatePolicy {
+                    os: if on {
+                        OsUpdateMode::Auto
+                    } else {
+                        OsUpdateMode::Manual
+                    },
+                    apps_auto: on,
+                    vimora: on,
+                };
+                {
+                    let mut c = self.cfg.write().unwrap();
+                    c.update_policies.insert(key, policy);
+                    config::save(&c);
+                }
+                self.send_priv(&[id], PrivCommand::SetUpdatePolicy(policy), "");
+            }
+            UpdateRequest::Vimora(ids) => {
+                // Remembered per computer: the drawer follows it to "o'rnatildi" or an error.
+                {
+                    let mut h = self.hub.lock().unwrap();
+                    let keys: Vec<String> = ids
+                        .iter()
+                        .filter_map(|id| h.students.get(id).map(|s| s.info.key()))
+                        .collect();
+                    for k in keys {
+                        h.vimora_jobs.insert(
+                            k,
+                            crate::net::VimoraJob {
+                                at: std::time::Instant::now(),
+                                failed: None,
+                            },
+                        );
+                    }
+                }
+                self.send_priv(&ids, PrivCommand::UpdateVimora, tr("Vimora yangilanishi"));
+            }
+            UpdateRequest::Check(ids) => self.send_priv(
+                &ids,
+                PrivCommand::CheckUpdates,
+                tr("Yangilanishlarni tekshirish"),
+            ),
+            UpdateRequest::InstallSystem(ref ids) | UpdateRequest::InstallApps(ref ids) => {
+                let os = matches!(r, UpdateRequest::InstallSystem(_));
+                self.send_priv(
+                    ids,
+                    PrivCommand::InstallUpdates {
+                        os,
+                        apps: !os,
+                        restart: false,
+                    },
+                    tr("Yangilanishlarni o'rnatish"),
+                )
+            }
+            UpdateRequest::App { id, app, on } => {
+                self.send_priv(&[id], PrivCommand::SetAppUpdates(vec![(app, on)]), "");
+            }
+            UpdateRequest::ListApps(id) => self.send_priv(&[id], PrivCommand::ListApps, ""),
+            UpdateRequest::Restart(id) => self.ask_restart(vec![id]),
         }
     }
 
@@ -1516,14 +1542,7 @@ impl TeacherApp {
                     }
                 }
             }
-            Dialog::Updates { policy, .. } => {
-                self.cfg.write().unwrap().update_policy = policy;
-                self.send_priv(
-                    t,
-                    PrivCommand::SetUpdatePolicy(policy),
-                    tr("Yangilanish siyosati"),
-                );
-            }
+            Dialog::Updates { .. } => {}
             Dialog::Settings(_) => {}
         }
         config::save(&self.cfg.read().unwrap());

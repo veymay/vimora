@@ -506,12 +506,13 @@ async fn restart_on_update() {
     let start = stamp(&exe);
     let mut round = 0u32;
     loop {
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        // Looked at every 5 seconds (a file time is cheap): the new version takes over quickly.
+        tokio::time::sleep(Duration::from_secs(5)).await;
         round += 1;
-        // The file we run from changed, or (every minute) the installed program reports another
+        // The file we run from changed, or (every 30 s) the installed program reports another
         // version — the second also works when the installer moved our file aside.
         let changed = start.is_some() && stamp(&exe) != start;
-        let other = round.is_multiple_of(2)
+        let other = round.is_multiple_of(6)
             && tokio::task::spawn_blocking(crate::selfcheck::replaced)
                 .await
                 .ok()
@@ -521,7 +522,7 @@ async fn restart_on_update() {
             continue;
         }
         // Let the installer finish writing the file.
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        tokio::time::sleep(Duration::from_secs(4)).await;
         let target = crate::selfcheck::installed_exe().unwrap_or_else(|| exe.clone());
         let args: Vec<String> = std::env::args().skip(1).collect();
         match std::process::Command::new(&target).args(&args).spawn() {

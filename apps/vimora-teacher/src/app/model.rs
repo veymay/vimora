@@ -162,19 +162,12 @@ pub(super) enum Dialog {
         script: String,
         request: Option<MachineRequest>,
     },
+    /// One accordion per computer: its auto updates, Vimora, Windows and programs.
     Updates {
-        tab: UpdateTab,
-        policy: UpdatePolicy,
-        restart: bool,
+        /// The computer whose accordion is open.
+        open: Option<u64>,
         request: Option<UpdateRequest>,
     },
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum UpdateTab {
-    Vimora,
-    System,
-    Apps,
 }
 
 /// Something only done after the teacher said "yes" in the confirmation window.
@@ -232,15 +225,29 @@ pub(crate) struct Confirm {
     pub(super) action: ConfirmAction,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(super) enum UpdateRequest {
-    /// The policy switches changed: send them.
-    Policy,
-    /// Update the Vimora agent now.
-    Vimora,
-    Check,
-    InstallSystem,
-    InstallApps,
+    /// Automatic updates (Vimora, Windows, programs) on / off for one computer.
+    Auto {
+        id: u64,
+        on: bool,
+    },
+    /// Update Vimora now on these computers.
+    Vimora(Vec<u64>),
+    /// Look for updates (Windows and programs) on these computers.
+    Check(Vec<u64>),
+    InstallSystem(Vec<u64>),
+    InstallApps(Vec<u64>),
+    /// Automatic updates of one program on one computer.
+    App {
+        id: u64,
+        app: String,
+        on: bool,
+    },
+    /// Ask a computer for its programs.
+    ListApps(u64),
+    /// Restart a computer (installed updates wait for it).
+    Restart(u64),
 }
 
 pub(super) struct Viewer {

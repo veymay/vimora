@@ -3,7 +3,7 @@
 //! The computers check the release signature themselves (the key is built into them), so this
 //! path can't be used to make them install anything else.
 //!
-//! Only while automatic Vimora updates are on; only agents that understand the command
+//! Only to computers whose automatic Vimora updates are on; only agents that understand the command
 //! (0.3.27 and newer); each computer gets one copy per version every few hours at most.
 
 use crate::net::{Level, SharedConfig, SharedHub};
@@ -43,15 +43,21 @@ fn run(hub: SharedHub, cfg: SharedConfig) {
     let mut packages: HashMap<Target, Package> = HashMap::new();
     let mut sent: HashMap<String, (String, Instant)> = HashMap::new();
     loop {
-        if cfg.read().unwrap().update_policy.vimora {
-            round(&hub, &mut last_try, &mut release, &mut packages, &mut sent);
-        }
+        round(
+            &hub,
+            &cfg,
+            &mut last_try,
+            &mut release,
+            &mut packages,
+            &mut sent,
+        );
         std::thread::sleep(Duration::from_secs(60));
     }
 }
 
 fn round(
     hub: &SharedHub,
+    cfg: &SharedConfig,
     last_try: &mut Option<Instant>,
     release: &mut Option<(Release, Instant)>,
     packages: &mut HashMap<Target, Package>,
@@ -59,12 +65,15 @@ fn round(
 ) {
     // Computers that are behind: (id, key, label, version, target).
     let behind = |newest: &str| -> Vec<(u64, String, String, Target)> {
+        let c = cfg.read().unwrap();
         let h = hub.lock().unwrap();
         h.students
             .iter()
             .filter(|(_, s)| s.status.service && !s.version.is_empty())
             .filter(|(_, s)| !vimora_update::is_newer(FIRST_SUPPORTED, &s.version))
             .filter(|(_, s)| vimora_update::is_newer(newest, &s.version))
+            // Only where automatic Vimora updates are on (per computer).
+            .filter(|(_, s)| c.policy_of(&s.info.key()).vimora)
             .filter_map(|(id, s)| {
                 let t = Target::student_for(&s.info.os)?;
                 Some((*id, s.info.key(), s.info.label().to_string(), t))

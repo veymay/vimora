@@ -167,7 +167,7 @@ mod imp {
             .name("keep-agent".into())
             .spawn(|| {
                 // Give the logon start (Run key) its chance first.
-                std::thread::sleep(std::time::Duration::from_secs(30));
+                std::thread::sleep(std::time::Duration::from_secs(10));
                 let mut missing = 0u32;
                 loop {
                     std::thread::sleep(std::time::Duration::from_secs(3));

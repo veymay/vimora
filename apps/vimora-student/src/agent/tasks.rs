@@ -140,6 +140,10 @@ pub(super) async fn service_status_task(ctx: Ctx) {
     let mut last = StudentStatus::default();
     let mut last_apps_rev = 0u64;
     let mut last_uplink: Option<mpsc::Sender<StudentMsg>> = None;
+    // "Restart needed" (updates installed): looked at every 5 minutes, sent on a change.
+    let mut reboot: Option<bool> = None;
+    let mut reboot_checked: Option<std::time::Instant> = None;
+    let mut reboot_sent: Option<bool> = None;
     loop {
         tokio::time::sleep(Duration::from_secs(3)).await;
         let st = match service::call(IpcReq::Status).await {
@@ -177,7 +181,20 @@ pub(super) async fn service_status_task(ctx: Ctx) {
             if !last_uplink.as_ref().is_some_and(|l| l.same_channel(&tx)) {
                 last = StudentStatus::default();
                 last_apps_rev = 0;
+                reboot_sent = None;
                 last_uplink = Some(tx.clone());
+            }
+            if reboot_checked.is_none_or(|t| t.elapsed() > Duration::from_secs(300)) {
+                reboot_checked = Some(std::time::Instant::now());
+                reboot = tokio::task::spawn_blocking(crate::updates::reboot_required)
+                    .await
+                    .ok();
+            }
+            if reboot.is_some() && reboot != reboot_sent {
+                reboot_sent = reboot;
+                let _ = tx
+                    .send(StudentMsg::RebootNeeded(reboot.unwrap_or(false)))
+                    .await;
             }
             if let Some((rev, list)) = st.apps {
                 if rev != last_apps_rev {

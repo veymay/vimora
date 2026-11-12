@@ -95,6 +95,9 @@ pub struct TeacherConfig {
     pub admin_salt: String,
     pub admin_hash: String,
     pub update_policy: vimora_core::UpdatePolicy,
+    /// Per computer (key): automatic updates set in the Updates drawer. Computers without an
+    /// entry follow `update_policy`.
+    pub update_policies: BTreeMap<String, vimora_core::UpdatePolicy>,
 }
 
 /// The language chosen in Vimora's setup window (Windows: HKLM\SOFTWARE\Vimora "Language").
@@ -185,6 +188,7 @@ impl Default for TeacherConfig {
             schedules: vec![],
             admin_salt: String::new(),
             admin_hash: String::new(),
+            update_policies: BTreeMap::new(),
             update_policy: vimora_core::UpdatePolicy {
                 os: vimora_core::OsUpdateMode::Manual,
                 apps_auto: false,
@@ -259,6 +263,16 @@ pub fn save(cfg: &TeacherConfig) {
         if let Err(e) = std::fs::write(&p, serde_json::to_string_pretty(cfg).unwrap_or_default()) {
             tracing::warn!("cannot save config {}: {e}", p.display());
         }
+    }
+}
+
+impl TeacherConfig {
+    /// The update policy of one computer.
+    pub fn policy_of(&self, key: &str) -> vimora_core::UpdatePolicy {
+        self.update_policies
+            .get(key)
+            .copied()
+            .unwrap_or(self.update_policy)
     }
 }
 

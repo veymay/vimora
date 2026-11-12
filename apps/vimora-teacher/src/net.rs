@@ -50,6 +50,8 @@ pub struct Student {
     pub security: Option<vimora_core::SecurityInfo>,
     /// Last command result from this computer (ok, text).
     pub last_result: Option<(bool, String)>,
+    /// Installed updates wait for a restart.
+    pub reboot_needed: bool,
 }
 
 /// A Vimora update the teacher started on a computer.
@@ -553,6 +555,7 @@ async fn session(
                 sysinfo: None,
                 security: None,
                 last_result: None,
+                reboot_needed: false,
                 version: String::new(),
                 cursor: 0,
             },
@@ -788,6 +791,13 @@ async fn session(
                 }
                 // Only ever the first message of a connection (handled before the loop).
                 StudentMsg::Free(_) => {}
+                StudentMsg::RebootNeeded(on) => {
+                    let mut h = hub.lock().unwrap();
+                    if let Some(s) = h.students.get_mut(&id) {
+                        s.reboot_needed = on;
+                    }
+                    h.repaint();
+                }
                 StudentMsg::SecurityInfo(sec) => {
                     let mut h = hub.lock().unwrap();
                     if let Some(s) = h.students.get_mut(&id) {

@@ -597,35 +597,26 @@ fn register() -> Result<()> {
         ],
     );
     // schtasks' defaults would stop the service on battery power (laptops!), never start it
-    // there, and kill it after 3 days. Lift all of that.
-    let (ok, out) = crate::sh::script(
+    // there, and kill it after 3 days: lift all of that. And the student program itself: started
+    // by the scheduler the moment any user signs in (earlier than the Run key, which waits for
+    // the desktop), restarted if it dies; two copies starting together settle it between
+    // themselves (`single.rs`). One PowerShell run for both (each start of it takes seconds).
+    let agent_exe = exe.replace('\'', "''");
+    let (ok, out) = crate::sh::script(&format!(
         "$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries \
          -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -MultipleInstances IgnoreNew \
          -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1); \
-         foreach ($n in 'Vimora Service','Vimora Service Watchdog') { \
-           Set-ScheduledTask -TaskName $n -Settings $s | Out-Null }",
-    )
-    .unwrap_or((false, String::new()));
-    if !ok {
-        tracing::warn!("task settings: {}", crate::sh::tail(&out, 2));
-    }
-    // The agent itself: started by the scheduler the moment any user logs on (earlier than the
-    // Run key, which waits for the desktop), restarted if it dies. The Run key stays as a second
-    // way in; two copies starting together settle it between themselves (`single.rs`).
-    let agent_exe = exe.replace('\'', "''");
-    let (ok, out) = crate::sh::script(&format!(
-        "$a = New-ScheduledTaskAction -Execute '{agent_exe}'; \
+         foreach ($n in 'Vimora Service','Vimora Service Watchdog') {{ \
+           Set-ScheduledTask -TaskName $n -Settings $s | Out-Null }}; \
+         $a = New-ScheduledTaskAction -Execute '{agent_exe}'; \
          $t = New-ScheduledTaskTrigger -AtLogOn; \
          $p = New-ScheduledTaskPrincipal -GroupId 'BUILTIN\\Users' -RunLevel Limited; \
-         $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries \
-           -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -MultipleInstances IgnoreNew \
-           -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1); \
          Register-ScheduledTask -TaskName 'Vimora Student' -Action $a -Trigger $t -Principal $p \
            -Settings $s -Force | Out-Null"
     ))
     .unwrap_or((false, String::new()));
     if !ok {
-        tracing::warn!("agent logon task: {}", crate::sh::tail(&out, 2));
+        tracing::warn!("task settings: {}", crate::sh::tail(&out, 2));
     }
     register_rest(&exe);
     crate::sh::run_ok("schtasks", &["/run", "/tn", "Vimora Service"])?;

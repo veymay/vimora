@@ -312,11 +312,8 @@ impl TeacherApp {
                 app.dev_open = Some(d);
             }
             Ok("updates") => {
-                let policy = app.cfg.read().unwrap().update_policy;
                 app.dev_open = Some(Dialog::Updates {
-                    tab: UpdateTab::Vimora,
-                    policy,
-                    restart: false,
+                    open: Some(1001),
                     request: None,
                 });
             }
@@ -494,6 +491,7 @@ impl TeacherApp {
                     sysinfo: Some((demo_sysinfo(i), Instant::now())),
                     security: None,
                     last_result: None,
+                    reboot_needed: i % 5 == 1,
                 },
             );
             if let (Some(r), true) = (rooms.first(), i % 2 == 0) {
@@ -1240,11 +1238,8 @@ impl TeacherApp {
             Menu::Power => self.open_dialog(Dialog::Power(PowerChoice::Shutdown)),
             Menu::Freeze => self.open_dialog(self.shadow_dialog()),
             Menu::Updates => {
-                let policy = self.cfg.read().unwrap().update_policy;
                 self.open_dialog(Dialog::Updates {
-                    tab: UpdateTab::Apps,
-                    policy,
-                    restart: false,
+                    open: None,
                     request: None,
                 });
             }

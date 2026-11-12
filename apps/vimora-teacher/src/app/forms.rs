@@ -115,6 +115,11 @@ pub(super) struct FormCtx<'a> {
     pub(super) targets: &'a [u64],
     /// Administrator mode (the IT tools need it when a password is set).
     pub(super) admin: bool,
+    /// Automatic updates: per computer (key) and for everyone else.
+    pub(super) policies: &'a (
+        std::collections::BTreeMap<String, UpdatePolicy>,
+        UpdatePolicy,
+    ),
 }
 
 pub(super) fn dialog_body(
@@ -163,12 +168,7 @@ pub(super) fn dialog_body(
             system_name,
             ..
         } => rename_form(ui, p, alias, system, system_name, key),
-        Dialog::Updates {
-            tab,
-            policy,
-            restart,
-            request,
-        } => updates_form(ui, p, tab, policy, restart, request, cx),
+        Dialog::Updates { open, request } => updates_form(ui, p, open, request, cx),
         Dialog::Lesson(l) => lesson_form(ui, p, l, cx),
         Dialog::FreePcs {
             add,
@@ -1166,14 +1166,6 @@ fn sgroup(ui: &mut egui::Ui, p: &Palette, add: impl FnOnce(&mut egui::Ui)) {
         });
 }
 
-/// The state column of an update table (a running job is shown from the computer's status).
-pub(super) enum UpdCell {
-    Text(String, Color32),
-    Waiting(String),
-    Done(String),
-    Failed(String),
-}
-
 /// "…45%" at the end of a status line → 45.
 fn percent_of(s: &str) -> Option<f32> {
     s.strip_suffix('%')
@@ -1181,94 +1173,13 @@ fn percent_of(s: &str) -> Option<f32> {
         .and_then(|n| n.parse::<f32>().ok())
 }
 
-/// The computers of the Updates drawer as a table: name, a value (version / pending count) and
-/// the state, with a progress bar while something is running.
-fn update_table(
-    ui: &mut egui::Ui,
-    p: &Palette,
-    views: &[&View],
-    head: [&str; 3],
-    cell: impl Fn(&View) -> (String, UpdCell),
-    // Is this computer's running job part of this tab?
-    mine: impl Fn(&str) -> bool,
-) {
-    let w = ui.available_width();
-    let (c1, c2) = (w * 0.34, w * 0.2);
-    Frame::none()
-        .stroke(Stroke::new(1.0_f32, p.line))
-        .show(ui, |ui| {
-            ui.set_width(w);
-            ui.spacing_mut().item_spacing.y = 0.0;
-            let (hr, _) = ui.allocate_exact_size(vec2(w, 28.0), Sense::hover());
-            ui.painter().rect_filled(hr, Rounding::ZERO, p.bg);
-            for (x, t) in [(0.0, head[0]), (c1, head[1]), (c1 + c2, head[2])] {
-                let g = ui_kit::caps(ui, t, 9.5, ui_kit::mono(), p.faint);
-                ui.painter().galley(
-                    pos2(hr.left() + 12.0 + x, hr.center().y - g.size().y / 2.0),
-                    g,
-                    p.faint,
-                );
-            }
-            if views.is_empty() {
-                let (r, _) = ui.allocate_exact_size(vec2(w, 40.0), Sense::hover());
-                ui.painter().text(
-                    r.center(),
-                    Align2::CENTER_CENTER,
-                    tr("Onlayn kompyuter yo'q"),
-                    FontId::proportional(12.5),
-                    p.faint,
-                );
-            }
-            for v in views {
-                let (r, _) = ui.allocate_exact_size(vec2(w, 36.0), Sense::hover());
-                ui.painter()
-                    .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
-                let y = r.center().y;
-                let name = ui_kit::truncated(
-                    ui,
-                    &v.label,
-                    FontId::new(13.0, ui_kit::bold()),
-                    p.text,
-                    c1 - 20.0,
-                );
-                ui.painter()
-                    .galley(pos2(r.left() + 12.0, y - name.size().y / 2.0), name, p.text);
-                let (value, state) = cell(v);
-                ui.painter().text(
-                    pos2(r.left() + 12.0 + c1, y),
-                    Align2::LEFT_CENTER,
-                    value,
-                    FontId::new(12.0, ui_kit::mono()),
-                    p.muted,
-                );
-                let right = Rect::from_min_max(
-                    pos2(r.left() + 12.0 + c1 + c2, r.top()),
-                    r.max - vec2(12.0, 0.0),
-                );
-                // A job running on the computer for this tab wins over the plain state.
-                let busy = v.status.busy.as_deref().filter(|b| mine(b));
-                let progress = match (busy, &state) {
-                    (Some(b), _) => match percent_of(b) {
-                        Some(pct) => ui_kit::Progress::Percent(pct),
-                        None => ui_kit::Progress::Waiting(b),
-                    },
-                    (None, UpdCell::Text(t, c)) => ui_kit::Progress::Idle(t, *c),
-                    (None, UpdCell::Waiting(t)) => ui_kit::Progress::Waiting(t),
-                    (None, UpdCell::Done(t)) => ui_kit::Progress::Done(t),
-                    (None, UpdCell::Failed(t)) => ui_kit::Progress::Failed(t),
-                };
-                ui_kit::progress(ui, right, progress);
-            }
-        });
-}
-
-/// Every kind of update in one place, one tab each: the Vimora agent, the system, applications.
+/// One accordion per computer. Closed: name, Vimora version and what is going on. Open: its own
+/// automatic updates (a restart button instead when installed updates wait for one), Vimora,
+/// Windows and its programs, each program with its own automatic-update switch.
 pub(super) fn updates_form(
     ui: &mut egui::Ui,
     p: &Palette,
-    tab: &mut UpdateTab,
-    policy: &mut UpdatePolicy,
-    restart: &mut bool,
+    open: &mut Option<u64>,
     request: &mut Option<UpdateRequest>,
     cx: &FormCtx<'_>,
 ) {
@@ -1277,219 +1188,389 @@ pub(super) fn updates_form(
         .iter()
         .filter(|v| v.online && cx.targets.contains(&v.id))
         .collect();
-    let before = *policy;
-    let tabs = [
-        (UpdateTab::Apps, icons::LAYOUT_GRID, tr("Dasturlar")),
-        (UpdateTab::System, icons::MONITOR, "Windows"),
-        (UpdateTab::Vimora, icons::CLOUD_DOWNLOAD, "Vimora"),
-    ];
-    let items: Vec<ui_kit::TabItem> = tabs
+    let ids: Vec<u64> = views.iter().map(|v| v.id).collect();
+    let behind: Vec<u64> = views
         .iter()
-        .map(|(_, ic, label)| ui_kit::TabItem {
-            icon: Some(*ic),
-            label,
-            count: None,
-        })
+        .filter(|v| v.version.is_empty() || vimora_update::is_newer(cx.latest, &v.version))
+        .map(|v| v.id)
         .collect();
-    let current = tabs.iter().position(|x| x.0 == *tab).unwrap_or(0);
-    if let Some(i) = ui_kit::tab_strip(ui, &items, current) {
-        *tab = tabs[i].0;
-    }
-    ui.add_space(12.0);
-    match tab {
-        UpdateTab::Vimora => {
-            sgroup(ui, p, |ui| {
-                srow(
-                    ui,
-                    p,
-                    true,
-                    tr("Avtomatik yangilanish"),
-                    Some(tr(
-                        "O'quvchi kompyuterlari yangi Vimora versiyasini o'zi topib o'rnatadi.",
-                    )),
-                    |ui| {
-                        ui_kit::toggle(ui, &mut policy.vimora);
-                    },
-                );
-            });
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                ui.add_enabled_ui(!views.is_empty(), |ui| {
-                    if ui_kit::button(
-                        ui,
-                        Some(icons::CLOUD_DOWNLOAD),
-                        tr("Hozir yangilash"),
-                        Kind::Primary,
-                    )
-                    .clicked()
-                    {
-                        *request = Some(UpdateRequest::Vimora);
-                    }
-                });
-                ui.label(
-                    RichText::new(tf!("Eng so'nggi: {v}", v = cx.latest))
-                        .size(12.5)
-                        .color(p.muted),
-                );
-            });
-            ui.add_space(10.0);
-            update_table(
+
+    // For all of them at once.
+    ui.horizontal(|ui| {
+        ui.add_enabled_ui(!ids.is_empty(), |ui| {
+            if ui_kit::button(ui, Some(icons::REFRESH_CW), tr("Tekshirish"), Kind::Outline)
+                .clicked()
+            {
+                *request = Some(UpdateRequest::Check(ids.clone()));
+            }
+        });
+        ui.add_enabled_ui(!behind.is_empty(), |ui| {
+            if ui_kit::button(
                 ui,
-                p,
-                &views,
-                [tr("Kompyuter"), tr("Versiya"), tr("Holat")],
-                |v| {
-                    let ver = if v.version.is_empty() {
-                        "—".to_string()
-                    } else {
-                        v.version.clone()
-                    };
-                    let current =
-                        !v.version.is_empty() && !vimora_update::is_newer(cx.latest, &v.version);
-                    // An update the teacher started: how it went, until the computer reports the
-                    // new version (or 15 minutes pass without it).
-                    let job = cx.hub.lock().unwrap().vimora_jobs.get(&v.key).cloned();
-                    let state = match (current, job) {
-                        (true, Some(_)) => UpdCell::Done(tr("o'rnatildi").into()),
-                        (true, None) => UpdCell::Done(tr("eng so'nggi").into()),
-                        (false, Some(j)) => match j.failed {
-                            Some(why) => UpdCell::Failed(why),
-                            None if j.at.elapsed() < std::time::Duration::from_secs(15 * 60) => {
-                                UpdCell::Waiting(tr("o'rnatilmoqda").into())
-                            }
-                            None => {
-                                UpdCell::Failed(tr("o'rnatilmadi — qayta urinib ko'ring").into())
-                            }
-                        },
-                        (false, None) => UpdCell::Text(tr("yangilash kerak").into(), p.warning),
-                    };
-                    (ver, state)
-                },
-                |b| b.contains("Vimora"),
+                Some(icons::CLOUD_DOWNLOAD),
+                &tf!("Vimora'ni yangilash ({n})", n = behind.len()),
+                Kind::Primary,
+            )
+            .clicked()
+            {
+                *request = Some(UpdateRequest::Vimora(behind.clone()));
+            }
+        });
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.label(
+                RichText::new(tf!("Eng so'nggi: {v}", v = cx.latest))
+                    .size(12.5)
+                    .color(p.muted),
             );
-        }
-        UpdateTab::System => {
-            sgroup(ui, p, |ui| {
-                srow(
+        });
+    });
+    ui.add_space(12.0);
+    if views.is_empty() {
+        ui.label(
+            RichText::new(tr("Onlayn kompyuter yo'q"))
+                .size(12.5)
+                .color(p.faint),
+        );
+        return;
+    }
+
+    let w = ui.available_width();
+    ui.spacing_mut().item_spacing.y = 0.0;
+    Frame::none()
+        .stroke(Stroke::new(1.0_f32, p.line))
+        .show(ui, |ui| {
+            ui.set_width(w);
+            for (i, v) in views.iter().enumerate() {
+                let (student_apps, reboot) = {
+                    let h = cx.hub.lock().unwrap();
+                    let s = h.students.get(&v.id);
+                    (
+                        s.and_then(|s| s.apps.clone()),
+                        s.is_some_and(|s| s.reboot_needed),
+                    )
+                };
+                let is_open = *open == Some(v.id);
+                // --- header ---------------------------------------------------------------
+                let (r, resp) = ui.allocate_exact_size(vec2(w, 46.0), Sense::click());
+                if i > 0 {
+                    ui.painter()
+                        .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
+                }
+                if resp.hovered() || is_open {
+                    ui.painter()
+                        .rect_filled(r.shrink(0.5), Rounding::ZERO, p.hover);
+                }
+                if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                if resp.clicked() {
+                    *open = if is_open { None } else { Some(v.id) };
+                }
+                let y = r.center().y;
+                ui.painter().text(
+                    pos2(r.left() + 18.0, y),
+                    Align2::CENTER_CENTER,
+                    if is_open {
+                        icons::CHEVRON_DOWN
+                    } else {
+                        icons::CHEVRON_RIGHT
+                    },
+                    FontId::proportional(14.0),
+                    p.muted,
+                );
+                let name = ui_kit::truncated(
                     ui,
-                    p,
-                    true,
-                    tr("Rejim"),
-                    Some(tr("Avto: tizim o'zi o'rnatadi. Qo'lda: faqat siz shu yerdan. O'chiq: yangilanmaydi.")),
-                    |ui| {
-                        ui_kit::segmented(p).show(ui, |ui| {
-                            ui.spacing_mut().item_spacing.x = 0.0;
-                            // Right-to-left row: add last-first so they read in order.
-                            for (m, label) in [
-                                (OsUpdateMode::Disabled, tr("O'chiq")),
-                                (OsUpdateMode::Manual, tr("Qo'lda")),
-                                (OsUpdateMode::Auto, tr("Avto")),
-                            ] {
-                                if ui_kit::tab(ui, label, None, policy.os == m).clicked() {
-                                    policy.os = m;
+                    &v.label,
+                    FontId::new(13.5, ui_kit::bold()),
+                    p.strong,
+                    w * 0.34,
+                );
+                ui.painter().galley(
+                    pos2(r.left() + 36.0, y - name.size().y / 2.0),
+                    name,
+                    p.strong,
+                );
+                ui.painter().text(
+                    pos2(r.left() + 36.0 + w * 0.36, y),
+                    Align2::LEFT_CENTER,
+                    if v.version.is_empty() {
+                        "—"
+                    } else {
+                        &v.version
+                    },
+                    FontId::new(12.0, ui_kit::mono()),
+                    p.muted,
+                );
+                let cell = Rect::from_min_max(
+                    pos2(r.left() + 36.0 + w * 0.36 + 70.0, r.top()),
+                    r.max - vec2(14.0, 0.0),
+                );
+                let pending = v.status.os_updates.unwrap_or(0) + v.status.app_updates.unwrap_or(0);
+                let vimora = vimora_state(v, cx);
+                let summary = if let Some(b) = v.status.busy.as_deref() {
+                    match percent_of(b) {
+                        Some(pct) => ui_kit::Progress::Percent(pct),
+                        None => ui_kit::Progress::Waiting(b),
+                    }
+                } else if let Some(s) = vimora.as_ref() {
+                    s.as_progress()
+                } else if reboot {
+                    ui_kit::Progress::Idle(tr("qayta yuklash kerak"), p.warning)
+                } else if pending > 0 {
+                    ui_kit::Progress::Idle(tr("yangilanishlar bor"), p.warning)
+                } else {
+                    ui_kit::Progress::Done(tr("eng so'nggi"))
+                };
+                ui_kit::progress(ui, cell, summary);
+
+                // --- body -----------------------------------------------------------------
+                if !is_open {
+                    continue;
+                }
+                Frame::none()
+                    .fill(p.bg)
+                    .inner_margin(Margin {
+                        left: 36.0,
+                        right: 14.0,
+                        top: 6.0,
+                        bottom: 12.0,
+                    })
+                    .show(ui, |ui| {
+                        ui.set_width(w - 50.0);
+                        let policy = cx.policies.0.get(&v.key).copied().unwrap_or(cx.policies.1);
+                        let auto =
+                            policy.vimora && policy.apps_auto && policy.os == OsUpdateMode::Auto;
+                        // Automatic updates — or the restart they wait for.
+                        srow(
+                            ui,
+                            p,
+                            true,
+                            tr("Avtomatik yangilanish"),
+                            Some(tr(
+                                "Vimora, Windows va dasturlar shu kompyuterda o'zi yangilanadi.",
+                            )),
+                            |ui| {
+                                if reboot {
+                                    if ui_kit::button(
+                                        ui,
+                                        Some(icons::ROTATE_CCW),
+                                        tr("Qayta yuklash"),
+                                        Kind::Primary,
+                                    )
+                                    .clicked()
+                                    {
+                                        *request = Some(UpdateRequest::Restart(v.id));
+                                    }
+                                } else {
+                                    let mut on = auto;
+                                    if ui_kit::toggle(ui, &mut on).changed() {
+                                        *request = Some(UpdateRequest::Auto { id: v.id, on });
+                                    }
+                                }
+                            },
+                        );
+                        // Vimora.
+                        let vrow = |ui: &mut egui::Ui, title: &str| {
+                            let w = ui.available_width();
+                            let (r, _) = ui.allocate_exact_size(vec2(w, 44.0), Sense::hover());
+                            ui.painter()
+                                .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
+                            ui.painter().text(
+                                pos2(r.left() + 12.0, r.center().y),
+                                Align2::LEFT_CENTER,
+                                title,
+                                FontId::proportional(13.5),
+                                p.text,
+                            );
+                            r
+                        };
+                        let r = vrow(ui, "Vimora");
+                        let state = match vimora.as_ref() {
+                            Some(s) => s.as_progress(),
+                            None => ui_kit::Progress::Done(tr("eng so'nggi")),
+                        };
+                        let cell = Rect::from_min_max(
+                            pos2(r.left() + 120.0, r.top()),
+                            pos2(r.right() - 130.0, r.bottom()),
+                        );
+                        ui_kit::progress(ui, cell, state);
+                        if behind.contains(&v.id) {
+                            let mut b = ui.new_child(
+                                egui::UiBuilder::new()
+                                    .max_rect(r.shrink2(vec2(12.0, 5.0)))
+                                    .layout(Layout::right_to_left(Align::Center)),
+                            );
+                            if ui_kit::button(
+                                &mut b,
+                                Some(icons::CLOUD_DOWNLOAD),
+                                tr("Yangilash"),
+                                Kind::Outline,
+                            )
+                            .clicked()
+                            {
+                                *request = Some(UpdateRequest::Vimora(vec![v.id]));
+                            }
+                        }
+                        // Windows.
+                        let r = vrow(ui, "Windows");
+                        let os = v.status.os_updates;
+                        let cell = Rect::from_min_max(
+                            pos2(r.left() + 120.0, r.top()),
+                            pos2(r.right() - 130.0, r.bottom()),
+                        );
+                        let waiting = tf!("{n} ta kutmoqda", n = os.unwrap_or(0));
+                        ui_kit::progress(
+                            ui,
+                            cell,
+                            match os {
+                                None => ui_kit::Progress::Idle(tr("tekshirilmagan"), p.faint),
+                                Some(0) => ui_kit::Progress::Done(tr("yangi")),
+                                Some(_) => ui_kit::Progress::Idle(&waiting, p.warning),
+                            },
+                        );
+                        if os.is_some_and(|n| n > 0) {
+                            let mut b = ui.new_child(
+                                egui::UiBuilder::new()
+                                    .max_rect(r.shrink2(vec2(12.0, 5.0)))
+                                    .layout(Layout::right_to_left(Align::Center)),
+                            );
+                            if ui_kit::button(
+                                &mut b,
+                                Some(icons::DOWNLOAD),
+                                tr("O'rnatish"),
+                                Kind::Outline,
+                            )
+                            .clicked()
+                            {
+                                *request = Some(UpdateRequest::InstallSystem(vec![v.id]));
+                            }
+                        }
+                        // Programs.
+                        let r = vrow(ui, tr("Dasturlar"));
+                        if v.status.app_updates.is_some_and(|n| n > 0) {
+                            let mut b = ui.new_child(
+                                egui::UiBuilder::new()
+                                    .max_rect(r.shrink2(vec2(12.0, 5.0)))
+                                    .layout(Layout::right_to_left(Align::Center)),
+                            );
+                            if ui_kit::button(
+                                &mut b,
+                                Some(icons::DOWNLOAD),
+                                tr("Hammasini yangilash"),
+                                Kind::Outline,
+                            )
+                            .clicked()
+                            {
+                                *request = Some(UpdateRequest::InstallApps(vec![v.id]));
+                            }
+                        }
+                        match student_apps {
+                            None => {
+                                // Asked for once when the accordion opens.
+                                let asked = egui::Id::new(("upd-apps-asked", v.id));
+                                if !ui.data(|d| d.get_temp::<bool>(asked).unwrap_or(false)) {
+                                    ui.data_mut(|d| d.insert_temp(asked, true));
+                                    *request = Some(UpdateRequest::ListApps(v.id));
+                                }
+                                let (r, _) = ui.allocate_exact_size(
+                                    vec2(ui.available_width(), 30.0),
+                                    Sense::hover(),
+                                );
+                                ui_kit::progress(
+                                    ui,
+                                    r.shrink2(vec2(12.0, 0.0)),
+                                    ui_kit::Progress::Waiting(tr("Ma'lumot olinmoqda…")),
+                                );
+                            }
+                            Some(apps) => {
+                                for a in apps.iter() {
+                                    let rw = ui.available_width();
+                                    let (r, _) =
+                                        ui.allocate_exact_size(vec2(rw, 36.0), Sense::hover());
+                                    let name = ui_kit::truncated(
+                                        ui,
+                                        &a.name,
+                                        FontId::proportional(13.0),
+                                        p.text,
+                                        rw * 0.5,
+                                    );
+                                    ui.painter().galley(
+                                        pos2(r.left() + 24.0, r.center().y - name.size().y / 2.0),
+                                        name,
+                                        p.text,
+                                    );
+                                    let ver = match &a.available {
+                                        Some(n) => format!("{} → {n}", a.version),
+                                        None => a.version.clone(),
+                                    };
+                                    ui.painter().text(
+                                        pos2(r.right() - 64.0, r.center().y),
+                                        Align2::RIGHT_CENTER,
+                                        ver,
+                                        FontId::new(11.5, ui_kit::mono()),
+                                        if a.available.is_some() {
+                                            p.warning
+                                        } else {
+                                            p.faint
+                                        },
+                                    );
+                                    let mut t = ui.new_child(
+                                        egui::UiBuilder::new()
+                                            .max_rect(r.shrink2(vec2(12.0, 0.0)))
+                                            .layout(Layout::right_to_left(Align::Center)),
+                                    );
+                                    let mut on = a.updates;
+                                    if ui_kit::toggle(&mut t, &mut on).changed() {
+                                        *request = Some(UpdateRequest::App {
+                                            id: v.id,
+                                            app: a.id.clone(),
+                                            on,
+                                        });
+                                    }
                                 }
                             }
-                        });
-                    },
-                );
-                srow(
-                    ui,
-                    p,
-                    false,
-                    tr("O'rnatgach qayta yuklash"),
-                    Some(tr("Kerak bo'lsa, kompyuter o'zi qayta yuklanadi.")),
-                    |ui| {
-                        ui_kit::toggle(ui, restart);
-                    },
-                );
-            });
-            ui.add_space(8.0);
-            ui.add_enabled_ui(!views.is_empty(), |ui| {
-                ui.horizontal(|ui| {
-                    if ui_kit::button(ui, Some(icons::REFRESH_CW), tr("Tekshirish"), Kind::Outline)
-                        .clicked()
-                    {
-                        *request = Some(UpdateRequest::Check);
-                    }
-                    if ui_kit::button(ui, Some(icons::DOWNLOAD), tr("O'rnatish"), Kind::Primary)
-                        .clicked()
-                    {
-                        *request = Some(UpdateRequest::InstallSystem);
-                    }
-                });
-            });
-            ui.add_space(10.0);
-            update_table(
-                ui,
-                p,
-                &views,
-                [tr("Kompyuter"), tr("Kutmoqda"), tr("Holat")],
-                |v| match v.status.os_updates {
-                    None => (
-                        "—".into(),
-                        UpdCell::Text(tr("tekshirilmagan").into(), p.faint),
-                    ),
-                    Some(0) => ("0".into(), UpdCell::Done(tr("yangi").into())),
-                    Some(n) => (
-                        n.to_string(),
-                        UpdCell::Text(tr("yangilash kerak").into(), p.warning),
-                    ),
-                },
-                |b| !b.contains("Vimora"),
-            );
-        }
-        UpdateTab::Apps => {
-            sgroup(ui, p, |ui| {
-                srow(
-                    ui,
-                    p,
-                    true,
-                    tr("Avtomatik yangilanish"),
-                    Some(tr("Store, Chrome, Edge, snap dasturlari o'zi yangilanadi.")),
-                    |ui| {
-                        ui_kit::toggle(ui, &mut policy.apps_auto);
-                    },
-                );
-            });
-            ui.add_space(8.0);
-            ui.add_enabled_ui(!views.is_empty(), |ui| {
-                ui.horizontal(|ui| {
-                    if ui_kit::button(ui, Some(icons::REFRESH_CW), tr("Tekshirish"), Kind::Outline)
-                        .clicked()
-                    {
-                        *request = Some(UpdateRequest::Check);
-                    }
-                    if ui_kit::button(ui, Some(icons::DOWNLOAD), tr("O'rnatish"), Kind::Primary)
-                        .clicked()
-                    {
-                        *request = Some(UpdateRequest::InstallApps);
-                    }
-                });
-            });
-            ui.add_space(10.0);
-            update_table(
-                ui,
-                p,
-                &views,
-                [tr("Kompyuter"), tr("Kutmoqda"), tr("Holat")],
-                |v| match v.status.app_updates {
-                    None => (
-                        "—".into(),
-                        UpdCell::Text(tr("tekshirilmagan").into(), p.faint),
-                    ),
-                    Some(0) => ("0".into(), UpdCell::Done(tr("yangi").into())),
-                    Some(n) => (
-                        n.to_string(),
-                        UpdCell::Text(tr("yangilash kerak").into(), p.warning),
-                    ),
-                },
-                |b| !b.contains("Vimora"),
-            );
+                        }
+                    });
+            }
+        });
+}
+
+/// A Vimora update the teacher started on this computer, or one it is behind with.
+enum VimoraState {
+    Done,
+    Waiting,
+    Failed(String),
+    Behind,
+}
+
+impl VimoraState {
+    fn as_progress(&self) -> ui_kit::Progress<'_> {
+        match self {
+            VimoraState::Done => ui_kit::Progress::Done(tr("o'rnatildi")),
+            VimoraState::Waiting => ui_kit::Progress::Waiting(tr("o'rnatilmoqda")),
+            VimoraState::Failed(why) => ui_kit::Progress::Failed(why),
+            VimoraState::Behind => ui_kit::Progress::Idle(tr("yangilash kerak"), WARN_INK),
         }
     }
-    // Switches apply at once: no "Save" button in this drawer.
-    if *policy != before {
-        *request = Some(UpdateRequest::Policy);
+}
+
+/// Amber for "needs an update" (the palette's warning colour, usable without a context).
+const WARN_INK: Color32 = Color32::from_rgb(0xE0, 0xA1, 0x2F);
+
+fn vimora_state(v: &View, cx: &FormCtx<'_>) -> Option<VimoraState> {
+    let current = !v.version.is_empty() && !vimora_update::is_newer(cx.latest, &v.version);
+    let job = cx.hub.lock().unwrap().vimora_jobs.get(&v.key).cloned();
+    match (current, job) {
+        (true, Some(_)) => Some(VimoraState::Done),
+        (true, None) => None,
+        (false, Some(j)) => Some(match j.failed {
+            Some(why) => VimoraState::Failed(why),
+            None if j.at.elapsed() < std::time::Duration::from_secs(15 * 60) => {
+                VimoraState::Waiting
+            }
+            None => VimoraState::Failed(tr("o'rnatilmadi — qayta urinib ko'ring").into()),
+        }),
+        (false, None) => Some(VimoraState::Behind),
     }
 }
 

@@ -184,7 +184,9 @@ impl Engine {
                 vimora_update::current()
             ));
         }
-        if let Some(m) = install_running(&rel.version) {
+        if let Some(m) =
+            install_running(&rel.version).or_else(|| installed_waiting_restart(&rel.version))
+        {
             return Ok(m);
         }
         let _lock = UpdateLock::take()?;
@@ -253,7 +255,7 @@ impl Engine {
                 vimora_update::current()
             ));
         }
-        if let Some(m) = install_running(&version) {
+        if let Some(m) = install_running(&version).or_else(|| installed_waiting_restart(&version)) {
             return Ok(m);
         }
         let _lock = UpdateLock::take()?;
@@ -623,6 +625,27 @@ fn install_running(version: &str) -> Option<String> {
     let done = vimora_update::install_result(&update_dir()).is_some();
     (fresh && !done && !vimora_update::is_newer(version, &p.version))
         .then(|| format!("Vimora {} o'rnatilmoqda", p.version))
+}
+
+/// The installer for `version` (or newer) already finished well, only this service still runs
+/// the old program: no second install — the service steps aside so the new one starts (the
+/// watchdog task starts it within a minute).
+fn installed_waiting_restart(version: &str) -> Option<String> {
+    let p = PendingUpdate::load()?;
+    let fresh = now_secs().saturating_sub(p.at) < 60 * 60;
+    let ok = vimora_update::install_result(&update_dir()) == Some(0);
+    if !(fresh && ok && !vimora_update::is_newer(version, &p.version)) {
+        return None;
+    }
+    std::thread::spawn(|| {
+        std::thread::sleep(Duration::from_secs(2));
+        tracing::info!("new version installed: restarting the service on it");
+        std::process::exit(0);
+    });
+    Some(format!(
+        "Vimora {} o'rnatildi — qayta ishga tushmoqda",
+        p.version
+    ))
 }
 
 /// Only one download + install start at a time (service, scheduled task, teacher push). A lock

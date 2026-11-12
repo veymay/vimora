@@ -6,6 +6,12 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("qayta yuklash kerak", "restart needed", "нужна перезагрузка"),
+    ("yangilanishlar bor", "updates available", "есть обновления"),
+    ("Hammasini yangilash", "Update all", "Обновить все"),
+    ("Vimora'ni yangilash ({n})", "Update Vimora ({n})", "Обновить Vimora ({n})"),
+    ("{n} ta kutmoqda", "{n} waiting", "ожидает: {n}"),
+    ("Vimora, Windows va dasturlar shu kompyuterda o'zi yangilanadi.", "Vimora, Windows and programs update themselves on this computer.", "Vimora, Windows и программы обновляются на этом компьютере сами."),
     ("Kompyuterlarda sayt yoki dastur ochish", "Open a website or a program on the computers", "Открыть сайт или программу на компьютерах"),
     ("Bajarish uchun ikki marta bosing", "Double-click to run", "Дважды щёлкните, чтобы выполнить"),
     ("o'rnatildi", "installed", "установлено"),

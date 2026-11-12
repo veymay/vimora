@@ -681,6 +681,9 @@ pub enum StudentMsg {
     /// Sent instead of `Hello` by a computer removed from its teacher: "I am free, add me".
     /// The teacher lists it (in every teacher on the network) until a teacher adds it.
     Free(StudentInfo),
+    /// The computer must restart to finish installed updates (sent when it changes and to a new
+    /// teacher session).
+    RebootNeeded(bool),
 }
 
 /// Pointer shapes carried by [`StudentMsg::Cursor`].
@@ -742,6 +745,7 @@ mod wire_tests {
             })),
             18
         );
+        assert_eq!(tag(&StudentMsg::RebootNeeded(false)), 19);
         let c = crate::net::encode_claim("pc-1", 47801);
         assert_eq!(
             crate::net::decode_claim(&c),

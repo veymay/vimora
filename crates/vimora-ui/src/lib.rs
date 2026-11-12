@@ -590,7 +590,7 @@ impl<'a> TabParts<'a> {
         selected: bool,
     ) -> Self {
         let p = palette(ui.ctx());
-        let ink = if selected { p.strong } else { p.muted };
+        let ink = if selected { ON_ACCENT } else { p.muted };
         let g = caps(ui, label, HUD, mono_bold(), ink);
         let cg = count.map(|c| {
             caps(
@@ -598,7 +598,7 @@ impl<'a> TabParts<'a> {
                 &c.to_string(),
                 HUD,
                 mono(),
-                if selected { p.accent_ink } else { p.faint },
+                if selected { ON_ACCENT } else { p.faint },
             )
         });
         Self {
@@ -619,32 +619,23 @@ impl<'a> TabParts<'a> {
         self.g.size().x + extra + icon_w
     }
 
-    /// Content centred in `rect`. The selected tab: lifted surface and an accent line below.
-    fn paint(&self, ui: &Ui, rect: Rect, resp: &Response, with_icon: bool, divider: bool) {
+    /// Content centred in `rect`. The chosen one is filled with the accent colour (dark text),
+    /// a hovered one lightly; cells sit a little apart inside their track — no lines.
+    fn paint(&self, ui: &Ui, rect: Rect, resp: &Response, with_icon: bool, _divider: bool) {
         let p = palette(ui.ctx());
-        let fill = if self.selected {
-            p.card
-        } else if resp.hovered() {
-            p.hover
-        } else {
-            Color32::TRANSPARENT
-        };
-        ui.painter().rect_filled(rect, Rounding::ZERO, fill);
+        let cell = rect.shrink(3.0);
         if self.selected {
-            ui.painter().rect_filled(
-                Rect::from_min_max(egui::pos2(rect.left(), rect.bottom() - 2.0), rect.max),
-                Rounding::ZERO,
-                p.accent,
-            );
+            ui.painter().rect_filled(cell, Rounding::ZERO, p.accent);
+        } else if resp.hovered() {
+            ui.painter().rect_filled(cell, Rounding::ZERO, p.hover);
         }
-        if divider {
-            ui.painter().vline(
-                rect.right() - 0.5,
-                rect.y_range(),
-                Stroke::new(1.0_f32, p.line),
-            );
-        }
-        let ink = if self.selected { p.strong } else { p.muted };
+        let ink = if self.selected {
+            ON_ACCENT
+        } else if resp.hovered() {
+            p.text
+        } else {
+            p.muted
+        };
         let mut x = rect.center().x - self.content_w(with_icon) / 2.0;
         let y = rect.center().y - self.g.size().y / 2.0;
         if let (Some(ic), true) = (self.icon, with_icon) {
@@ -653,22 +644,24 @@ impl<'a> TabParts<'a> {
                 Align2::LEFT_CENTER,
                 ic,
                 FontId::proportional(13.0),
-                if self.selected { p.accent_ink } else { p.muted },
+                ink,
             );
             x += 20.0;
         }
         let gx = self.g.size().x;
         ui.painter().galley(egui::pos2(x, y), self.g.clone(), ink);
         if let Some(c) = &self.cg {
-            let col = if self.selected { p.accent_ink } else { p.faint };
             ui.painter()
-                .galley(egui::pos2(x + gx + 8.0, y), c.clone(), col);
+                .galley(egui::pos2(x + gx + 8.0, y), c.clone(), ink);
         }
         if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
     }
 }
+
+/// Text and icons on an accent-filled surface (a chosen tab, a switched-on switch's knob).
+pub const ON_ACCENT: Color32 = Color32::from_rgb(0x14, 0x18, 0x10);
 
 /// A tab of [`tab_strip`].
 pub struct TabItem<'a> {
@@ -709,7 +702,7 @@ pub fn tab_strip(ui: &mut Ui, items: &[TabItem<'_>], selected: usize) -> Option<
         };
         let rect = Rect::from_min_size(egui::pos2(x, row.top()), vec2(w, CONTROL_H));
         let resp = ui.interact(rect, ui.id().with(("tab-strip", i)), Sense::click());
-        t.paint(ui, rect.shrink(0.5), &resp, with_icon, i + 1 < parts.len());
+        t.paint(ui, rect, &resp, with_icon, false);
         if resp.clicked() {
             clicked = Some(i);
         }
@@ -826,6 +819,7 @@ pub fn info(ui: &mut Ui, text: &str) -> Response {
 }
 
 /// On/off switch (square, like the rest of the kit). Returns true when toggled.
+/// On: an accent track with a dark knob on the right. Off: an outlined track with a grey knob.
 pub fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
     let p = palette(ui.ctx());
     let (rect, mut resp) = ui.allocate_exact_size(vec2(40.0, 22.0), Sense::click());
@@ -834,23 +828,27 @@ pub fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
         resp.mark_changed();
     }
     let t = ui.ctx().animate_bool_with_time(resp.id, *on, 0.12);
-    let track = if *on { p.accent } else { p.sunken };
-    let border = if *on { p.accent } else { p.line_strong };
-    ui.painter()
-        .rect(rect, Rounding::ZERO, track, Stroke::new(1.0_f32, border));
+    let hover = resp.hovered() && ui.is_enabled();
+    if *on {
+        ui.painter().rect_filled(rect, Rounding::ZERO, p.accent);
+    } else {
+        ui.painter().rect(
+            rect,
+            Rounding::ZERO,
+            if hover { p.hover } else { p.sunken },
+            Stroke::new(1.0_f32, if hover { p.muted } else { p.line_strong }),
+        );
+    }
     let knob = Rect::from_min_size(
         egui::pos2(
-            rect.left() + 3.0 + t * (rect.width() - 22.0),
-            rect.top() + 3.0,
+            rect.left() + 4.0 + t * (rect.width() - 22.0),
+            rect.top() + 4.0,
         ),
-        vec2(16.0, 16.0),
+        vec2(14.0, 14.0),
     );
-    ui.painter().rect_filled(
-        knob,
-        Rounding::ZERO,
-        if *on { Color32::WHITE } else { p.muted },
-    );
-    if resp.hovered() {
+    ui.painter()
+        .rect_filled(knob, Rounding::ZERO, lerp_color(p.faint, ON_ACCENT, t));
+    if hover {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     resp

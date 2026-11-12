@@ -35,13 +35,13 @@ pub fn replaced() -> Option<String> {
     (v != vimora_update::current()).then_some(v)
 }
 
-/// Checks every minute; `restart` is called (once) when the installed version changed.
+/// Checks every 15 seconds; `restart` is called (once) when the installed version changed.
 pub fn watch(name: &'static str, restart: impl Fn(PathBuf) + Send + 'static) {
     std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_secs(60));
+        std::thread::sleep(Duration::from_secs(15));
         if let Some(v) = replaced() {
             // Give the installer a moment to finish (it runs "setup" last).
-            std::thread::sleep(Duration::from_secs(15));
+            std::thread::sleep(Duration::from_secs(5));
             tracing::info!(
                 "{name}: version {v} is installed (running {}) — restarting",
                 vimora_update::current()
