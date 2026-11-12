@@ -54,6 +54,8 @@ pub enum IpcReq {
     },
     /// The tray window's "check for updates": installs a newer signed release now.
     UpdateNow,
+    /// The kept list of pending system updates (and its revision).
+    UpdatesInfo,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +65,8 @@ pub enum IpcResp {
     Done { ok: bool, message: String },
     Status(PrivStatus),
     Changes(Option<Vec<vimora_core::ChangeInfo>>),
+    // Append-only.
+    UpdatesInfo(Option<(u64, vimora_core::UpdatesInfo)>),
 }
 
 /// The service's persistent state: the teacher this PC obeys.
@@ -234,6 +238,8 @@ async fn serve(pairing: Pairing) -> Result<()> {
         }
     });
     let engine = Engine::new();
+    // Updates and applications looked up in advance: the teacher's lists come at once.
+    engine.prefetch();
     // A computer still in the old folder moves to the new one (only while not frozen).
     {
         let e = engine.clone();
@@ -490,6 +496,7 @@ async fn handle(
                 },
             }
         }
+        IpcReq::UpdatesInfo => IpcResp::UpdatesInfo(engine.updates_info()),
         IpcReq::UpdateNow => {
             let e = engine.clone();
             match tokio::task::spawn_blocking(move || e.update_from_student()).await {

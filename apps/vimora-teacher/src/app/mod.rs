@@ -311,8 +311,20 @@ impl TeacherApp {
                 }
                 app.dev_open = Some(d);
             }
+            Ok(o @ ("updates:apps" | "updates:vimora")) => {
+                app.dev_open = Some(Dialog::Updates {
+                    tab: if o == "updates:apps" {
+                        UpdateTab::Apps
+                    } else {
+                        UpdateTab::Vimora
+                    },
+                    open: Some(1001),
+                    request: None,
+                });
+            }
             Ok("updates") => {
                 app.dev_open = Some(Dialog::Updates {
+                    tab: UpdateTab::System,
                     open: Some(1001),
                     request: None,
                 });
@@ -377,6 +389,7 @@ impl TeacherApp {
                         os: "windows".into(),
                         ip: format!("192.168.1.{}", 40 + i),
                         version: "0.3.6".into(),
+                        prev_version: String::new(),
                         mac: format!("aabbccdd00{:02x}", 10 + i),
                         last_seen: crate::net::unix_now() - 3600 * (i as u64 + 1) * 5,
                     },
@@ -467,19 +480,24 @@ impl TeacherApp {
                     priv_counter: 0,
                     apps: Some(
                         [
-                            ("Google.Chrome", "Google Chrome", "131.0.6778"),
-                            ("Mozilla.Firefox", "Mozilla Firefox", "133.0"),
-                            ("Valve.Steam", "Steam", "2.10.91"),
-                            ("Telegram.TelegramDesktop", "Telegram Desktop", "5.9.0"),
-                            ("VideoLAN.VLC", "VLC media player", "3.0.21"),
-                            ("Microsoft.Office", "Microsoft 365", "16.0.18129"),
+                            ("Google.Chrome", "Google Chrome", "131.0.6778", "132.0.6834"),
+                            ("Mozilla.Firefox", "Mozilla Firefox", "133.0", ""),
+                            ("Valve.Steam", "Steam", "2.10.91", ""),
+                            (
+                                "Telegram.TelegramDesktop",
+                                "Telegram Desktop",
+                                "5.9.0",
+                                "5.10.1",
+                            ),
+                            ("VideoLAN.VLC", "VLC media player", "3.0.21", ""),
+                            ("Microsoft.Office", "Microsoft 365", "16.0.18129", ""),
                         ]
                         .iter()
-                        .map(|(id, name, v)| vimora_core::AppInfo {
+                        .map(|(id, name, v, new)| vimora_core::AppInfo {
                             id: id.to_string(),
                             name: name.to_string(),
                             version: v.to_string(),
-                            available: None,
+                            available: (!new.is_empty()).then(|| new.to_string()),
                             source: "winget".into(),
                             updates: true,
                         })
@@ -492,6 +510,42 @@ impl TeacherApp {
                     security: None,
                     last_result: None,
                     reboot_needed: i % 5 == 1,
+                    prev_version: if i % 3 == 0 {
+                        "0.3.26".into()
+                    } else {
+                        String::new()
+                    },
+                    updates: Some(vimora_core::UpdatesInfo {
+                        os_name: "Windows 11 Education 24H2".into(),
+                        os_build: "26100.2033".into(),
+                        items: vec![
+                            vimora_core::UpdateItem {
+                                id: "a1".into(),
+                                title: "2026-11 Cumulative Update for Windows 11 (KB5046617)"
+                                    .into(),
+                                driver: false,
+                                current: "26100.2033".into(),
+                                new: "KB5046617".into(),
+                                size_mb: 612,
+                            },
+                            vimora_core::UpdateItem {
+                                id: "a2".into(),
+                                title: "Intel Corporation - Display - 31.0.101.5590".into(),
+                                driver: true,
+                                current: "31.0.101.4502".into(),
+                                new: "31.0.101.5590".into(),
+                                size_mb: 412,
+                            },
+                            vimora_core::UpdateItem {
+                                id: "a3".into(),
+                                title: "Realtek Semiconductor Corp. - Net - 10.68.815.2023".into(),
+                                driver: true,
+                                current: "10.61.1021.2022".into(),
+                                new: "10.68.815.2023".into(),
+                                size_mb: 3,
+                            },
+                        ],
+                    }),
                 },
             );
             if let (Some(r), true) = (rooms.first(), i % 2 == 0) {
@@ -1239,6 +1293,7 @@ impl TeacherApp {
             Menu::Freeze => self.open_dialog(self.shadow_dialog()),
             Menu::Updates => {
                 self.open_dialog(Dialog::Updates {
+                    tab: UpdateTab::Apps,
                     open: None,
                     request: None,
                 });

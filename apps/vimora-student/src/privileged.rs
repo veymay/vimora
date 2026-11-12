@@ -41,6 +41,8 @@ struct Inner {
     app_updates: Option<u32>,
     busy: Option<String>,
     apps: Option<(u64, Vec<AppInfo>)>,
+    /// The system and its pending updates, with a revision like `apps`.
+    updates_info: Option<(u64, vimora_core::UpdatesInfo)>,
     changes: Option<Vec<ChangeInfo>>,
     events: Vec<(bool, String)>,
 }
@@ -210,6 +212,61 @@ impl Engine {
         self.start_install(&path, &rel.version)
     }
 
+    /// A fresh look at pending updates: counts and the detailed list (kept for the teacher).
+    fn refresh_updates(self: &Arc<Self>) -> Result<String> {
+        let info = updates::details()?;
+        let apps_pending = updates::apps_pending().ok();
+        let os = info.items.len() as u32;
+        let mut i = self.inner.lock().unwrap();
+        i.os_updates = Some(os);
+        if apps_pending.is_some() {
+            i.app_updates = apps_pending;
+        }
+        let rev = i.updates_info.as_ref().map_or(1, |(r, _)| r + 1);
+        i.updates_info = Some((rev, info));
+        Ok(format!(
+            "Yangilanishlar: tizim {os} ta, dasturlar {} ta",
+            apps_pending.unwrap_or(0)
+        ))
+    }
+
+    /// A fresh application list (with the available versions), kept for the teacher.
+    fn refresh_apps(self: &Arc<Self>) -> Result<String> {
+        let list = apps::list(&self.shield.store().app_updates)?;
+        let n = list.len();
+        let pending = list.iter().filter(|a| a.available.is_some()).count() as u32;
+        let mut i = self.inner.lock().unwrap();
+        let rev = i.apps.as_ref().map_or(1, |(r, _)| r + 1);
+        i.apps = Some((rev, list));
+        i.app_updates = Some(pending);
+        Ok(format!("{n} ta dastur topildi"))
+    }
+
+    /// Looks for updates and applications shortly after start and every two hours, so the
+    /// teacher's lists are there at once (a look takes up to a minute on Windows).
+    pub fn prefetch(self: &Arc<Self>) {
+        let me = self.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(90));
+            loop {
+                if me.inner.lock().unwrap().busy.is_none() {
+                    if let Err(e) = me.refresh_apps() {
+                        tracing::debug!("prefetch apps: {e:#}");
+                    }
+                    if let Err(e) = me.refresh_updates() {
+                        tracing::debug!("prefetch updates: {e:#}");
+                    }
+                }
+                std::thread::sleep(Duration::from_secs(2 * 3600));
+            }
+        });
+    }
+
+    /// The kept update list, for the agent (`IpcReq::UpdatesInfo`).
+    pub fn updates_info(&self) -> Option<(u64, vimora_core::UpdatesInfo)> {
+        self.inner.lock().unwrap().updates_info.clone()
+    }
+
     /// The student's own "check for updates" (tray window): the same signed-only update, now.
     pub fn update_from_student(self: &Arc<Self>) -> Result<String> {
         if let Some(b) = self.inner.lock().unwrap().busy.clone() {
@@ -366,16 +423,9 @@ impl Engine {
                     _ => self.job("Vimora yangilanmoqda", |e| e.update_vimora())?,
                 }
             }
-            PrivCommand::CheckUpdates => self.job("Yangilanishlar tekshirilmoqda", |e| {
-                let p = updates::check()?;
-                let mut i = e.inner.lock().unwrap();
-                i.os_updates = Some(p.os);
-                i.app_updates = Some(p.apps);
-                Ok(format!(
-                    "Yangilanishlar: tizim {} ta, dasturlar {} ta",
-                    p.os, p.apps
-                ))
-            })?,
+            PrivCommand::CheckUpdates => {
+                self.job("Yangilanishlar tekshirilmoqda", |e| e.refresh_updates())?
+            }
             PrivCommand::InstallUpdates { os, apps, restart } => {
                 if self.shield.protected_now() {
                     // Installing on the overlay would vanish: commit cycle instead.
@@ -417,14 +467,42 @@ impl Engine {
                 self.commit(&net.touched());
                 msg
             }
-            PrivCommand::ListApps => self.job("Dasturlar ro'yxati olinmoqda", |e| {
-                let list = apps::list(&e.shield.store().app_updates)?;
-                let n = list.len();
-                let mut i = e.inner.lock().unwrap();
-                let rev = i.apps.as_ref().map_or(1, |(r, _)| r + 1);
-                i.apps = Some((rev, list));
-                Ok(format!("{n} ta dastur topildi"))
-            })?,
+            PrivCommand::ListApps => {
+                // The list kept from the last look goes out at once (a fresh revision makes the
+                // agent send it again); a new look follows in the background.
+                {
+                    let mut i = self.inner.lock().unwrap();
+                    if let Some((rev, list)) = i.apps.take() {
+                        i.apps = Some((rev + 1, list));
+                    }
+                }
+                self.job("Dasturlar ro'yxati olinmoqda", |e| e.refresh_apps())?
+            }
+            PrivCommand::InstallUpdateIds(ids) => {
+                if self.shield.protected_now() {
+                    // Installing on the overlay would vanish: commit cycle instead.
+                    let msg = self.shield.queue(Task::InstallUpdateIds(ids))?;
+                    self.refresh_freeze();
+                    return Ok(msg);
+                }
+                self.job("Yangilanishlar o'rnatilmoqda", move |e| {
+                    let report = updates::install_ids(&ids)?;
+                    let _ = e.refresh_updates();
+                    Ok(report)
+                })?
+            }
+            PrivCommand::UpgradeApps(ids) => {
+                if self.shield.protected_now() {
+                    let msg = self.shield.queue(Task::UpgradeApps(ids))?;
+                    self.refresh_freeze();
+                    return Ok(msg);
+                }
+                self.job("Dasturlar yangilanmoqda", move |e| {
+                    let report = apps::upgrade(&ids)?;
+                    let _ = e.refresh_apps();
+                    Ok(report)
+                })?
+            }
             PrivCommand::UninstallVimora => {
                 remove_vimora()?;
                 "Vimora o'chirilmoqda".into()
@@ -584,6 +662,8 @@ impl Engine {
             Task::Rename { name } => {
                 system::rename_computer(name).map(|_| format!("Kompyuter nomi: {name}"))
             }
+            Task::InstallUpdateIds(ids) => updates::install_ids(ids),
+            Task::UpgradeApps(ids) => apps::upgrade(ids),
         });
         for (ok, m) in events {
             self.push(ok, m);

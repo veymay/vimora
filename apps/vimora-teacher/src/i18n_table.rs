@@ -6,6 +6,18 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Windows va drayverlar", "Windows and drivers", "Windows и драйверы"),
+    ("Hammasini o'rnatish", "Install all", "Установить все"),
+    ("Hamma yangilanishlar o'rnatilgan", "All updates are installed", "Все обновления установлены"),
+    ("ma'lum emas", "unknown", "неизвестно"),
+    ("Oldingi versiya", "Previous version", "Предыдущая версия"),
+    ("Ro'yxat olinmoqda…", "Getting the list…", "Получение списка…"),
+    ("{n} ta yangilanish", "{n} updates", "обновлений: {n}"),
+    ("{n} ta dastur", "{n} programs", "программ: {n}"),
+    ("{n} ta dasturga yangilanish bor", "{n} programs have updates", "Обновления есть у {n} программ"),
+    ("Versiya {b}", "Version {b}", "Версия {b}"),
+    ("Dasturlarni yangilash", "Updating programs", "Обновление программ"),
+    ("O'rnatilgan {v}  ·  eng so'nggi {l}", "Installed {v}  ·  newest {l}", "Установлена {v}  ·  новейшая {l}"),
     ("qayta yuklash kerak", "restart needed", "нужна перезагрузка"),
     ("yangilanishlar bor", "updates available", "есть обновления"),
     ("Hammasini yangilash", "Update all", "Обновить все"),

@@ -52,6 +52,10 @@ pub struct Student {
     pub last_result: Option<(bool, String)>,
     /// Installed updates wait for a restart.
     pub reboot_needed: bool,
+    /// The system and its pending updates, as last reported.
+    pub updates: Option<vimora_core::UpdatesInfo>,
+    /// Vimora version before the last change ("" = not known).
+    pub prev_version: String,
 }
 
 /// A Vimora update the teacher started on a computer.
@@ -556,6 +560,8 @@ async fn session(
                 security: None,
                 last_result: None,
                 reboot_needed: false,
+                updates: None,
+                prev_version: String::new(),
                 version: String::new(),
                 cursor: 0,
             },
@@ -590,6 +596,11 @@ async fn session(
                 .known_pcs
                 .get(&info.key())
                 .map(|k| k.version.clone())
+                .unwrap_or_default(),
+            prev_version: c
+                .known_pcs
+                .get(&info.key())
+                .map(|k| k.prev_version.clone())
                 .unwrap_or_default(),
             mac: info.machine_id.clone(),
             last_seen: unix_now(),
@@ -821,16 +832,35 @@ async fn session(
                 }
                 StudentMsg::AgentVersion(v) => {
                     let v: String = v.chars().take(24).collect();
-                    if let Some(s) = hub.lock().unwrap().students.get_mut(&id) {
-                        s.version = v.clone();
-                    }
                     let mut c = cfg.write().unwrap();
+                    let mut prev = String::new();
+                    let mut changed = false;
                     if let Some(k) = c.known_pcs.get_mut(&info.key()) {
                         if k.version != v {
-                            k.version = v;
-                            crate::config::save(&c);
+                            // Remembered: the drawer shows where it came from.
+                            if !k.version.is_empty() {
+                                k.prev_version = std::mem::take(&mut k.version);
+                            }
+                            k.version = v.clone();
+                            changed = true;
                         }
+                        prev = k.prev_version.clone();
                     }
+                    if changed {
+                        crate::config::save(&c);
+                    }
+                    drop(c);
+                    if let Some(s) = hub.lock().unwrap().students.get_mut(&id) {
+                        s.version = v.clone();
+                        s.prev_version = prev;
+                    }
+                }
+                StudentMsg::Updates(u) => {
+                    let mut h = hub.lock().unwrap();
+                    if let Some(s) = h.students.get_mut(&id) {
+                        s.updates = Some(u);
+                    }
+                    h.repaint();
                 }
                 StudentMsg::Cursor(k) => {
                     let mut h = hub.lock().unwrap();

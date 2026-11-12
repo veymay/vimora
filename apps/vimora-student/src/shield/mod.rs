@@ -170,8 +170,17 @@ pub enum Desired {
 /// Work done unprotected during a commit cycle.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Task {
-    InstallUpdates { os: bool, apps: bool },
-    Rename { name: String },
+    InstallUpdates {
+        os: bool,
+        apps: bool,
+    },
+    Rename {
+        name: String,
+    },
+    /// Only these system updates (ids from the detailed list).
+    InstallUpdateIds(Vec<String>),
+    /// Only these applications.
+    UpgradeApps(Vec<String>),
 }
 
 /// Everything Shadow mode must remember across restarts.

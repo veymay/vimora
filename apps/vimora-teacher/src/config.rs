@@ -14,6 +14,8 @@ pub struct KnownPc {
     pub ip: String,
     /// Agent version it reported last ("0.3.8"); empty for old agents.
     pub version: String,
+    /// The version it had before the last change (shown as "0.3.28 → 0.3.30").
+    pub prev_version: String,
     /// Hardware address (12 hex digits) for Wake-on-LAN.
     pub mac: String,
     /// Unix seconds of the last time it was connected.

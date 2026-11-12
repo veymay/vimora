@@ -258,6 +258,11 @@ pub enum PrivCommand {
     UninstallApp(String),
     /// Remove Vimora from this computer (only the teacher can; nothing is left behind).
     UninstallVimora,
+    /// Install these pending system updates (ids from [`UpdatesInfo`]); on a frozen computer
+    /// through a commit cycle so they stay.
+    InstallUpdateIds(Vec<String>),
+    /// Update these applications now (ids as in [`AppInfo::id`]); kept on a frozen computer.
+    UpgradeApps(Vec<String>),
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -684,6 +689,32 @@ pub enum StudentMsg {
     /// The computer must restart to finish installed updates (sent when it changes and to a new
     /// teacher session).
     RebootNeeded(bool),
+    /// The system and its pending updates (Windows Update with drivers / apt).
+    Updates(UpdatesInfo),
+}
+
+/// What a student computer's system is and which updates wait for it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct UpdatesInfo {
+    /// "Windows 11 Education 24H2", "Ubuntu 24.04.1 LTS".
+    pub os_name: String,
+    /// The installed build ("26100.2033").
+    pub os_build: String,
+    pub items: Vec<UpdateItem>,
+}
+
+/// One pending update.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct UpdateItem {
+    pub id: String,
+    pub title: String,
+    /// A driver (else the system itself).
+    pub driver: bool,
+    /// Installed version / build.
+    pub current: String,
+    /// The version this update brings.
+    pub new: String,
+    pub size_mb: u32,
 }
 
 /// Pointer shapes carried by [`StudentMsg::Cursor`].
@@ -734,6 +765,9 @@ mod wire_tests {
         assert_eq!(tag(&PrivCommand::RunScript(String::new())), 19);
         assert_eq!(tag(&PrivCommand::UninstallApp(String::new())), 20);
         assert_eq!(tag(&PrivCommand::UninstallVimora), 21);
+        assert_eq!(tag(&PrivCommand::InstallUpdateIds(vec![])), 22);
+        assert_eq!(tag(&PrivCommand::UpgradeApps(vec![])), 23);
+        assert_eq!(tag(&StudentMsg::Updates(Default::default())), 20);
         assert_eq!(tag(&StudentMsg::SecurityInfo(Default::default())), 17);
         assert_eq!(
             tag(&StudentMsg::Free(StudentInfo {

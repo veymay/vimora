@@ -48,6 +48,25 @@ pub fn uninstall(id: &str) -> Result<String> {
     imp::uninstall(id)
 }
 
+/// Updates these applications now (winget on Windows; snap or apt on Ubuntu).
+pub fn upgrade(ids: &[String]) -> Result<String> {
+    let mut done = 0;
+    let mut failed = vec![];
+    for id in ids {
+        if id.trim().is_empty() || id.starts_with('-') {
+            continue;
+        }
+        match imp::upgrade_one(id) {
+            Ok(()) => done += 1,
+            Err(e) => failed.push(format!("{id}: {e:#}")),
+        }
+    }
+    if done == 0 && !failed.is_empty() {
+        anyhow::bail!("{}", failed.join("; "));
+    }
+    Ok(format!("{done} ta dastur yangilandi"))
+}
+
 /// Upgrades every application with an available update except the blocked ones.
 pub fn upgrade_allowed(prefs: &BTreeMap<String, bool>) -> Result<String> {
     imp::upgrade_allowed(&blocked(prefs))
@@ -136,6 +155,23 @@ mod imp {
 
     fn winget(args: &[&str]) -> Result<(bool, String)> {
         sh::run(&crate::updates::winget_path(), args)
+    }
+
+    pub fn upgrade_one(id: &str) -> Result<()> {
+        let (ok, out) = winget(&[
+            "upgrade",
+            "--id",
+            id,
+            "--exact",
+            "--silent",
+            "--accept-package-agreements",
+            "--accept-source-agreements",
+            "--disable-interactivity",
+        ])?;
+        if !ok {
+            anyhow::bail!("{}", sh::tail(&out, 2));
+        }
+        Ok(())
     }
 
     pub fn uninstall(id: &str) -> Result<String> {
@@ -245,6 +281,29 @@ mod imp {
 mod imp {
     use super::*;
     use std::collections::{HashMap, HashSet};
+
+    pub fn upgrade_one(id: &str) -> Result<()> {
+        let snap = sh::run("snap", &["list", id]).is_ok_and(|(ok, _)| ok);
+        let (ok, out) = if snap {
+            sh::run("snap", &["refresh", id])?
+        } else {
+            sh::run(
+                "apt-get",
+                &[
+                    "install",
+                    "--only-upgrade",
+                    "-y",
+                    "-o",
+                    "DPkg::Lock::Timeout=300",
+                    id,
+                ],
+            )?
+        };
+        if !ok {
+            anyhow::bail!("{}", sh::tail(&out, 2));
+        }
+        Ok(())
+    }
 
     pub fn uninstall(id: &str) -> Result<String> {
         let snap = sh::run("snap", &["list", id]).is_ok_and(|(ok, _)| ok);

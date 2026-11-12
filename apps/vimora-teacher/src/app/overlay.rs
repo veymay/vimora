@@ -404,7 +404,7 @@ impl TeacherApp {
         };
         let header_icon = match dialog {
             Dialog::Message { .. } => icons::MESSAGE_SQUARE_TEXT,
-            Dialog::Launch { .. } => icons::TERMINAL,
+            Dialog::Launch { .. } => icons::ROCKET,
             Dialog::File(_) => icons::FILE_UP,
             Dialog::Net { .. } => icons::SHIELD_BAN,
             Dialog::Power(_) => icons::POWER,
@@ -468,8 +468,10 @@ impl TeacherApp {
                     ctx.data(|d| d.get_temp::<f32>(modal_h)).unwrap_or(260.0)
                 };
                 let rect = Rect::from_min_size(ui.max_rect().min, vec2(width, h));
+                // The shadow's own shape is soft-cornered (a square one leaves diagonal streaks
+                // at its corners); the window above it stays square.
                 ui.painter()
-                    .add(frame.shadow.as_shape(rect, Rounding::ZERO));
+                    .add(frame.shadow.as_shape(rect, Rounding::same(14.0)));
                 ui.painter()
                     .rect(rect, Rounding::ZERO, p.card, Stroke::new(1.0_f32, p.line));
                 // Clicks on empty parts of the drawer stay in the drawer.
@@ -811,7 +813,7 @@ impl TeacherApp {
     /// What the Updates drawer asked for.
     fn update_request(&mut self, r: UpdateRequest) {
         match r {
-            UpdateRequest::Auto { id, on } => {
+            UpdateRequest::Auto { id, kind, on } => {
                 let Some(key) = self
                     .hub
                     .lock()
@@ -822,22 +824,36 @@ impl TeacherApp {
                 else {
                     return;
                 };
-                let policy = UpdatePolicy {
-                    os: if on {
-                        OsUpdateMode::Auto
-                    } else {
-                        OsUpdateMode::Manual
-                    },
-                    apps_auto: on,
-                    vimora: on,
-                };
-                {
+                let policy = {
                     let mut c = self.cfg.write().unwrap();
+                    let mut policy = c.policy_of(&key);
+                    match kind {
+                        UpdateTab::Apps => policy.apps_auto = on,
+                        UpdateTab::System => {
+                            policy.os = if on {
+                                OsUpdateMode::Auto
+                            } else {
+                                OsUpdateMode::Manual
+                            }
+                        }
+                        UpdateTab::Vimora => policy.vimora = on,
+                    }
                     c.update_policies.insert(key, policy);
                     config::save(&c);
-                }
+                    policy
+                };
                 self.send_priv(&[id], PrivCommand::SetUpdatePolicy(policy), "");
             }
+            UpdateRequest::InstallIds { id, ids } => self.send_priv(
+                &[id],
+                PrivCommand::InstallUpdateIds(ids),
+                tr("Yangilanishlarni o'rnatish"),
+            ),
+            UpdateRequest::UpgradeApps { id, ids } => self.send_priv(
+                &[id],
+                PrivCommand::UpgradeApps(ids),
+                tr("Dasturlarni yangilash"),
+            ),
             UpdateRequest::Vimora(ids) => {
                 // Remembered per computer: the drawer follows it to "o'rnatildi" or an error.
                 {
@@ -863,22 +879,7 @@ impl TeacherApp {
                 PrivCommand::CheckUpdates,
                 tr("Yangilanishlarni tekshirish"),
             ),
-            UpdateRequest::InstallSystem(ref ids) | UpdateRequest::InstallApps(ref ids) => {
-                let os = matches!(r, UpdateRequest::InstallSystem(_));
-                self.send_priv(
-                    ids,
-                    PrivCommand::InstallUpdates {
-                        os,
-                        apps: !os,
-                        restart: false,
-                    },
-                    tr("Yangilanishlarni o'rnatish"),
-                )
-            }
-            UpdateRequest::App { id, app, on } => {
-                self.send_priv(&[id], PrivCommand::SetAppUpdates(vec![(app, on)]), "");
-            }
-            UpdateRequest::ListApps(id) => self.send_priv(&[id], PrivCommand::ListApps, ""),
+            UpdateRequest::ListApps(ids) => self.send_priv(&ids, PrivCommand::ListApps, ""),
             UpdateRequest::Restart(id) => self.ask_restart(vec![id]),
         }
     }

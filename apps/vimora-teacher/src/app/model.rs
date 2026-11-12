@@ -162,8 +162,9 @@ pub(super) enum Dialog {
         script: String,
         request: Option<MachineRequest>,
     },
-    /// One accordion per computer: its auto updates, Vimora, Windows and programs.
+    /// Three tabs (programs, Windows and drivers, Vimora), one accordion per computer in each.
     Updates {
+        tab: UpdateTab,
         /// The computer whose accordion is open.
         open: Option<u64>,
         request: Option<UpdateRequest>,
@@ -225,27 +226,27 @@ pub(crate) struct Confirm {
     pub(super) action: ConfirmAction,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum UpdateTab {
+    Apps,
+    System,
+    Vimora,
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub(super) enum UpdateRequest {
-    /// Automatic updates (Vimora, Windows, programs) on / off for one computer.
-    Auto {
-        id: u64,
-        on: bool,
-    },
+    /// Automatic updates of one kind (the tab's) on / off for one computer.
+    Auto { id: u64, kind: UpdateTab, on: bool },
+    /// Install these system updates / drivers on one computer.
+    InstallIds { id: u64, ids: Vec<String> },
+    /// Update these programs on one computer.
+    UpgradeApps { id: u64, ids: Vec<String> },
     /// Update Vimora now on these computers.
     Vimora(Vec<u64>),
     /// Look for updates (Windows and programs) on these computers.
     Check(Vec<u64>),
-    InstallSystem(Vec<u64>),
-    InstallApps(Vec<u64>),
-    /// Automatic updates of one program on one computer.
-    App {
-        id: u64,
-        app: String,
-        on: bool,
-    },
-    /// Ask a computer for its programs.
-    ListApps(u64),
+    /// Ask these computers for their programs.
+    ListApps(Vec<u64>),
     /// Restart a computer (installed updates wait for it).
     Restart(u64),
 }

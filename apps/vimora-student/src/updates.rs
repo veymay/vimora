@@ -6,12 +6,7 @@
 
 use crate::sh;
 use anyhow::Result;
-use vimora_core::{OsUpdateMode, UpdatePolicy};
-
-pub struct Pending {
-    pub os: u32,
-    pub apps: u32,
-}
+use vimora_core::{OsUpdateMode, UpdateItem, UpdatePolicy, UpdatesInfo};
 
 pub fn set_policy(p: UpdatePolicy) -> Result<String> {
     imp::set_policy(p)?;
@@ -30,8 +25,56 @@ pub fn set_policy(p: UpdatePolicy) -> Result<String> {
     ))
 }
 
-pub fn check() -> Result<Pending> {
-    imp::check()
+/// How many applications have an update waiting (winget / snap).
+pub fn apps_pending() -> Result<u32> {
+    imp::apps_pending()
+}
+
+/// The system (name, build) and every pending update with its versions (drivers included).
+pub fn details() -> Result<UpdatesInfo> {
+    imp::details()
+}
+
+/// Installs only these pending updates (ids from [`details`]).
+pub fn install_ids(ids: &[String]) -> Result<String> {
+    // Only ids made of letters, digits, '-', '.', '+', ':' (GUIDs, package names).
+    let ids: Vec<&String> = ids
+        .iter()
+        .filter(|i| {
+            !i.is_empty()
+                && i.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "-.+:_".contains(c))
+        })
+        .collect();
+    if ids.is_empty() {
+        anyhow::bail!("yangilanish tanlanmagan");
+    }
+    imp::install_ids(&ids)
+}
+
+/// Parses the tab-separated report of the details scripts.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn parse_details(text: &str) -> UpdatesInfo {
+    let mut info = UpdatesInfo::default();
+    for line in text.lines() {
+        let f: Vec<&str> = line.trim_end_matches('\r').split('\t').collect();
+        match f.first().copied() {
+            Some("OS") if f.len() >= 3 => {
+                info.os_name = f[1].trim().to_string();
+                info.os_build = f[2].trim().to_string();
+            }
+            Some("ITEM") if f.len() >= 7 => info.items.push(UpdateItem {
+                id: f[1].trim().to_string(),
+                driver: f[2].trim() == "1",
+                title: f[3].trim().to_string(),
+                current: f[4].trim().to_string(),
+                new: f[5].trim().to_string(),
+                size_mb: f[6].trim().parse().unwrap_or(0),
+            }),
+            _ => {}
+        }
+    }
+    info
 }
 
 /// Installs pending updates (apps: only those the teacher didn't block). Returns a summary.
@@ -138,10 +181,6 @@ mod imp {
         "winget".into()
     }
 
-    const SEARCH: &str = "$s=New-Object -ComObject Microsoft.Update.Session; \
-        $r=$s.CreateUpdateSearcher().Search(\"IsInstalled=0 and IsHidden=0 and Type='Software'\"); \
-        Write-Output (\"COUNT \" + $r.Updates.Count)";
-
     const INSTALL: &str = "$ErrorActionPreference='Stop'; $s=New-Object -ComObject Microsoft.Update.Session; \
         $r=$s.CreateUpdateSearcher().Search(\"IsInstalled=0 and IsHidden=0 and Type='Software'\"); \
         if($r.Updates.Count -eq 0){ Write-Output 'INSTALLED 0'; exit 0 }; \
@@ -158,11 +197,7 @@ mod imp {
             .and_then(|n| n.parse().ok())
     }
 
-    pub fn check() -> Result<Pending> {
-        let (_, out) = sh::script(SEARCH)?;
-        let os = count_after(&out, "COUNT ").ok_or_else(|| {
-            anyhow::anyhow!("Windows Update javob bermadi: {}", sh::tail(&out, 2))
-        })?;
+    pub fn apps_pending() -> Result<u32> {
         let (_, wg) = sh::run(
             &winget_path(),
             &[
@@ -172,13 +207,70 @@ mod imp {
             ],
         )
         .unwrap_or((false, String::new()));
-        // "N upgrades available." (English) — fall back to counting table rows.
-        let apps = wg
+        // "N upgrades available." (English).
+        Ok(wg
             .lines()
             .find(|l| l.contains("upgrades available") || l.contains("upgrade available"))
             .and_then(|l| l.split_whitespace().next()?.parse().ok())
-            .unwrap_or(0);
-        Ok(Pending { os, apps })
+            .unwrap_or(0))
+    }
+
+    /// One PowerShell run: the system, installed driver versions, every pending update.
+    const DETAILS: &str = r#"
+$ErrorActionPreference='SilentlyContinue'
+$cv=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+$os=((Get-CimInstance Win32_OperatingSystem).Caption -replace '^Microsoft ','')
+$build="$($cv.CurrentBuild).$($cv.UBR)"
+"OS`t$os $($cv.DisplayVersion)`t$build"
+$drv=@{}
+foreach($d in Get-CimInstance Win32_PnPSignedDriver){ if($d.HardWareID -and $d.DriverVersion){ $drv[([string]$d.HardWareID).ToUpper()]=$d.DriverVersion } }
+$s=New-Object -ComObject Microsoft.Update.Session
+$r=$s.CreateUpdateSearcher().Search("IsInstalled=0 and IsHidden=0")
+foreach($u in $r.Updates){
+  $isd=($u.Type -eq 2); $cur=''; $new=''
+  if($isd){
+    $h=[string]$u.DriverHardwareID; if($h){ $cur=$drv[$h.ToUpper()] }
+    if($u.DriverVerDate){ $new=$u.DriverVerDate.ToString('yyyy-MM-dd') }
+    if($u.Title -match '(\d+(\.\d+){2,})\s*$'){ $new=$matches[1] }
+  } else {
+    $cur=$build; if($u.Title -match '(KB\d+)'){ $new=$matches[1] }
+  }
+  $mb=[int]($u.MaxDownloadSize/1MB)
+  "ITEM`t$($u.Identity.UpdateID)`t$([int]$isd)`t$($u.Title -replace "`t",' ')`t$cur`t$new`t$mb"
+}
+"#;
+
+    pub fn details() -> Result<UpdatesInfo> {
+        let (_, out) = sh::script(DETAILS)?;
+        let info = super::parse_details(&out);
+        if info.os_name.is_empty() {
+            anyhow::bail!("Windows Update javob bermadi: {}", sh::tail(&out, 2));
+        }
+        Ok(info)
+    }
+
+    pub fn install_ids(ids: &[&String]) -> Result<String> {
+        let list = ids
+            .iter()
+            .map(|i| format!("'{i}'"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let script = format!(
+            "$ErrorActionPreference='Stop'; $ids=@({list}); $s=New-Object -ComObject Microsoft.Update.Session; \
+             $r=$s.CreateUpdateSearcher().Search(\"IsInstalled=0 and IsHidden=0\"); \
+             $c=New-Object -ComObject Microsoft.Update.UpdateColl; \
+             foreach($u in $r.Updates){{ if($ids -contains $u.Identity.UpdateID){{ if(-not $u.EulaAccepted){{ $u.AcceptEula() }}; [void]$c.Add($u) }} }}; \
+             if($c.Count -eq 0){{ Write-Output 'INSTALLED 0'; exit 0 }}; \
+             $d=$s.CreateUpdateDownloader(); $d.Updates=$c; [void]$d.Download(); \
+             $i=$s.CreateUpdateInstaller(); $i.Updates=$c; $res=$i.Install(); \
+             Write-Output (\"INSTALLED \" + $c.Count + \" REBOOT \" + $res.RebootRequired)"
+        );
+        let (ok, out) = sh::script(&script)?;
+        match count_after(&out, "INSTALLED ") {
+            Some(n) => Ok(format!("Windows: {n} ta yangilanish o'rnatildi")),
+            None if !ok => anyhow::bail!("Windows Update xatosi: {}", sh::tail(&out, 3)),
+            None => Ok("Windows: tayyor".into()),
+        }
     }
 
     pub fn install_os() -> Result<String> {
@@ -243,17 +335,66 @@ mod imp {
         Ok(())
     }
 
-    pub fn check() -> Result<Pending> {
-        let _ = sh::run("apt-get", &["update", "-qq"]);
-        let (_, sim) = sh::run("apt-get", &["-s", "upgrade"])?;
-        let os = sim.lines().filter(|l| l.starts_with("Inst ")).count() as u32;
+    pub fn apps_pending() -> Result<u32> {
         let (_, snaps) = sh::run("snap", &["refresh", "--list"]).unwrap_or((false, String::new()));
-        let apps = snaps
+        Ok(snaps
             .lines()
             .skip(1)
             .filter(|l| !l.trim().is_empty() && !l.contains("All snaps up to date"))
-            .count() as u32;
-        Ok(Pending { os, apps })
+            .count() as u32)
+    }
+
+    pub fn details() -> Result<UpdatesInfo> {
+        let os_name = std::fs::read_to_string("/etc/os-release")
+            .unwrap_or_default()
+            .lines()
+            .find_map(|l| l.strip_prefix("PRETTY_NAME="))
+            .map(|v| v.trim_matches('"').to_string())
+            .unwrap_or_else(|| "Linux".into());
+        let os_build = sh::run("uname", &["-r"])
+            .map(|(_, o)| o.trim().to_string())
+            .unwrap_or_default();
+        let _ = sh::run("apt-get", &["update", "-qq"]);
+        let (_, list) = sh::run("apt", &["list", "--upgradable"]).unwrap_or((false, String::new()));
+        // "pkg/suite 1.2-3 amd64 [upgradable from: 1.2-1]"
+        let items = list
+            .lines()
+            .filter_map(|l| {
+                let (pkg, rest) = l.split_once('/')?;
+                let new = rest.split_whitespace().nth(1)?.to_string();
+                let current = rest
+                    .split("from: ")
+                    .nth(1)
+                    .map(|c| c.trim_end_matches(']').to_string())
+                    .unwrap_or_default();
+                Some(UpdateItem {
+                    id: pkg.to_string(),
+                    title: pkg.to_string(),
+                    driver: false,
+                    current,
+                    new,
+                    size_mb: 0,
+                })
+            })
+            .collect();
+        Ok(UpdatesInfo {
+            os_name,
+            os_build,
+            items,
+        })
+    }
+
+    pub fn install_ids(ids: &[&String]) -> Result<String> {
+        let mut args = vec![
+            "install",
+            "--only-upgrade",
+            "-y",
+            "-o",
+            "DPkg::Lock::Timeout=300",
+        ];
+        args.extend(ids.iter().map(|s| s.as_str()));
+        sh::run_ok("apt-get", &args)?;
+        Ok(format!("{} ta paket yangilandi", ids.len()))
     }
 
     pub fn install_os() -> Result<String> {
@@ -273,5 +414,24 @@ mod imp {
 
     pub fn reboot_required() -> bool {
         std::path::Path::new("/var/run/reboot-required").exists()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn parses_update_report() {
+        let text = "OS\tWindows 11 Education 24H2\t26100.2033\r\n\
+                    ITEM\tabc-1\t0\t2026-11 Cumulative Update (KB5046617)\t26100.2033\tKB5046617\t612\r\n\
+                    ITEM\tdef-2\t1\tIntel - Display - 31.0.101.5590\t31.0.101.4502\t31.0.101.5590\t412\n\
+                    noise\n";
+        let info = super::parse_details(text);
+        assert_eq!(info.os_name, "Windows 11 Education 24H2");
+        assert_eq!(info.os_build, "26100.2033");
+        assert_eq!(info.items.len(), 2);
+        assert!(!info.items[0].driver && info.items[1].driver);
+        assert_eq!(info.items[1].current, "31.0.101.4502");
+        assert_eq!(info.items[1].new, "31.0.101.5590");
+        assert_eq!(info.items[0].size_mb, 612);
     }
 }

@@ -549,10 +549,11 @@ pub const CHOICE_H: f32 = 28.0;
 pub fn tab(ui: &mut Ui, label: &str, count: Option<usize>, selected: bool) -> Response {
     let parts = TabParts::new(ui, None, label, count, selected);
     let (rect, resp) = ui.allocate_exact_size(
-        vec2(parts.content_w(false) + 20.0, CHOICE_H),
+        vec2(parts.content_w(false) + 23.0, CHOICE_H),
         Sense::click(),
     );
-    parts.paint(ui, rect, &resp, false, true);
+    // 1.5 px each side: 3 px between neighbours, as inside the track.
+    parts.paint(ui, rect.shrink2(vec2(1.5, 0.0)), &resp, false, true);
     resp
 }
 
@@ -565,11 +566,9 @@ pub fn tab_icon(
     selected: bool,
 ) -> Response {
     let parts = TabParts::new(ui, icon, label, count, selected);
-    let (rect, resp) = ui.allocate_exact_size(
-        vec2(parts.content_w(true) + 24.0, CONTROL_H),
-        Sense::click(),
-    );
-    parts.paint(ui, rect, &resp, true, true);
+    let (rect, resp) =
+        ui.allocate_exact_size(vec2(parts.content_w(true) + 27.0, CHOICE_H), Sense::click());
+    parts.paint(ui, rect.shrink2(vec2(1.5, 0.0)), &resp, true, true);
     resp
 }
 
@@ -590,7 +589,7 @@ impl<'a> TabParts<'a> {
         selected: bool,
     ) -> Self {
         let p = palette(ui.ctx());
-        let ink = if selected { ON_ACCENT } else { p.muted };
+        let ink = if selected { p.strong } else { p.muted };
         let g = caps(ui, label, HUD, mono_bold(), ink);
         let cg = count.map(|c| {
             caps(
@@ -598,7 +597,7 @@ impl<'a> TabParts<'a> {
                 &c.to_string(),
                 HUD,
                 mono(),
-                if selected { ON_ACCENT } else { p.faint },
+                if selected { p.accent_ink } else { p.faint },
             )
         });
         Self {
@@ -619,18 +618,22 @@ impl<'a> TabParts<'a> {
         self.g.size().x + extra + icon_w
     }
 
-    /// Content centred in `rect`. The chosen one is filled with the accent colour (dark text),
-    /// a hovered one lightly; cells sit a little apart inside their track — no lines.
+    /// Content centred in `rect` (the cell itself). The chosen one: a raised surface with a thin
+    /// border, bright text and an accent icon. Hovered: a light fill. No lines underneath.
     fn paint(&self, ui: &Ui, rect: Rect, resp: &Response, with_icon: bool, _divider: bool) {
         let p = palette(ui.ctx());
-        let cell = rect.shrink(3.0);
         if self.selected {
-            ui.painter().rect_filled(cell, Rounding::ZERO, p.accent);
+            ui.painter().rect(
+                rect,
+                Rounding::ZERO,
+                p.card,
+                Stroke::new(1.0_f32, p.line_strong),
+            );
         } else if resp.hovered() {
-            ui.painter().rect_filled(cell, Rounding::ZERO, p.hover);
+            ui.painter().rect_filled(rect, Rounding::ZERO, p.hover);
         }
         let ink = if self.selected {
-            ON_ACCENT
+            p.strong
         } else if resp.hovered() {
             p.text
         } else {
@@ -644,15 +647,16 @@ impl<'a> TabParts<'a> {
                 Align2::LEFT_CENTER,
                 ic,
                 FontId::proportional(13.0),
-                ink,
+                if self.selected { p.accent } else { ink },
             );
             x += 20.0;
         }
         let gx = self.g.size().x;
         ui.painter().galley(egui::pos2(x, y), self.g.clone(), ink);
         if let Some(c) = &self.cg {
+            let col = if self.selected { p.accent_ink } else { p.faint };
             ui.painter()
-                .galley(egui::pos2(x + gx + 8.0, y), c.clone(), ink);
+                .galley(egui::pos2(x + gx + 8.0, y), c.clone(), col);
         }
         if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -688,25 +692,29 @@ pub fn tab_strip(ui: &mut Ui, items: &[TabItem<'_>], selected: usize) -> Option<
         with_icon = false;
         content = parts.iter().map(|t| t.content_w(false)).sum();
     }
-    let spare = ((avail - content) / n).max(4.0);
+    // A track with 3 px inside and 3 px between the cells: the same space everywhere.
+    const PAD: f32 = 3.0;
     let (row, _) = ui.allocate_exact_size(vec2(avail, CONTROL_H), Sense::hover());
     ui.painter()
         .rect(row, Rounding::ZERO, p.sunken, Stroke::new(1.0_f32, p.line));
+    let inner = row.shrink(PAD);
+    let gaps = PAD * (n - 1.0);
+    let spare = ((inner.width() - gaps - content) / n).max(4.0);
     let mut clicked = None;
-    let mut x = row.left();
+    let mut x = inner.left();
     for (i, t) in parts.iter().enumerate() {
         let w = if i + 1 == parts.len() {
-            row.right() - x
+            inner.right() - x
         } else {
             t.content_w(with_icon) + spare
         };
-        let rect = Rect::from_min_size(egui::pos2(x, row.top()), vec2(w, CONTROL_H));
+        let rect = Rect::from_min_size(egui::pos2(x, inner.top()), vec2(w, inner.height()));
         let resp = ui.interact(rect, ui.id().with(("tab-strip", i)), Sense::click());
         t.paint(ui, rect, &resp, with_icon, false);
         if resp.clicked() {
             clicked = Some(i);
         }
-        x += w;
+        x += w + PAD;
     }
     clicked
 }
@@ -717,7 +725,13 @@ pub fn segmented(p: &Palette) -> Frame {
         .fill(p.sunken)
         .stroke(Stroke::new(1.0_f32, p.line))
         .rounding(Rounding::ZERO)
-        .inner_margin(Margin::same(0.0))
+        // 3 px around the cells (their own 1.5 px inset makes up the sides).
+        .inner_margin(Margin {
+            left: 1.5,
+            right: 1.5,
+            top: 3.0,
+            bottom: 3.0,
+        })
 }
 
 /// Hairline-bordered surface.

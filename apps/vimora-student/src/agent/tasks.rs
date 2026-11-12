@@ -144,6 +144,7 @@ pub(super) async fn service_status_task(ctx: Ctx) {
     let mut reboot: Option<bool> = None;
     let mut reboot_checked: Option<std::time::Instant> = None;
     let mut reboot_sent: Option<bool> = None;
+    let mut last_updates_rev = 0u64;
     loop {
         tokio::time::sleep(Duration::from_secs(3)).await;
         let st = match service::call(IpcReq::Status).await {
@@ -182,6 +183,7 @@ pub(super) async fn service_status_task(ctx: Ctx) {
                 last = StudentStatus::default();
                 last_apps_rev = 0;
                 reboot_sent = None;
+                last_updates_rev = 0;
                 last_uplink = Some(tx.clone());
             }
             if reboot_checked.is_none_or(|t| t.elapsed() > Duration::from_secs(300)) {
@@ -195,6 +197,15 @@ pub(super) async fn service_status_task(ctx: Ctx) {
                 let _ = tx
                     .send(StudentMsg::RebootNeeded(reboot.unwrap_or(false)))
                     .await;
+            }
+            // The detailed update list, when the service has a new one.
+            if let Ok(IpcResp::UpdatesInfo(Some((rev, info)))) =
+                service::call(IpcReq::UpdatesInfo).await
+            {
+                if rev != last_updates_rev {
+                    last_updates_rev = rev;
+                    let _ = tx.send(StudentMsg::Updates(info)).await;
+                }
             }
             if let Some((rev, list)) = st.apps {
                 if rev != last_apps_rev {

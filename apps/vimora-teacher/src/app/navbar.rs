@@ -714,7 +714,7 @@ impl TeacherApp {
                     None,
                 ),
                 a(
-                    icons::TERMINAL,
+                    icons::ROCKET,
                     tr("Buyruq"),
                     tr("Kompyuterlarda sayt yoki dastur ochish"),
                     Menu::Web,
