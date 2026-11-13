@@ -6,6 +6,7 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Har kuni", "Every day", "Каждый день"),
     ("O'qituvchi ochiq bo'lsa, belgilangan vaqtda o'zi bajaradi: masalan, har kuni 08:00 da kompyuterlarni yoqish.", "While the teacher is open it runs at the set time by itself, e.g. every day at 08:00 it turns the computers on.", "Пока программа учителя открыта, она сама выполняет действие в заданное время, например включает компьютеры каждый день в 08:00."),
     ("Parol qo'yilsa, Muzlatish, Yangilanish, Quvvat, Sozlamalar va IT bo'limlari parol so'raydi. Pastdagi qulf belgisi orqali kirasiz yoki chiqasiz.", "With a password, Freeze, Updates, Power, Settings and the IT sections ask for it. The lock icon at the bottom signs you in and out.", "С паролем разделы «Заморозка», «Обновления», «Питание», «Настройки» и IT запрашивают его. Значок замка внизу — вход и выход."),
     ("Tizim — kompyuteringizdagi qorong'i yoki yorug' sozlamaga ergashadi.", "System follows your computer's dark or light setting.", "«Системная» следует тёмной или светлой настройке вашего компьютера."),

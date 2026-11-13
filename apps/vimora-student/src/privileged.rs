@@ -161,10 +161,11 @@ impl Engine {
         // The installer finished with an error, or it is still the old version 10 minutes
         // later: it failed. Say why when the installer told us.
         let code = vimora_update::install_result(&update_dir()).filter(|c| *c != 0);
-        if !p.reported && (code.is_some() || now_secs().saturating_sub(p.at) > 600) {
+        if !p.reported && (code.is_some() || now_secs().saturating_sub(p.at) > 300) {
             p.reported = true;
             p.save();
             let why = match code {
+                Some(124) => "o'rnatuvchi qotib qoldi va to'xtatildi".to_string(),
                 Some(c) => format!("o'rnatuvchi xato kodi {c}"),
                 None => "o'rnatuvchi tugamadi".to_string(),
             };
@@ -247,6 +248,13 @@ impl Engine {
     /// Looks for updates and applications shortly after start and every two hours, so the
     /// teacher's lists are there at once (a look takes up to a minute on Windows).
     pub fn prefetch(self: &Arc<Self>) {
+        // A stuck installer is stopped and reported (looked at every 20 s).
+        let watcher = self.clone();
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_secs(20));
+            stop_stuck_installer();
+            watcher.check_pending_update();
+        });
         let me = self.clone();
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_secs(90));
@@ -728,8 +736,61 @@ fn install_running(version: &str) -> Option<String> {
     // An installer takes well under a minute; one that left no result in 6 minutes is gone.
     let fresh = now_secs().saturating_sub(p.at) < 6 * 60;
     let done = vimora_update::install_result(&update_dir()).is_some();
-    (fresh && !done && !vimora_update::is_newer(version, &p.version))
-        .then(|| format!("Vimora {} o'rnatilmoqda", p.version))
+    (fresh && !done && !vimora_update::is_newer(version, &p.version)).then(|| {
+        // Where the installer is, in words ("… · sozlanmoqda").
+        let step = match install_step().as_deref() {
+            Some("start") | Some("files") => "fayllar almashtirilmoqda",
+            Some("restart") | Some("setup") => "sozlanmoqda",
+            Some("done") => "tugatilmoqda",
+            _ => "",
+        };
+        if step.is_empty() {
+            format!("Vimora {} o'rnatilmoqda", p.version)
+        } else {
+            format!("Vimora {} o'rnatilmoqda · {step}", p.version)
+        }
+    })
+}
+
+/// The step the installer wrote last (`install-step.txt`), and how long ago.
+fn install_step() -> Option<String> {
+    std::fs::read_to_string(update_dir().join("install-step.txt"))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// Seconds since the installer last moved (its step file was written), or since it was started.
+fn install_idle_secs() -> Option<u64> {
+    let p = PendingUpdate::load()?;
+    let touched = std::fs::metadata(update_dir().join("install-step.txt"))
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(p.at, |d| d.as_secs().max(p.at));
+    Some(now_secs().saturating_sub(touched))
+}
+
+/// An installer that has not moved for 4 minutes and left no result is stuck: it is stopped and
+/// the failure is recorded (code 124), so the update can start again and the teacher is told.
+pub fn stop_stuck_installer() {
+    if vimora_update::install_result(&update_dir()).is_some() {
+        return;
+    }
+    let Some(idle) = install_idle_secs() else {
+        return;
+    };
+    if idle < 4 * 60 {
+        return;
+    }
+    tracing::warn!("installer stuck for {idle} s: stopping it");
+    #[cfg(windows)]
+    {
+        let _ = sh::run("taskkill", &["/F", "/IM", "vimora-*-windows-x64-setup.exe"]);
+        let _ = sh::run("taskkill", &["/F", "/IM", "uninstall.exe"]);
+        let _ = sh::run("schtasks", &["/delete", "/tn", "Vimora Update", "/f"]);
+    }
+    let _ = std::fs::write(update_dir().join("install-result.txt"), "124");
 }
 
 /// The installer for `version` (or newer) already finished well, only this service still runs

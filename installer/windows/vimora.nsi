@@ -64,6 +64,16 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 !define UNKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Vimora"
 !define LEGACY "$PROGRAMFILES64\Vimora"
 
+; The step the installer is at, written for Vimora's service (it shows it to the teacher and
+; can tell a stuck installer from a slow one): %ProgramData%\Vimora\updates\install-step.txt.
+!macro Step name
+  ReadEnvStr $R8 ProgramData
+  CreateDirectory "$R8\Vimora\updates"
+  FileOpen $R9 "$R8\Vimora\updates\install-step.txt" w
+  FileWrite $R9 "${name}"
+  FileClose $R9
+!macroend
+
 Var Role        ; "student" | "teacher"
 Var Silent
 Var Lang        ; "uz" | "ru" | "en" | ""
@@ -221,6 +231,7 @@ SectionEnd
 
 ; Running programs can't be overwritten but can be renamed: move them aside, the new files go in.
 Function InstallStudent
+  !insertmacro Step "start"
   StrCpy $ExeName "vimora-student.exe"
   StrCpy $InPlace "0"
   ; A student computer still in the old folder: updated there if it is frozen (or if that can't
@@ -242,6 +253,7 @@ Function InstallStudent
   nsExec::Exec '"$SYSDIR\schtasks.exe" /end /tn "Vimora Service"'
   Pop $0
   Sleep 1500
+  !insertmacro Step "files"
   Call DeleteOldFiles
   System::Call 'kernel32::GetTickCount() i .r9'
   ${If} ${FileExists} "$INSTDIR\$ExeName"
@@ -250,13 +262,22 @@ Function InstallStudent
   File "/oname=$ExeName" "${BINDIR}\vimora-student.exe"
   File "/oname=vimora.ico" "vimora.ico"
   WriteUninstaller "$INSTDIR\uninstall.exe"
+  ; The new program is in place: the service is back at once (its registrations are made
+  ; right after, without anyone waiting for them), and the watchdog works again.
+  !insertmacro Step "restart"
+  nsExec::Exec '"$SYSDIR\schtasks.exe" /change /tn "Vimora Service Watchdog" /enable'
+  Pop $0
+  nsExec::Exec '"$SYSDIR\schtasks.exe" /run /tn "Vimora Service"'
+  Pop $0
   ; The program registers itself: service, sign-in start, firewall, update checks, the files
   ; folder and its (hidden) entry in the program list.
-  nsExec::Exec /TIMEOUT=180000 '"$INSTDIR\$ExeName" setup'
+  !insertmacro Step "setup"
+  nsExec::Exec /TIMEOUT=90000 '"$INSTDIR\$ExeName" setup'
   Pop $0
   ${If} $InPlace != "1"
     Call RemoveLegacyStudent
   ${EndIf}
+  !insertmacro Step "done"
   nsExec::Exec '"$SYSDIR\schtasks.exe" /change /tn "Vimora Service Watchdog" /enable'
   Pop $0
   ${If} $Launch == "1"

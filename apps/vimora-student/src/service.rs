@@ -637,7 +637,8 @@ fn register() -> Result<()> {
         tracing::warn!("task settings: {}", crate::sh::tail(&out, 2));
     }
     register_rest(&exe);
-    crate::sh::run_ok("schtasks", &["/run", "/tn", "Vimora Service"])?;
+    // Already running (the installer started it right after swapping the files): fine.
+    let _ = crate::sh::run("schtasks", &["/run", "/tn", "Vimora Service"]);
     println!("Vimora Service (SYSTEM) ro'yxatga olindi va ishga tushdi");
     Ok(())
 }

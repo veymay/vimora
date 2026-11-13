@@ -222,60 +222,157 @@ pub(super) fn schedule_page(ui: &mut egui::Ui, p: &Palette, c: &mut crate::confi
     ui.add_space(12.0);
     let mut remove = None;
     let w = ui.available_width();
-    for (i, s) in c.schedules.iter_mut().enumerate() {
-        // One entry: a line with the switch, the time, the action and the bin; the days below.
-        // Entries are told apart by one hairline, no boxes.
-        if i > 0 {
-            let (r, _) = ui.allocate_exact_size(vec2(w, 1.0), Sense::hover());
-            ui.painter()
-                .hline(r.x_range(), r.center().y, Stroke::new(1.0_f32, p.line));
-        }
-        ui.add_space(12.0);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 10.0;
-            ui_kit::toggle(ui, &mut s.on);
-            let r = ui.add(
-                ui_kit::text_field(&mut s.time)
-                    .hint_text("08:00")
-                    .desired_width(70.0),
-            );
-            if r.changed() {
-                s.time.retain(|ch| ch.is_ascii_digit() || ch == ':');
-                s.time.truncate(5);
-            }
-            let acts = actions();
-            let names: Vec<(u8, &str)> = acts
-                .iter()
-                .enumerate()
-                .map(|(k, a)| (k as u8, a.1))
-                .collect();
-            super::settings::dropdown(ui, p, &format!("sched-{i}"), &mut s.action, &names);
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui_kit::icon_cell(ui, icons::TRASH_2, 30.0, false)
-                    .tip(tr("O'chirish"))
-                    .clicked()
-                {
-                    remove = Some(i);
+    // One framed list; an entry is one compact row, opened to edit (like every accordion).
+    Frame::none()
+        .stroke(Stroke::new(1.0_f32, p.line))
+        .show(ui, |ui| {
+            ui.set_width(w);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for (i, s) in c.schedules.iter_mut().enumerate() {
+                let open_id = egui::Id::new(("sched-open", i));
+                let is_open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(false);
+                let rw = ui.available_width();
+                let (r, resp) = ui.allocate_exact_size(vec2(rw, 56.0), Sense::click());
+                if i > 0 {
+                    ui.painter()
+                        .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
                 }
-            });
+                if resp.hovered() || is_open {
+                    ui.painter()
+                        .rect_filled(r.shrink2(vec2(1.0, 0.5)), Rounding::ZERO, p.hover);
+                }
+                if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                let y = r.center().y;
+                // The switch.
+                let mut sw = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(Rect::from_min_size(
+                            pos2(r.left() + 14.0, y - 11.0),
+                            vec2(40.0, 22.0),
+                        ))
+                        .layout(Layout::left_to_right(Align::Center)),
+                );
+                let toggled = ui_kit::toggle(&mut sw, &mut s.on).changed();
+                // Time, what it does, on which days.
+                let ink = if s.on { p.strong } else { p.faint };
+                ui.painter().text(
+                    pos2(r.left() + 70.0, y),
+                    Align2::LEFT_CENTER,
+                    if s.time.is_empty() { "--:--" } else { &s.time },
+                    FontId::new(17.0, ui_kit::mono_bold()),
+                    ink,
+                );
+                let acts = actions();
+                let what = acts.get(s.action as usize).map_or("", |a| a.1);
+                ui.painter().text(
+                    pos2(r.left() + 148.0, y - 8.0),
+                    Align2::LEFT_CENTER,
+                    what,
+                    FontId::new(13.5, ui_kit::bold()),
+                    if s.on { p.text } else { p.faint },
+                );
+                ui.painter().text(
+                    pos2(r.left() + 148.0, y + 10.0),
+                    Align2::LEFT_CENTER,
+                    days_summary(&s.days),
+                    FontId::new(11.5, ui_kit::mono()),
+                    p.muted,
+                );
+                ui.painter().text(
+                    pos2(r.right() - 18.0, y),
+                    Align2::CENTER_CENTER,
+                    if is_open {
+                        icons::CHEVRON_DOWN
+                    } else {
+                        icons::CHEVRON_RIGHT
+                    },
+                    FontId::proportional(14.0),
+                    p.muted,
+                );
+                if resp.clicked() && !toggled {
+                    ui.data_mut(|d| d.insert_temp(open_id, !is_open));
+                }
+                // The editor.
+                ui_kit::accordion_body(ui, open_id.with("body"), is_open, |ui| {
+                    Frame::none()
+                        .fill(p.bg)
+                        .inner_margin(Margin::symmetric(16.0, 14.0))
+                        .show(ui, |ui| {
+                            ui.set_width(rw - 32.0);
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 10.0;
+                                let r = ui.add(
+                                    ui_kit::text_field(&mut s.time)
+                                        .hint_text("08:00")
+                                        .desired_width(70.0),
+                                );
+                                if r.changed() {
+                                    s.time.retain(|ch| ch.is_ascii_digit() || ch == ':');
+                                    s.time.truncate(5);
+                                }
+                                let names: Vec<(u8, &str)> = acts
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(k, a)| (k as u8, a.1))
+                                    .collect();
+                                super::settings::dropdown(
+                                    ui,
+                                    p,
+                                    &format!("sched-{i}"),
+                                    &mut s.action,
+                                    &names,
+                                );
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    if ui_kit::icon_cell(ui, icons::TRASH_2, 30.0, false)
+                                        .tip(tr("O'chirish"))
+                                        .clicked()
+                                    {
+                                        remove = Some(i);
+                                    }
+                                });
+                            });
+                            ui.add_space(10.0);
+                            let cells: Vec<(&str, bool)> = DAYS
+                                .iter()
+                                .enumerate()
+                                .map(|(d, name)| (tr(name), s.days[d]))
+                                .collect();
+                            if let Some(d) = ui_kit::multi_choices(ui, &cells) {
+                                s.days[d] = !s.days[d];
+                            }
+                        });
+                });
+            }
         });
-        ui.add_space(10.0);
-        let cells: Vec<(&str, bool)> = DAYS
-            .iter()
-            .enumerate()
-            .map(|(d, name)| (tr(name), s.days[d]))
-            .collect();
-        if let Some(d) = ui_kit::multi_choices(ui, &cells) {
-            s.days[d] = !s.days[d];
-        }
-        ui.add_space(12.0);
-    }
+    ui.add_space(12.0);
     if let Some(i) = remove {
         c.schedules.remove(i);
     }
     if ui_kit::button(ui, Some(icons::PLUS), tr("Qo'shish"), Kind::Outline).clicked() {
         c.schedules.push(Schedule::default());
     }
+}
+
+/// "Har kuni", "Du–Ju", or the short names of the chosen days.
+fn days_summary(days: &[bool; 7]) -> String {
+    let n = days.iter().filter(|d| **d).count();
+    if n == 7 {
+        return tr("Har kuni").to_string();
+    }
+    if n == 0 {
+        return "—".to_string();
+    }
+    if days[..5].iter().all(|d| *d) && !days[5] && !days[6] {
+        return format!("{}–{}", tr(DAYS[0]), tr(DAYS[4]));
+    }
+    DAYS.iter()
+        .enumerate()
+        .filter(|(d, _)| days[*d])
+        .map(|(_, name)| tr(name))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// "Hisobotlar": exports.

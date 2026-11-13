@@ -1800,14 +1800,22 @@ const WARN_INK: Color32 = Color32::from_rgb(0xE0, 0xA1, 0x2F);
 fn vimora_state(v: &View, cx: &FormCtx<'_>) -> Option<VimoraState> {
     let current = !v.version.is_empty() && !vimora_update::is_newer(cx.latest, &v.version);
     let job = cx.hub.lock().unwrap().vimora_jobs.get(&v.key).cloned();
+    // The computer says it is installing: wait for it, with its own words.
+    let installing = v
+        .status
+        .busy
+        .as_deref()
+        .is_some_and(|b| b.contains("Vimora"));
     match (current, job) {
         (true, Some(_)) => Some(VimoraState::Done),
         (true, None) => None,
         (false, Some(j)) => Some(match j.failed {
             Some(why) => VimoraState::Failed(why),
-            None if j.at.elapsed() < std::time::Duration::from_secs(15 * 60) => {
+            None if installing || j.at.elapsed() < std::time::Duration::from_secs(150) => {
                 VimoraState::Waiting
             }
+            // Nothing running any more and the new version has not shown up: not an endless
+            // "installing", a plain failure.
             None => VimoraState::Failed(tr("o'rnatilmadi — qayta urinib ko'ring").into()),
         }),
         (false, None) => Some(VimoraState::Behind),
