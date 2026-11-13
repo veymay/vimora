@@ -1597,6 +1597,7 @@ pub(super) fn updates_form(
                                 );
                             }
                         }
+                        acc_rail_finish(ui, p);
                     },
                 );
                 // The list is long and scrolled: the computer's title stays at the top, so it
@@ -1783,14 +1784,33 @@ fn paint_acc_header(
     clicked
 }
 
-/// The line down the left of an open accordion's rows, under the computer's icon: it says whose
-/// rows these are.
+/// The tree line of an open accordion, under the computer's icon: every row hangs on it with a
+/// short branch (like folders in a tree), and it ends at the last branch. Each row draws its
+/// branch and notes where it is; [`acc_rail_finish`] draws the trunk once all rows are there.
 fn acc_rail(ui: &egui::Ui, p: &Palette, r: Rect) {
-    ui.painter().vline(
-        r.left() + 44.0,
-        r.y_range(),
+    let id = egui::Id::new("acc-rail");
+    let top = ui
+        .data(|d| d.get_temp::<(f32, f32, f32)>(id))
+        .map_or(r.top(), |c| c.1);
+    ui.data_mut(|d| d.insert_temp(id, (r.left() + 44.0, top, r.center().y)));
+    ui.painter().hline(
+        (r.left() + 44.0)..=(r.left() + 66.0),
+        r.center().y,
         Stroke::new(2.0_f32, p.accent.gamma_multiply(0.55)),
     );
+}
+
+/// The trunk: from the top of the first row to the branch of the last one.
+fn acc_rail_finish(ui: &mut egui::Ui, p: &Palette) {
+    let id = egui::Id::new("acc-rail");
+    if let Some((x, top, end)) = ui.data(|d| d.get_temp::<(f32, f32, f32)>(id)) {
+        ui.painter().vline(
+            x,
+            top..=end,
+            Stroke::new(2.0_f32, p.accent.gamma_multiply(0.55)),
+        );
+    }
+    ui.data_mut(|d| d.remove::<(f32, f32, f32)>(id));
 }
 
 /// A row inside an open accordion: icon, a title and a line under it, a control on the right.

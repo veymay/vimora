@@ -134,32 +134,29 @@ impl TeacherApp {
                                 act.back = true;
                             }
                             ui_kit::rule(ui, BAR_H);
-                            ui.spacing_mut().item_spacing.x = 8.0;
-                            ui.add_space(8.0);
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            ui.add_space(10.0);
                             let recording = self.hub.lock().unwrap().recording.contains_key(&id);
                             let relaying = self.relaying == Some(id);
-                            if ui_kit::button(
+                            // Small square buttons only (their words are in the tooltips). Left
+                            // to right: control, message, lock | screenshot, record | show to
+                            // everyone. (This row is laid out from the right: added backwards.)
+                            if square_button(
                                 ui,
-                                Some(icons::CAST),
-                                if relaying {
-                                    tr("To'xtatish")
-                                } else {
-                                    tr("Hammaga ko'rsatish")
-                                },
-                                if relaying {
-                                    Kind::Danger
-                                } else {
-                                    Kind::Outline
-                                },
+                                p,
+                                icons::CAST,
+                                if relaying { Sq::Danger } else { Sq::Off },
                             )
-                            .tip(tr(
-                                "Shu o'quvchining ekrani boshqa barcha kompyuterlarda ko'rsatiladi",
-                            ))
+                            .tip(if relaying {
+                                tr("To'xtatish")
+                            } else {
+                                tr("Hammaga ko'rsatish")
+                            })
                             .clicked()
                             {
                                 act.relay = true;
                             }
-                            // Recording: a red square and the running time; screenshot: a square.
+                            ui.add_space(8.0);
                             let rec_secs = self
                                 .hub
                                 .lock()
@@ -174,56 +171,40 @@ impl TeacherApp {
                                         .size(13.0)
                                         .color(p.danger),
                                 );
-                                ui.add_space(6.0);
                                 ctx.request_repaint_after(std::time::Duration::from_millis(500));
                             }
-                            if square_button(ui, p, icons::CIRCLE_DOT, recording)
-                                .tip(if recording {
-                                    tr("Yozuvni to'xtatish")
-                                } else {
-                                    tr("Ekran video faylga yoziladi (Videolar/Vimora)")
-                                })
-                                .clicked()
+                            if square_button(
+                                ui,
+                                p,
+                                icons::CIRCLE_DOT,
+                                if recording { Sq::Danger } else { Sq::Off },
+                            )
+                            .tip(if recording {
+                                tr("Yozuvni to'xtatish")
+                            } else {
+                                tr("Yozib olish")
+                            })
+                            .clicked()
                             {
                                 act.record = true;
                             }
-                            if square_button(ui, p, icons::CAMERA, false)
+                            if square_button(ui, p, icons::CAMERA, Sq::Off)
                                 .tip(tr("Skrinshot (Rasmlar/Vimora)"))
                                 .clicked()
                             {
                                 act.screenshot = true;
                             }
-                            // Same label in both states; red while the teacher is in control.
-                            let kind = if control { Kind::Danger } else { Kind::Primary };
-                            if ui_kit::button(
-                                ui,
-                                Some(icons::MOUSE_POINTER_2),
-                                tr("Boshqarish"),
-                                kind,
-                            )
-                            .tip(tr("Sichqoncha va klaviatura shu kompyuterga yuboriladi"))
-                            .clicked()
-                            {
-                                act.toggle_control = true;
-                            }
+                            ui.add_space(8.0);
                             if info.status.locked {
-                                if ui_kit::button(
-                                    ui,
-                                    Some(icons::LOCK_OPEN),
-                                    tr("unlock|Ochish"),
-                                    Kind::Outline,
-                                )
-                                .clicked()
+                                if square_button(ui, p, icons::LOCK_OPEN, Sq::On)
+                                    .tip(tr("unlock|Ochish"))
+                                    .clicked()
                                 {
                                     act.lock = Some(Command::Unlock);
                                 }
-                            } else if ui_kit::button(
-                                ui,
-                                Some(icons::LOCK),
-                                tr("Qulflash"),
-                                Kind::Outline,
-                            )
-                            .clicked()
+                            } else if square_button(ui, p, icons::LOCK, Sq::Off)
+                                .tip(tr("Qulflash"))
+                                .clicked()
                             {
                                 let c = self.cfg.read().unwrap();
                                 act.lock = Some(Command::Lock {
@@ -231,21 +212,31 @@ impl TeacherApp {
                                     message: c.lock_message.clone(),
                                 });
                             }
-                            if ui_kit::button(
-                                ui,
-                                Some(icons::MESSAGE_SQUARE_TEXT),
-                                tr("Xabar"),
-                                Kind::Outline,
-                            )
-                            .clicked()
+                            if square_button(ui, p, icons::MESSAGE_SQUARE_TEXT, Sq::Off)
+                                .tip(tr("Xabar"))
+                                .clicked()
                             {
                                 act.message = true;
+                            }
+                            // Green while it is ready, red while the teacher is in control.
+                            if square_button(
+                                ui,
+                                p,
+                                icons::MOUSE_POINTER_2,
+                                if control { Sq::Danger } else { Sq::On },
+                            )
+                            .tip(tr(
+                                "Boshqarish: sichqoncha va klaviatura shu kompyuterga yuboriladi",
+                            ))
+                            .clicked()
+                            {
+                                act.toggle_control = true;
                             }
                             ui.add_space(8.0);
                             // The status badges only in a wide window: in the usual one the
                             // name needs the room (decided by the window, not by what is left,
                             // so nothing flickers).
-                            let badges = if bar.width() >= 1320.0 {
+                            let badges = if bar.width() >= 1000.0 {
                                 status_badges(ui, p, &info.status)
                             } else {
                                 vec![]
@@ -455,29 +446,43 @@ mod tests {
     }
 }
 
-/// A small square icon button (screenshot, record). `red`: it is on (recording).
-fn square_button(ui: &mut egui::Ui, p: &Palette, icon: &str, red: bool) -> egui::Response {
-    let (r, resp) = ui.allocate_exact_size(vec2(32.0, 32.0), Sense::click());
-    let fill = if red {
-        p.danger
-    } else if resp.hovered() {
-        p.hover
+/// State of a [`square_button`].
+#[derive(Clone, Copy, PartialEq)]
+enum Sq {
+    /// Plain.
+    Off,
+    /// On / ready: accent icon and border.
+    On,
+    /// Active in a way that needs attention (recording, in control): filled red.
+    Danger,
+}
+
+/// A small square icon button, the same size as the rest of the controls' height.
+fn square_button(ui: &mut egui::Ui, p: &Palette, icon: &str, state: Sq) -> egui::Response {
+    let (r, resp) =
+        ui.allocate_exact_size(vec2(ui_kit::CONTROL_H, ui_kit::CONTROL_H), Sense::click());
+    let fill = match state {
+        Sq::Danger => p.danger,
+        _ if resp.hovered() => p.hover,
+        _ => Color32::TRANSPARENT,
+    };
+    let border = if state == Sq::On {
+        p.accent
     } else {
-        Color32::TRANSPARENT
+        p.line_strong
     };
     ui.painter()
-        .rect(r, Rounding::ZERO, fill, Stroke::new(1.0_f32, p.line_strong));
+        .rect(r, Rounding::ZERO, fill, Stroke::new(1.0_f32, border));
     ui.painter().text(
         r.center(),
         egui::Align2::CENTER_CENTER,
         icon,
         FontId::proportional(16.0),
-        if red {
-            Color32::WHITE
-        } else if resp.hovered() {
-            p.strong
-        } else {
-            p.muted
+        match state {
+            Sq::Danger => Color32::WHITE,
+            Sq::On => p.accent,
+            Sq::Off if resp.hovered() => p.strong,
+            Sq::Off => p.muted,
         },
     );
     if resp.hovered() {

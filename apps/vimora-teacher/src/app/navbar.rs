@@ -327,32 +327,26 @@ impl TeacherApp {
     /// Search box + helpers.
     /// Search field (filters computers by name).
     fn search_box(&mut self, ui: &mut egui::Ui, p: &Palette) {
-        Frame::none()
-            .fill(p.sunken)
-            .stroke(Stroke::new(1.0_f32, p.line))
-            .rounding(Rounding::ZERO)
-            .inner_margin(Margin {
-                left: 10.0,
-                right: 10.0,
-                top: 0.0,
-                bottom: 0.0,
-            })
-            .show(ui, |ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
-                ui.set_height(H - 2.0);
-                ui.set_width(190.0);
-                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                    ui.label(RichText::new(icons::SEARCH).size(14.0).color(p.faint));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.search)
-                            .hint_text(tr("Qidirish…"))
-                            .frame(false)
-                            .vertical_align(Align::Center)
-                            .desired_width(150.0)
-                            .clip_text(true),
-                    );
-                });
-            });
+        // Exactly the height of a button (CONTROL_H), drawn by hand: a Frame's stroke would make
+        // it a pixel or two off.
+        let (r, _) = ui.allocate_exact_size(vec2(190.0, ui_kit::CONTROL_H), Sense::hover());
+        ui.painter()
+            .rect(r, Rounding::ZERO, p.sunken, Stroke::new(1.0_f32, p.line));
+        let mut c = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(r.shrink2(vec2(10.0, 0.0)))
+                .layout(Layout::left_to_right(Align::Center)),
+        );
+        c.spacing_mut().item_spacing.x = 6.0;
+        c.label(RichText::new(icons::SEARCH).size(14.0).color(p.faint));
+        c.add(
+            egui::TextEdit::singleline(&mut self.search)
+                .hint_text(tr("Qidirish…"))
+                .frame(false)
+                .vertical_align(Align::Center)
+                .desired_width(150.0)
+                .clip_text(true),
+        );
     }
 
     // ── Row 2: room tabs + search ────────────────────────────────────────────
