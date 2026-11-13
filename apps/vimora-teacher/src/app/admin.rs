@@ -221,53 +221,54 @@ pub(super) fn schedule_page(ui: &mut egui::Ui, p: &Palette, c: &mut crate::confi
     });
     ui.add_space(12.0);
     let mut remove = None;
+    let w = ui.available_width();
     for (i, s) in c.schedules.iter_mut().enumerate() {
-        Frame::none()
-            .stroke(Stroke::new(1.0_f32, p.line))
-            .inner_margin(Margin::same(10.0))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.horizontal(|ui| {
-                    ui_kit::toggle(ui, &mut s.on);
-                    let r = ui.add(
-                        ui_kit::text_field(&mut s.time)
-                            .hint_text("08:00")
-                            .desired_width(64.0),
-                    );
-                    if r.changed() {
-                        s.time.retain(|ch| ch.is_ascii_digit() || ch == ':');
-                        s.time.truncate(5);
-                    }
-                    let acts = actions();
-                    let label = acts.get(s.action as usize).map_or("", |a| a.1);
-                    egui::ComboBox::from_id_salt(("sched-action", i))
-                        .selected_text(label)
-                        .width(210.0)
-                        .show_ui(ui, |ui| {
-                            for (k, (_, name)) in acts.iter().enumerate() {
-                                ui.selectable_value(&mut s.action, k as u8, *name);
-                            }
-                        });
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui_kit::icon_cell(ui, icons::TRASH_2, 30.0, false)
-                            .tip(tr("O'chirish"))
-                            .clicked()
-                        {
-                            remove = Some(i);
-                        }
-                    });
-                });
-                ui.add_space(8.0);
-                let cells: Vec<(&str, bool)> = DAYS
-                    .iter()
-                    .enumerate()
-                    .map(|(d, name)| (tr(name), s.days[d]))
-                    .collect();
-                if let Some(d) = ui_kit::multi_choices(ui, &cells) {
-                    s.days[d] = !s.days[d];
+        // One entry: a line with the switch, the time, the action and the bin; the days below.
+        // Entries are told apart by one hairline, no boxes.
+        if i > 0 {
+            let (r, _) = ui.allocate_exact_size(vec2(w, 1.0), Sense::hover());
+            ui.painter()
+                .hline(r.x_range(), r.center().y, Stroke::new(1.0_f32, p.line));
+        }
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+            ui_kit::toggle(ui, &mut s.on);
+            let r = ui.add(
+                ui_kit::text_field(&mut s.time)
+                    .hint_text("08:00")
+                    .desired_width(70.0),
+            );
+            if r.changed() {
+                s.time.retain(|ch| ch.is_ascii_digit() || ch == ':');
+                s.time.truncate(5);
+            }
+            let acts = actions();
+            let names: Vec<(u8, &str)> = acts
+                .iter()
+                .enumerate()
+                .map(|(k, a)| (k as u8, a.1))
+                .collect();
+            super::settings::dropdown(ui, p, &format!("sched-{i}"), &mut s.action, &names);
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui_kit::icon_cell(ui, icons::TRASH_2, 30.0, false)
+                    .tip(tr("O'chirish"))
+                    .clicked()
+                {
+                    remove = Some(i);
                 }
             });
-        ui.add_space(8.0);
+        });
+        ui.add_space(10.0);
+        let cells: Vec<(&str, bool)> = DAYS
+            .iter()
+            .enumerate()
+            .map(|(d, name)| (tr(name), s.days[d]))
+            .collect();
+        if let Some(d) = ui_kit::multi_choices(ui, &cells) {
+            s.days[d] = !s.days[d];
+        }
+        ui.add_space(12.0);
     }
     if let Some(i) = remove {
         c.schedules.remove(i);

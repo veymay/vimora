@@ -1344,257 +1344,271 @@ pub(super) fn updates_form(
                 if acc_header(ui, p, i == 0, is_open, &v.label, &sub, summary) {
                     *open = if is_open { None } else { Some(v.id) };
                 }
-                if !is_open {
-                    continue;
-                }
-
-                // --- body ------------------------------------------------------------------
-                let auto = match *tab {
-                    UpdateTab::Apps => policy.apps_auto,
-                    UpdateTab::System => policy.os == OsUpdateMode::Auto,
-                    UpdateTab::Vimora => policy.vimora,
-                };
-                acc_row(
+                ui_kit::accordion_body(
                     ui,
-                    p,
-                    icons::REFRESH_CW,
-                    p.muted,
-                    tr("Avtomatik yangilanish"),
-                    None,
+                    egui::Id::new(("upd-acc", v.id, *tab as u8)),
+                    is_open,
                     |ui| {
-                        if *tab == UpdateTab::System && reboot {
-                            // Installed updates wait for a restart: that comes first.
-                            if ui_kit::button(
-                                ui,
-                                Some(icons::ROTATE_CCW),
-                                tr("Qayta yuklash"),
-                                Kind::Primary,
-                            )
-                            .clicked()
-                            {
-                                *request = Some(UpdateRequest::Restart(v.id));
-                            }
-                        } else {
-                            let mut on = auto;
-                            if ui_kit::toggle(ui, &mut on).changed() {
-                                *request = Some(UpdateRequest::Auto {
-                                    id: v.id,
-                                    kind: *tab,
-                                    on,
-                                });
-                            }
-                        }
-                    },
-                );
-                match *tab {
-                    UpdateTab::Apps => match &apps {
-                        None => {
-                            ask_once(ui, ("upd-apps", v.id), || {
-                                *request = Some(UpdateRequest::ListApps(vec![v.id]))
-                            });
-                            acc_waiting(ui, p);
-                        }
-                        Some(list) => {
-                            if app_updates.len() > 1 {
-                                let all: Vec<String> =
-                                    app_updates.iter().map(|a| a.id.clone()).collect();
-                                acc_row(
-                                    ui,
-                                    p,
-                                    icons::CIRCLE_ARROW_UP,
-                                    p.accent,
-                                    &tf!("{n} ta dasturga yangilanish bor", n = all.len()),
-                                    None,
-                                    |ui| {
-                                        if ui_kit::button(
-                                            ui,
-                                            Some(icons::DOWNLOAD),
-                                            tr("Hammasini yangilash"),
-                                            Kind::Primary,
-                                        )
-                                        .clicked()
-                                        {
-                                            *request = Some(UpdateRequest::UpgradeApps {
-                                                id: v.id,
-                                                ids: all.clone(),
-                                            });
-                                        }
-                                    },
-                                );
-                            }
-                            // Those with an update first.
-                            let mut list: Vec<&vimora_core::AppInfo> = list.iter().collect();
-                            list.sort_by_key(|a| a.available.is_none());
-                            for a in list {
-                                let (sub, col) = match &a.available {
-                                    Some(n) => (format!("{}  →  {n}", a.version), p.accent_ink),
-                                    None => (a.version.clone(), p.faint),
-                                };
-                                acc_row(
-                                    ui,
-                                    p,
-                                    icons::PACKAGE,
-                                    if a.available.is_some() {
-                                        p.accent
-                                    } else {
-                                        p.faint
-                                    },
-                                    &a.name,
-                                    Some((&sub, col)),
-                                    |ui| {
-                                        if a.available.is_some()
-                                            && ui_kit::button(
-                                                ui,
-                                                Some(icons::DOWNLOAD),
-                                                tr("Yangilash"),
-                                                Kind::Outline,
-                                            )
-                                            .clicked()
-                                        {
-                                            *request = Some(UpdateRequest::UpgradeApps {
-                                                id: v.id,
-                                                ids: vec![a.id.clone()],
-                                            });
-                                        }
-                                    },
-                                );
-                            }
-                        }
-                    },
-                    UpdateTab::System => match &info {
-                        None => {
-                            ask_once(ui, ("upd-sys", v.id), || {
-                                *request = Some(UpdateRequest::Check(vec![v.id]))
-                            });
-                            acc_waiting(ui, p);
-                        }
-                        Some(u) => {
-                            let build = tf!("Versiya {b}", b = u.os_build.clone());
-                            acc_row(
-                                ui,
-                                p,
-                                icons::MONITOR,
-                                p.accent,
-                                &u.os_name,
-                                Some((&build, p.muted)),
-                                |ui| {
-                                    if u.items.len() > 1
-                                        && ui_kit::button(
-                                            ui,
-                                            Some(icons::DOWNLOAD),
-                                            tr("Hammasini o'rnatish"),
-                                            Kind::Primary,
-                                        )
-                                        .clicked()
-                                    {
-                                        *request = Some(UpdateRequest::InstallIds {
-                                            id: v.id,
-                                            ids: u.items.iter().map(|i| i.id.clone()).collect(),
-                                        });
-                                    }
-                                },
-                            );
-                            if u.items.is_empty() {
-                                acc_row(
-                                    ui,
-                                    p,
-                                    icons::CIRCLE_CHECK,
-                                    p.success,
-                                    tr("Hamma yangilanishlar o'rnatilgan"),
-                                    None,
-                                    |_| {},
-                                );
-                            }
-                            // The system's own updates first, then the drivers.
-                            let mut items: Vec<&vimora_core::UpdateItem> = u.items.iter().collect();
-                            items.sort_by_key(|i| i.driver);
-                            for it in items {
-                                let mut sub = match (it.current.is_empty(), it.new.is_empty()) {
-                                    (false, false) => format!("{}  →  {}", it.current, it.new),
-                                    (true, false) => format!("→  {}", it.new),
-                                    (false, true) => it.current.clone(),
-                                    (true, true) => String::new(),
-                                };
-                                if it.size_mb > 0 {
-                                    sub.push_str(&format!("  ·  {} MB", it.size_mb));
-                                }
-                                acc_row(
-                                    ui,
-                                    p,
-                                    if it.driver {
-                                        icons::CPU
-                                    } else {
-                                        icons::CIRCLE_ARROW_UP
-                                    },
-                                    p.accent,
-                                    &it.title,
-                                    Some((&sub, p.accent_ink)),
-                                    |ui| {
-                                        if ui_kit::button(
-                                            ui,
-                                            Some(icons::DOWNLOAD),
-                                            tr("O'rnatish"),
-                                            Kind::Outline,
-                                        )
-                                        .clicked()
-                                        {
-                                            *request = Some(UpdateRequest::InstallIds {
-                                                id: v.id,
-                                                ids: vec![it.id.clone()],
-                                            });
-                                        }
-                                    },
-                                );
-                            }
-                        }
-                    },
-                    UpdateTab::Vimora => {
-                        let now = tf!(
-                            "O'rnatilgan {v}  ·  eng so'nggi {l}",
-                            v = if v.version.is_empty() {
-                                "—".to_string()
-                            } else {
-                                v.version.clone()
-                            },
-                            l = cx.latest.to_string()
-                        );
-                        acc_row(
-                            ui,
-                            p,
-                            icons::CLOUD_DOWNLOAD,
-                            p.accent,
-                            "Vimora",
-                            Some((&now, p.muted)),
-                            |ui| {
-                                if behind.contains(&v.id)
-                                    && ui_kit::button(
-                                        ui,
-                                        Some(icons::CLOUD_DOWNLOAD),
-                                        tr("Yangilash"),
-                                        Kind::Primary,
-                                    )
-                                    .clicked()
-                                {
-                                    *request = Some(UpdateRequest::Vimora(vec![v.id]));
-                                }
-                            },
-                        );
-                        let before = if prev.is_empty() {
-                            tr("ma'lum emas").to_string()
-                        } else {
-                            format!("{prev}  →  {}", v.version)
+                        // --- body ------------------------------------------------------------------
+                        let auto = match *tab {
+                            UpdateTab::Apps => policy.apps_auto,
+                            UpdateTab::System => policy.os == OsUpdateMode::Auto,
+                            UpdateTab::Vimora => policy.vimora,
                         };
                         acc_row(
                             ui,
                             p,
-                            icons::HISTORY,
+                            icons::REFRESH_CW,
                             p.muted,
-                            tr("Oldingi versiya"),
-                            Some((&before, p.muted)),
-                            |_| {},
+                            tr("Avtomatik yangilanish"),
+                            None,
+                            |ui| {
+                                if *tab == UpdateTab::System && reboot {
+                                    // Installed updates wait for a restart: that comes first.
+                                    if ui_kit::button(
+                                        ui,
+                                        Some(icons::ROTATE_CCW),
+                                        tr("Qayta yuklash"),
+                                        Kind::Primary,
+                                    )
+                                    .clicked()
+                                    {
+                                        *request = Some(UpdateRequest::Restart(v.id));
+                                    }
+                                } else {
+                                    let mut on = auto;
+                                    if ui_kit::toggle(ui, &mut on).changed() {
+                                        *request = Some(UpdateRequest::Auto {
+                                            id: v.id,
+                                            kind: *tab,
+                                            on,
+                                        });
+                                    }
+                                }
+                            },
                         );
-                    }
-                }
+                        match *tab {
+                            UpdateTab::Apps => match &apps {
+                                None => {
+                                    ask_once(ui, ("upd-apps", v.id), || {
+                                        *request = Some(UpdateRequest::ListApps(vec![v.id]))
+                                    });
+                                    acc_waiting(ui, p);
+                                }
+                                Some(list) => {
+                                    if app_updates.len() > 1 {
+                                        let all: Vec<String> =
+                                            app_updates.iter().map(|a| a.id.clone()).collect();
+                                        acc_row(
+                                            ui,
+                                            p,
+                                            icons::CIRCLE_ARROW_UP,
+                                            p.accent,
+                                            &tf!("{n} ta dasturga yangilanish bor", n = all.len()),
+                                            None,
+                                            |ui| {
+                                                if ui_kit::button(
+                                                    ui,
+                                                    Some(icons::DOWNLOAD),
+                                                    tr("Hammasini yangilash"),
+                                                    Kind::Primary,
+                                                )
+                                                .clicked()
+                                                {
+                                                    *request = Some(UpdateRequest::UpgradeApps {
+                                                        id: v.id,
+                                                        ids: all.clone(),
+                                                    });
+                                                }
+                                            },
+                                        );
+                                    }
+                                    // Those with an update first.
+                                    let mut list: Vec<&vimora_core::AppInfo> =
+                                        list.iter().collect();
+                                    list.sort_by_key(|a| a.available.is_none());
+                                    for a in list {
+                                        let (sub, col) = match &a.available {
+                                            Some(n) => {
+                                                (format!("{}  →  {n}", a.version), p.accent_ink)
+                                            }
+                                            None => (a.version.clone(), p.faint),
+                                        };
+                                        acc_row(
+                                            ui,
+                                            p,
+                                            icons::PACKAGE,
+                                            if a.available.is_some() {
+                                                p.accent
+                                            } else {
+                                                p.faint
+                                            },
+                                            &a.name,
+                                            Some((&sub, col)),
+                                            |ui| {
+                                                if a.available.is_some()
+                                                    && ui_kit::button(
+                                                        ui,
+                                                        Some(icons::DOWNLOAD),
+                                                        tr("Yangilash"),
+                                                        Kind::Outline,
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    *request = Some(UpdateRequest::UpgradeApps {
+                                                        id: v.id,
+                                                        ids: vec![a.id.clone()],
+                                                    });
+                                                }
+                                            },
+                                        );
+                                    }
+                                }
+                            },
+                            UpdateTab::System => match &info {
+                                None => {
+                                    ask_once(ui, ("upd-sys", v.id), || {
+                                        *request = Some(UpdateRequest::Check(vec![v.id]))
+                                    });
+                                    acc_waiting(ui, p);
+                                }
+                                Some(u) => {
+                                    let build = tf!("Versiya {b}", b = u.os_build.clone());
+                                    acc_row(
+                                        ui,
+                                        p,
+                                        icons::MONITOR,
+                                        p.accent,
+                                        &u.os_name,
+                                        Some((&build, p.muted)),
+                                        |ui| {
+                                            if u.items.len() > 1
+                                                && ui_kit::button(
+                                                    ui,
+                                                    Some(icons::DOWNLOAD),
+                                                    tr("Hammasini o'rnatish"),
+                                                    Kind::Primary,
+                                                )
+                                                .clicked()
+                                            {
+                                                *request = Some(UpdateRequest::InstallIds {
+                                                    id: v.id,
+                                                    ids: u
+                                                        .items
+                                                        .iter()
+                                                        .map(|i| i.id.clone())
+                                                        .collect(),
+                                                });
+                                            }
+                                        },
+                                    );
+                                    if u.items.is_empty() {
+                                        acc_row(
+                                            ui,
+                                            p,
+                                            icons::CIRCLE_CHECK,
+                                            p.success,
+                                            tr("Hamma yangilanishlar o'rnatilgan"),
+                                            None,
+                                            |_| {},
+                                        );
+                                    }
+                                    // The system's own updates first, then the drivers.
+                                    let mut items: Vec<&vimora_core::UpdateItem> =
+                                        u.items.iter().collect();
+                                    items.sort_by_key(|i| i.driver);
+                                    for it in items {
+                                        let mut sub =
+                                            match (it.current.is_empty(), it.new.is_empty()) {
+                                                (false, false) => {
+                                                    format!("{}  →  {}", it.current, it.new)
+                                                }
+                                                (true, false) => format!("→  {}", it.new),
+                                                (false, true) => it.current.clone(),
+                                                (true, true) => String::new(),
+                                            };
+                                        if it.size_mb > 0 {
+                                            sub.push_str(&format!("  ·  {} MB", it.size_mb));
+                                        }
+                                        acc_row(
+                                            ui,
+                                            p,
+                                            if it.driver {
+                                                icons::CPU
+                                            } else {
+                                                icons::CIRCLE_ARROW_UP
+                                            },
+                                            p.accent,
+                                            &it.title,
+                                            Some((&sub, p.accent_ink)),
+                                            |ui| {
+                                                if ui_kit::button(
+                                                    ui,
+                                                    Some(icons::DOWNLOAD),
+                                                    tr("O'rnatish"),
+                                                    Kind::Outline,
+                                                )
+                                                .clicked()
+                                                {
+                                                    *request = Some(UpdateRequest::InstallIds {
+                                                        id: v.id,
+                                                        ids: vec![it.id.clone()],
+                                                    });
+                                                }
+                                            },
+                                        );
+                                    }
+                                }
+                            },
+                            UpdateTab::Vimora => {
+                                let now = tf!(
+                                    "O'rnatilgan {v}  ·  eng so'nggi {l}",
+                                    v = if v.version.is_empty() {
+                                        "—".to_string()
+                                    } else {
+                                        v.version.clone()
+                                    },
+                                    l = cx.latest.to_string()
+                                );
+                                acc_row(
+                                    ui,
+                                    p,
+                                    icons::CLOUD_DOWNLOAD,
+                                    p.accent,
+                                    "Vimora",
+                                    Some((&now, p.muted)),
+                                    |ui| {
+                                        if behind.contains(&v.id)
+                                            && ui_kit::button(
+                                                ui,
+                                                Some(icons::CLOUD_DOWNLOAD),
+                                                tr("Yangilash"),
+                                                Kind::Primary,
+                                            )
+                                            .clicked()
+                                        {
+                                            *request = Some(UpdateRequest::Vimora(vec![v.id]));
+                                        }
+                                    },
+                                );
+                                let before = if prev.is_empty() {
+                                    tr("ma'lum emas").to_string()
+                                } else {
+                                    format!("{prev}  →  {}", v.version)
+                                };
+                                acc_row(
+                                    ui,
+                                    p,
+                                    icons::HISTORY,
+                                    p.muted,
+                                    tr("Oldingi versiya"),
+                                    Some((&before, p.muted)),
+                                    |_| {},
+                                );
+                            }
+                        }
+                    },
+                );
             }
         });
 }
@@ -2091,43 +2105,50 @@ fn categories(
                 if resp.clicked() && !toggled {
                     *open = if expanded { None } else { Some(cat.id.clone()) };
                 }
-                if expanded {
-                    let items = cat.items.clone();
-                    Frame::none()
-                        .fill(p.sunken)
-                        .inner_margin(egui::Margin::symmetric(12.0, 6.0))
-                        .show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            let col_w = (ui.available_width() - 12.0) / 2.0;
-                            for pair in items.chunks(2) {
-                                ui.horizontal(|ui| {
-                                    ui.spacing_mut().item_spacing.x = 12.0;
-                                    for item in pair {
-                                        let (r, _) = ui
-                                            .allocate_exact_size(vec2(col_w, 34.0), Sense::hover());
-                                        let mut c = ui.new_child(
-                                            egui::UiBuilder::new()
-                                                .max_rect(r)
-                                                .layout(Layout::left_to_right(Align::Center)),
-                                        );
-                                        c.spacing_mut().item_spacing.x = 10.0;
-                                        let mut on = cat.is_on(item);
-                                        if ui_kit::toggle(&mut c, &mut on).changed() {
-                                            cat.set_item(item, on);
+                let items = cat.items.clone();
+                ui_kit::accordion_body(
+                    ui,
+                    egui::Id::new(("cat-acc", cat.id.clone())),
+                    expanded,
+                    |ui| {
+                        Frame::none()
+                            .fill(p.sunken)
+                            .inner_margin(egui::Margin::symmetric(12.0, 6.0))
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                let col_w = (ui.available_width() - 12.0) / 2.0;
+                                for pair in items.chunks(2) {
+                                    ui.horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 12.0;
+                                        for item in pair {
+                                            let (r, _) = ui.allocate_exact_size(
+                                                vec2(col_w, 34.0),
+                                                Sense::hover(),
+                                            );
+                                            let mut c = ui.new_child(
+                                                egui::UiBuilder::new()
+                                                    .max_rect(r)
+                                                    .layout(Layout::left_to_right(Align::Center)),
+                                            );
+                                            c.spacing_mut().item_spacing.x = 10.0;
+                                            let mut on = cat.is_on(item);
+                                            if ui_kit::toggle(&mut c, &mut on).changed() {
+                                                cat.set_item(item, on);
+                                            }
+                                            let g = ui_kit::truncated(
+                                                &c,
+                                                item,
+                                                FontId::new(13.0, ui_kit::mono()),
+                                                if on { p.text } else { p.faint },
+                                                col_w - 56.0,
+                                            );
+                                            c.label(egui::WidgetText::from(g));
                                         }
-                                        let g = ui_kit::truncated(
-                                            &c,
-                                            item,
-                                            FontId::new(13.0, ui_kit::mono()),
-                                            if on { p.text } else { p.faint },
-                                            col_w - 56.0,
-                                        );
-                                        c.label(egui::WidgetText::from(g));
-                                    }
-                                });
-                            }
-                        });
-                }
+                                    });
+                                }
+                            });
+                    },
+                );
             }
         });
     if let Some(i) = remove {

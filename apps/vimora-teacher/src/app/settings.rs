@@ -286,7 +286,7 @@ fn choice<T: Copy + PartialEq>(
 }
 
 /// Dropdown list: the current value with a chevron; the popup lists every option with a check mark.
-fn dropdown<T: Copy + PartialEq>(
+pub(super) fn dropdown<T: Copy + PartialEq>(
     ui: &mut egui::Ui,
     p: &Palette,
     id: &str,

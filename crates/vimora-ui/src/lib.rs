@@ -1314,3 +1314,36 @@ pub fn progress(ui: &Ui, rect: Rect, state: Progress<'_>) {
         Progress::Idle(text, color) => label(text, color, rect.left()),
     }
 }
+
+/// The body of an accordion: opens and closes smoothly (about 0.2 s) instead of appearing at
+/// once. The content is drawn in full, measured, and shown through a window whose height follows
+/// the open state; fully closed it costs nothing. `id` must be unique per accordion.
+pub fn accordion_body(ui: &mut Ui, id: egui::Id, open: bool, add: impl FnOnce(&mut Ui)) {
+    let t = ui.ctx().animate_bool_with_time(id, open, 0.2);
+    if t <= 0.0 && !open {
+        return;
+    }
+    let height_id = id.with("height");
+    let full: f32 = ui.data(|d| d.get_temp(height_id)).unwrap_or(0.0);
+    let w = ui.available_width();
+    // Ease-out: quick at first, settling softly.
+    let eased = 1.0 - (1.0 - t).powi(3);
+    let shown = if t >= 1.0 { full } else { full * eased };
+    let (window, _) = ui.allocate_exact_size(vec2(w, shown), Sense::hover());
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(Rect::from_min_size(window.min, vec2(w, 6000.0)))
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    child.set_clip_rect(window.intersect(ui.clip_rect()));
+    child.spacing_mut().item_spacing.y = 0.0;
+    add(&mut child);
+    let measured = child.min_rect().height();
+    if (measured - full).abs() > 0.5 {
+        ui.data_mut(|d| d.insert_temp(height_id, measured));
+        ui.ctx().request_repaint();
+    }
+    if t > 0.0 && t < 1.0 {
+        ui.ctx().request_repaint();
+    }
+}
