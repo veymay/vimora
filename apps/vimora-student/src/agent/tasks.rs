@@ -145,6 +145,7 @@ pub(super) async fn service_status_task(ctx: Ctx) {
     let mut reboot_checked: Option<std::time::Instant> = None;
     let mut reboot_sent: Option<bool> = None;
     let mut last_updates_rev = 0u64;
+    let mut tick = 0u32;
     loop {
         tokio::time::sleep(Duration::from_secs(3)).await;
         let st = match service::call(IpcReq::Status).await {
@@ -199,12 +200,17 @@ pub(super) async fn service_status_task(ctx: Ctx) {
                     .await;
             }
             // The detailed update list, when the service has a new one.
-            if let Ok(IpcResp::UpdatesInfo(Some((rev, info)))) =
-                service::call(IpcReq::UpdatesInfo).await
-            {
-                if rev != last_updates_rev {
-                    last_updates_rev = rev;
-                    let _ = tx.send(StudentMsg::Updates(info)).await;
+            // (Every fifth round: an older service doesn't know the question and lets it time
+            // out, which must not slow the status down.)
+            tick = tick.wrapping_add(1);
+            if tick % 5 == 1 {
+                if let Ok(IpcResp::UpdatesInfo(Some((rev, info)))) =
+                    service::call(IpcReq::UpdatesInfo).await
+                {
+                    if rev != last_updates_rev {
+                        last_updates_rev = rev;
+                        let _ = tx.send(StudentMsg::Updates(info)).await;
+                    }
                 }
             }
             if let Some((rev, list)) = st.apps {

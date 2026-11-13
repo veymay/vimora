@@ -273,18 +273,16 @@ fn choice<T: Copy + PartialEq>(
     value: &mut T,
     items: &[(T, &str)],
 ) -> bool {
-    let mut changed = false;
-    ui_kit::segmented(p).show(ui, |ui| {
-        // The row's control side is right-to-left: add the tabs last-first so they read in order.
-        ui.spacing_mut().item_spacing.x = 0.0;
-        for (v, label) in items.iter().rev() {
-            if ui_kit::tab(ui, label, None, *value == *v).clicked() && *value != *v {
-                *value = *v;
-                changed = true;
-            }
+    let _ = p;
+    let cells: Vec<(Option<&str>, &str)> = items.iter().map(|(_, l)| (None, *l)).collect();
+    let current = items.iter().position(|(v, _)| v == value).unwrap_or(0);
+    match ui_kit::choices(ui, &cells, current) {
+        Some(i) if items[i].0 != *value => {
+            *value = items[i].0;
+            true
         }
-    });
-    changed
+        _ => false,
+    }
 }
 
 /// Dropdown list: the current value with a chevron; the popup lists every option with a check mark.

@@ -163,16 +163,14 @@ pub(super) fn poll(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
         (3, tr("Dars haqida fikr")),
     ];
     let before = l.poll_kind;
-    ui_kit::segmented(p).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            for (k, label) in kinds {
-                if ui_kit::tab(ui, label, None, l.poll_kind == k).clicked() {
-                    l.poll_kind = k;
-                }
-            }
-        });
-    });
+    let cells: Vec<(Option<&str>, &str)> = kinds.iter().map(|(_, l)| (None, *l)).collect();
+    let current = kinds
+        .iter()
+        .position(|(k, _)| *k == l.poll_kind)
+        .unwrap_or(0);
+    if let Some(i) = ui_kit::choices(ui, &cells, current) {
+        l.poll_kind = kinds[i].0;
+    }
     if l.poll_kind == 3 && (before != 3 || l.poll_q.is_empty()) {
         l.poll_q = tr("Bugungi dars sizga qanday bo'ldi?").to_string();
     }

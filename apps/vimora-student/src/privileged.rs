@@ -41,6 +41,8 @@ struct Inner {
     app_updates: Option<u32>,
     busy: Option<String>,
     apps: Option<(u64, Vec<AppInfo>)>,
+    /// How the last Vimora update attempt ended (ok, text) — for the student's own window.
+    update_note: Option<(bool, String)>,
     /// The system and its pending updates, with a revision like `apps`.
     updates_info: Option<(u64, vimora_core::UpdatesInfo)>,
     changes: Option<Vec<ChangeInfo>>,
@@ -127,7 +129,7 @@ impl Engine {
                 return;
             }
         }
-        let res = self.update_vimora();
+        let res = self.run_update();
         // update_vimora shows its progress as "busy"; outside a job nobody else clears it.
         self.inner.lock().unwrap().busy = None;
         match res {
@@ -166,13 +168,13 @@ impl Engine {
                 Some(c) => format!("o'rnatuvchi xato kodi {c}"),
                 None => "o'rnatuvchi tugamadi".to_string(),
             };
-            self.push(
-                false,
-                format!(
-                    "Vimora {} o'rnatilmadi ({why}, {}-urinish) — keyinroq yana urinib ko'riladi",
-                    p.version, p.tries
-                ),
+            let text = format!(
+                "Vimora {} o'rnatilmadi ({why}, {}-urinish) — keyinroq yana urinib ko'riladi",
+                p.version, p.tries
             );
+            // Also for the student's own window.
+            self.inner.lock().unwrap().update_note = Some((false, text.clone()));
+            self.push(false, text);
         }
     }
 
@@ -272,9 +274,31 @@ impl Engine {
         if let Some(b) = self.inner.lock().unwrap().busy.clone() {
             return Ok(b);
         }
+        // In the background: the window follows it through `update_state`, the same progress
+        // the teacher sees.
+        self.job("Vimora yangilanishi tekshirilmoqda", |e| e.run_update())
+    }
+
+    /// `update_vimora`, with its outcome kept for the student's window.
+    fn run_update(self: &Arc<Self>) -> Result<String> {
         let res = self.update_vimora();
-        self.inner.lock().unwrap().busy = None;
+        self.inner.lock().unwrap().update_note = Some(match &res {
+            Ok(m) => (true, m.clone()),
+            Err(e) => (false, format!("{e:#}")),
+        });
         res
+    }
+
+    /// One update state for everyone (the teacher's drawer and the student's window): what is
+    /// running now, and how the last attempt ended.
+    pub fn update_state(&self) -> (Option<String>, Option<(bool, String)>) {
+        let i = self.inner.lock().unwrap();
+        let busy = i
+            .busy
+            .clone()
+            .filter(|b| b.contains("Vimora"))
+            .or_else(|| PendingUpdate::load().and_then(|p| install_running(&p.version)));
+        (busy, i.update_note.clone())
     }
 
     /// An installer the teacher sent over the network (for computers without internet): the
@@ -420,7 +444,7 @@ impl Engine {
                 let running = self.inner.lock().unwrap().busy.clone();
                 match running {
                     Some(b) if b.contains("Vimora") => format!("{b} (allaqachon boshlangan)"),
-                    _ => self.job("Vimora yangilanmoqda", |e| e.update_vimora())?,
+                    _ => self.job("Vimora yangilanmoqda", |e| e.run_update())?,
                 }
             }
             PrivCommand::CheckUpdates => {
@@ -701,7 +725,8 @@ fn update_dir() -> std::path::PathBuf {
 /// start another one (the service, the scheduled task and the teacher may all try).
 fn install_running(version: &str) -> Option<String> {
     let p = PendingUpdate::load()?;
-    let fresh = now_secs().saturating_sub(p.at) < 15 * 60;
+    // An installer takes well under a minute; one that left no result in 6 minutes is gone.
+    let fresh = now_secs().saturating_sub(p.at) < 6 * 60;
     let done = vimora_update::install_result(&update_dir()).is_some();
     (fresh && !done && !vimora_update::is_newer(version, &p.version))
         .then(|| format!("Vimora {} o'rnatilmoqda", p.version))
@@ -729,7 +754,7 @@ fn installed_waiting_restart(version: &str) -> Option<String> {
 }
 
 /// Only one download + install start at a time (service, scheduled task, teacher push). A lock
-/// older than 20 minutes is left over from a crash and is taken over.
+/// older than 5 minutes is left over from a crash and is taken over.
 struct UpdateLock(std::path::PathBuf);
 
 impl UpdateLock {
@@ -740,7 +765,7 @@ impl UpdateLock {
             .and_then(|m| m.modified())
             .ok()
             .and_then(|t| t.elapsed().ok())
-            .is_some_and(|age| age > Duration::from_secs(20 * 60));
+            .is_some_and(|age| age > Duration::from_secs(5 * 60));
         if stale {
             let _ = std::fs::remove_file(&path);
         }

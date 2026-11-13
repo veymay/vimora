@@ -208,10 +208,22 @@ impl TeacherApp {
                                     .color(col),
                                 );
                                 ui.add_space(10.0);
-                                ui.add_sized(
-                                    vec2(w - 58.0, 44.0),
-                                    egui::Label::new(RichText::new(text).size(13.0).color(p.text))
-                                        .wrap(),
+                                // Two lines at most, left-aligned, cut with "…".
+                                let mut job = egui::text::LayoutJob::simple(
+                                    text.clone(),
+                                    FontId::proportional(13.0),
+                                    p.text,
+                                    w - 62.0,
+                                );
+                                job.wrap.max_rows = 2;
+                                job.wrap.overflow_character = Some('…');
+                                let g = ui.fonts(|f| f.layout_job(job));
+                                let (r, _) =
+                                    ui.allocate_exact_size(vec2(w - 58.0, 44.0), Sense::hover());
+                                ui.painter().galley(
+                                    pos2(r.left(), r.center().y - g.size().y / 2.0),
+                                    g,
+                                    p.text,
                                 );
                             });
                         });
@@ -810,6 +822,27 @@ impl TeacherApp {
         }
     }
 
+    /// Does the computer's Vimora know commands added in `min`? If not, the teacher is told to
+    /// update it first (instead of the computer answering with a decoding error).
+    pub(super) fn new_enough(&self, id: u64, min: &str) -> bool {
+        let mut h = self.hub.lock().unwrap();
+        let Some(s) = h.students.get(&id) else {
+            return false;
+        };
+        if !s.version.is_empty() && !vimora_update::is_newer(min, &s.version) {
+            return true;
+        }
+        let label = s.info.label().to_string();
+        h.toast(
+            false,
+            tf!(
+                "{name}: Vimora eski versiyada — avval uni yangilang",
+                name = label
+            ),
+        );
+        false
+    }
+
     /// What the Updates drawer asked for.
     fn update_request(&mut self, r: UpdateRequest) {
         match r {
@@ -844,16 +877,24 @@ impl TeacherApp {
                 };
                 self.send_priv(&[id], PrivCommand::SetUpdatePolicy(policy), "");
             }
-            UpdateRequest::InstallIds { id, ids } => self.send_priv(
-                &[id],
-                PrivCommand::InstallUpdateIds(ids),
-                tr("Yangilanishlarni o'rnatish"),
-            ),
-            UpdateRequest::UpgradeApps { id, ids } => self.send_priv(
-                &[id],
-                PrivCommand::UpgradeApps(ids),
-                tr("Dasturlarni yangilash"),
-            ),
+            UpdateRequest::InstallIds { id, ids } => {
+                if self.new_enough(id, "0.3.31") {
+                    self.send_priv(
+                        &[id],
+                        PrivCommand::InstallUpdateIds(ids),
+                        tr("Yangilanishlarni o'rnatish"),
+                    )
+                }
+            }
+            UpdateRequest::UpgradeApps { id, ids } => {
+                if self.new_enough(id, "0.3.31") {
+                    self.send_priv(
+                        &[id],
+                        PrivCommand::UpgradeApps(ids),
+                        tr("Dasturlarni yangilash"),
+                    )
+                }
+            }
             UpdateRequest::Vimora(ids) => {
                 // Remembered per computer: the drawer follows it to "o'rnatildi" or an error.
                 {

@@ -236,18 +236,16 @@ pub(super) fn dialog_body(
             bookmarks,
             recent,
         } => {
-            ui_kit::segmented(p).show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    if ui_kit::tab_icon(ui, Some(icons::GLOBE), tr("Sayt"), None, *web).clicked() {
-                        *web = true;
-                    }
-                    if ui_kit::tab_icon(ui, Some(icons::PLAY), tr("Dastur"), None, !*web).clicked()
-                    {
-                        *web = false;
-                    }
-                });
-            });
+            if let Some(i) = ui_kit::choices(
+                ui,
+                &[
+                    (Some(icons::GLOBE), tr("Sayt")),
+                    (Some(icons::PLAY), tr("Dastur")),
+                ],
+                if *web { 0 } else { 1 },
+            ) {
+                *web = i == 0;
+            }
             ui.add_space(10.0);
             if *web {
                 launch_site(ui, p, url, bookmarks, recent, confirm);
@@ -2613,19 +2611,18 @@ fn devices_form(ui: &mut egui::Ui, p: &Palette, d: &mut vimora_core::DevicePolic
             tr("USB fleshka"),
             Some(tr("\"Faqat o'qish\" — fayllarni ochish mumkin, yozish va nusxa ko'chirish mumkin emas. Yangi sozlama fleshka qayta ulanganda kuchga kiradi.")),
             |ui| {
-                ui_kit::segmented(p).show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    // Right-to-left row: last first, so they read in order.
-                    for (m, label) in [
-                        (UsbMode::Block, tr("Taqiqlangan")),
-                        (UsbMode::ReadOnly, tr("Faqat o'qish")),
-                        (UsbMode::Allow, tr("Ruxsat")),
-                    ] {
-                        if ui_kit::tab(ui, label, None, d.usb == m).clicked() {
-                            d.usb = m;
-                        }
-                    }
-                });
+                let modes = [UsbMode::Allow, UsbMode::ReadOnly, UsbMode::Block];
+                if let Some(i) = ui_kit::choices(
+                    ui,
+                    &[
+                        (None, tr("Ruxsat")),
+                        (None, tr("Faqat o'qish")),
+                        (None, tr("Taqiqlangan")),
+                    ],
+                    modes.iter().position(|m| *m == d.usb).unwrap_or(0),
+                ) {
+                    d.usb = modes[i];
+                }
             },
         );
         for (blocked, title, help) in [
@@ -2664,17 +2661,12 @@ fn devices_form(ui: &mut egui::Ui, p: &Palette, d: &mut vimora_core::DevicePolic
 }
 
 /// One segmented choice above a tab's content (what the list below means).
-fn mode_row(ui: &mut egui::Ui, p: &Palette, value: &mut u8, items: &[(u8, &str)]) {
-    ui_kit::segmented(p).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            for (v, label) in items {
-                if ui_kit::tab(ui, label, None, *value == *v).clicked() {
-                    *value = *v;
-                }
-            }
-        });
-    });
+fn mode_row(ui: &mut egui::Ui, _p: &Palette, value: &mut u8, items: &[(u8, &str)]) {
+    let cells: Vec<(Option<&str>, &str)> = items.iter().map(|(_, l)| (None, *l)).collect();
+    let current = items.iter().position(|(v, _)| v == value).unwrap_or(0);
+    if let Some(i) = ui_kit::choices(ui, &cells, current) {
+        *value = items[i].0;
+    }
     ui.add_space(10.0);
 }
 
@@ -2704,51 +2696,64 @@ fn free_pcs_form(
     const SCANNING: f32 = 6.0;
     let mut free = cx.hub.lock().unwrap().free_now();
     free.sort_by_key(|f| f.1.label().to_lowercase());
-    ui.label(
-        RichText::new(tr("Tarmoqdagi hali hech bir o'qituvchiga qo'shilmagan kompyuterlar. \"Qo'shish\" ni bosing — kompyuter shu o'qituvchiga ulanadi."))
-            .size(12.5)
-            .color(p.muted),
-    );
-    ui.add_space(12.0);
     let scanning = since < SCANNING;
-    ui.horizontal(|ui| {
+    // One status row: what the scan is doing, "?" with the hint, and "scan again".
+    let w = ui.available_width();
+    let (bar, _) = ui.allocate_exact_size(vec2(w, 46.0), Sense::hover());
+    ui.painter()
+        .rect(bar, Rounding::ZERO, p.bg, Stroke::new(1.0_f32, p.line));
+    let status = tf!("{n} ta kompyuter topildi", n = free.len());
+    ui_kit::progress(
+        ui,
+        Rect::from_min_max(
+            pos2(bar.left() + 14.0, bar.top()),
+            pos2(bar.right() - 220.0, bar.bottom()),
+        ),
         if scanning {
-            ui.add(egui::Spinner::new().size(16.0).color(p.accent));
-            ui.add_space(6.0);
-            ui.label(
-                RichText::new(tr("Skanerlanmoqda…"))
-                    .size(13.0)
-                    .color(p.text),
-            );
+            ui_kit::Progress::Waiting(tr("Skanerlanmoqda…"))
+        } else if free.is_empty() {
+            ui_kit::Progress::Idle(tr("Yangi kompyuter topilmadi"), p.muted)
         } else {
-            ui.label(
-                RichText::new(tf!("{n} ta kompyuter topildi", n = free.len()))
-                    .size(13.0)
-                    .color(p.text),
-            );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui_kit::button(
-                    ui,
-                    Some(icons::REFRESH_CW),
-                    tr("Qayta skanerlash"),
-                    Kind::Outline,
-                )
-                .clicked()
-                {
-                    *rescan = true;
-                }
-            });
+            ui_kit::Progress::Idle(&status, p.text)
+        },
+    );
+    let mut ctl = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(bar.shrink2(vec2(6.0, 6.0)))
+            .layout(Layout::right_to_left(Align::Center)),
+    );
+    ctl.add_enabled_ui(!scanning, |ui| {
+        if ui_kit::button(
+            ui,
+            Some(icons::REFRESH_CW),
+            tr("Qayta skanerlash"),
+            Kind::Outline,
+        )
+        .clicked()
+        {
+            *rescan = true;
         }
     });
+    ctl.add_space(6.0);
+    ui_kit::info(
+        &mut ctl,
+        tr("Vimora o'rnatilgan, lekin hali hech bir o'qituvchiga qo'shilmagan kompyuterlar shu yerda chiqadi. Kompyuter shu tarmoqda (Wi-Fi yoki LAN) bo'lishi kerak."),
+    );
     ui.add_space(12.0);
     if free.is_empty() {
-        if !scanning {
-            ui.label(
-                RichText::new(tr("Yangi kompyuter topilmadi. O'quvchi kompyuterida Vimora o'rnatilgani va u shu tarmoqqa ulangani (Wi-Fi yoki LAN) tekshiring."))
-                    .size(13.0)
-                    .color(p.faint),
-            );
-        }
+        // An empty list: a calm picture instead of a paragraph.
+        ui.add_space(46.0);
+        ui.vertical_centered(|ui| {
+            ui.label(ui_kit::icon(
+                if scanning {
+                    icons::WIFI
+                } else {
+                    icons::MONITOR
+                },
+                44.0,
+                p.faint,
+            ));
+        });
         return;
     }
     let w = ui.available_width();

@@ -56,17 +56,24 @@ pub enum IpcReq {
     UpdateNow,
     /// The kept list of pending system updates (and its revision).
     UpdatesInfo,
+    /// The Vimora update state shared by the teacher's drawer and the student's window.
+    UpdateState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IpcResp {
     Pin(Option<TeacherKey>),
     Verified(bool),
-    Done { ok: bool, message: String },
+    Done {
+        ok: bool,
+        message: String,
+    },
     Status(PrivStatus),
     Changes(Option<Vec<vimora_core::ChangeInfo>>),
     // Append-only.
     UpdatesInfo(Option<(u64, vimora_core::UpdatesInfo)>),
+    /// (what is running now, how the last attempt ended: ok + text).
+    UpdateState(Option<String>, Option<(bool, String)>),
 }
 
 /// The service's persistent state: the teacher this PC obeys.
@@ -497,6 +504,10 @@ async fn handle(
             }
         }
         IpcReq::UpdatesInfo => IpcResp::UpdatesInfo(engine.updates_info()),
+        IpcReq::UpdateState => {
+            let (busy, last) = engine.update_state();
+            IpcResp::UpdateState(busy, last)
+        }
         IpcReq::UpdateNow => {
             let e = engine.clone();
             match tokio::task::spawn_blocking(move || e.update_from_student()).await {

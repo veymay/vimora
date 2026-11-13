@@ -618,27 +618,21 @@ impl<'a> TabParts<'a> {
         self.g.size().x + extra + icon_w
     }
 
-    /// Content centred in `rect` (the cell itself). The chosen one: a raised surface with a thin
-    /// border, bright text and an accent icon. Hovered: a light fill. No lines underneath.
+    /// Content centred in `rect` (the cell itself). The chosen one and the one under the
+    /// pointer look the same: a raised surface with a thin border, bright text and an accent
+    /// icon. No lines underneath.
     fn paint(&self, ui: &Ui, rect: Rect, resp: &Response, with_icon: bool, _divider: bool) {
         let p = palette(ui.ctx());
-        if self.selected {
+        let lit = self.selected || resp.hovered();
+        if lit {
             ui.painter().rect(
                 rect,
                 Rounding::ZERO,
                 p.card,
                 Stroke::new(1.0_f32, p.line_strong),
             );
-        } else if resp.hovered() {
-            ui.painter().rect_filled(rect, Rounding::ZERO, p.hover);
         }
-        let ink = if self.selected {
-            p.strong
-        } else if resp.hovered() {
-            p.text
-        } else {
-            p.muted
-        };
+        let ink = if lit { p.strong } else { p.muted };
         let mut x = rect.center().x - self.content_w(with_icon) / 2.0;
         let y = rect.center().y - self.g.size().y / 2.0;
         if let (Some(ic), true) = (self.icon, with_icon) {
@@ -647,16 +641,20 @@ impl<'a> TabParts<'a> {
                 Align2::LEFT_CENTER,
                 ic,
                 FontId::proportional(13.0),
-                if self.selected { p.accent } else { ink },
+                if lit { p.accent } else { ink },
             );
             x += 20.0;
         }
         let gx = self.g.size().x;
-        ui.painter().galley(egui::pos2(x, y), self.g.clone(), ink);
+        ui.painter()
+            .galley_with_override_text_color(egui::pos2(x, y), self.g.clone(), ink);
         if let Some(c) = &self.cg {
-            let col = if self.selected { p.accent_ink } else { p.faint };
-            ui.painter()
-                .galley(egui::pos2(x + gx + 8.0, y), c.clone(), col);
+            let col = if lit { p.accent_ink } else { p.faint };
+            ui.painter().galley_with_override_text_color(
+                egui::pos2(x + gx + 8.0, y),
+                c.clone(),
+                col,
+            );
         }
         if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -711,6 +709,40 @@ pub fn tab_strip(ui: &mut Ui, items: &[TabItem<'_>], selected: usize) -> Option<
         let rect = Rect::from_min_size(egui::pos2(x, inner.top()), vec2(w, inner.height()));
         let resp = ui.interact(rect, ui.id().with(("tab-strip", i)), Sense::click());
         t.paint(ui, rect, &resp, with_icon, false);
+        if resp.clicked() {
+            clicked = Some(i);
+        }
+        x += w + PAD;
+    }
+    clicked
+}
+
+/// A small choice (allowed / read only / blocked, site / program …): its own track, exactly as
+/// big as its cells need, with the same 3 px inside and between them everywhere. Returns the
+/// index of a clicked cell.
+pub fn choices(ui: &mut Ui, items: &[(Option<&str>, &str)], selected: usize) -> Option<usize> {
+    const PAD: f32 = 3.0;
+    let p = palette(ui.ctx());
+    let parts: Vec<TabParts> = items
+        .iter()
+        .enumerate()
+        .map(|(i, (icon, label))| TabParts::new(ui, *icon, label, None, i == selected))
+        .collect();
+    let widths: Vec<f32> = parts.iter().map(|t| t.content_w(true) + 22.0).collect();
+    let total = widths.iter().sum::<f32>() + PAD * (parts.len() as f32 + 1.0);
+    let (track, _) = ui.allocate_exact_size(vec2(total, CHOICE_H + 2.0 * PAD), Sense::hover());
+    ui.painter().rect(
+        track,
+        Rounding::ZERO,
+        p.sunken,
+        Stroke::new(1.0_f32, p.line),
+    );
+    let mut clicked = None;
+    let mut x = track.left() + PAD;
+    for (i, (t, w)) in parts.iter().zip(&widths).enumerate() {
+        let rect = Rect::from_min_size(egui::pos2(x, track.top() + PAD), vec2(*w, CHOICE_H));
+        let resp = ui.interact(rect, ui.id().with(("choice", i)), Sense::click());
+        t.paint(ui, rect, &resp, true, false);
         if resp.clicked() {
             clicked = Some(i);
         }

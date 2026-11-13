@@ -762,13 +762,22 @@ impl TeacherApp {
             }
             ConfirmAction::DeleteRoom(name) => self.delete_room(&name),
             ConfirmAction::RemoveVimora { keys, ids } => {
-                self.send_priv(
-                    &ids,
-                    PrivCommand::UninstallVimora,
-                    tr("Vimora'ni o'chirish"),
-                );
-                // Gone from the list too (a new install shows up under "Skanerlash").
-                self.forget(&keys, &[]);
+                // Only where the computer's Vimora knows the command (0.3.28+); the others stay
+                // in the list and the teacher is told to update them first.
+                let (keys, ids): (Vec<String>, Vec<u64>) = keys
+                    .into_iter()
+                    .zip(ids)
+                    .filter(|(_, id)| self.new_enough(*id, "0.3.28"))
+                    .unzip();
+                if !ids.is_empty() {
+                    self.send_priv(
+                        &ids,
+                        PrivCommand::UninstallVimora,
+                        tr("Vimora'ni o'chirish"),
+                    );
+                    // Gone from the list too (a new install shows up under "Skanerlash").
+                    self.forget(&keys, &[]);
+                }
             }
             ConfirmAction::Restart(ids) => {
                 self.send_priv(
@@ -778,11 +787,13 @@ impl TeacherApp {
                 );
             }
             ConfirmAction::UninstallApp { id, app } => {
-                self.send_priv(
-                    &[id],
-                    PrivCommand::UninstallApp(app.clone()),
-                    &tf!("Dastur o'chirilmoqda: {name}", name = app),
-                );
+                if self.new_enough(id, "0.3.27") {
+                    self.send_priv(
+                        &[id],
+                        PrivCommand::UninstallApp(app.clone()),
+                        &tf!("Dastur o'chirilmoqda: {name}", name = app),
+                    );
+                }
             }
             ConfirmAction::ServiceControl { id, name, start } => {
                 self.send_priv(

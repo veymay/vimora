@@ -1,11 +1,12 @@
-//! Student chat (`vimora-student chat`): a panel docked to the right screen edge.
+//! Student chat panel (`vimora-student chat`), docked to the right screen edge like AIMP's
+//! docked mode.
 //!
-//! * A new teacher message opens the panel (**open**). If the student doesn't touch it (pointer
-//!   or typing) within a few seconds, it folds into a small square in the bottom-right corner
-//!   (**folded**) with the number of unread messages; a click opens it again. The header's
-//!   button folds it too.
-//! * The window is resized only when it opens or folds — never animated frame by frame (that
-//!   flickered, and a see-through window turned black on some graphics drivers).
+//! * A new teacher message slides the panel in once (**shown**), as if pushed in from beyond the
+//!   right screen edge: the window keeps its size and only moves (resizing it every frame
+//!   flickered). If the student doesn't touch it (pointer or typing) within a few seconds, it
+//!   slides back out (**collapsed**).
+//! * The collapsed panel is an invisible strip on the screen edge. Hovering it slides the panel
+//!   out (**peek**) — unless a full-screen program is in front; the pointer leaving hides it.
 //! * Once the panel has been on screen for a moment, the agent is told it was read ("READ" on
 //!   stdout), which the teacher sees as the second tick.
 //! * When the teacher ends the chat the agent closes stdin / sends `End` and the process exits,
@@ -30,22 +31,22 @@ pub enum ChatIn {
 }
 
 const OPEN_W: f32 = 380.0;
-/// The folded chat: a square in the bottom-right corner.
-const FOLD: f32 = 56.0;
-const FOLD_MARGIN: f32 = 16.0;
-/// Folds this long after the student stopped using it.
-const LINGER: Duration = Duration::from_millis(1500);
+/// The collapsed panel: thin and fully transparent, only there to be hovered.
+const STRIP_W: f32 = 6.0;
+const PEEK_LINGER: Duration = Duration::from_millis(700);
 /// A message that pops the panel out hides it again after this, unless the student uses it.
 const AUTO_HIDE: Duration = Duration::from_secs(6);
 /// On screen this long = read.
 const READ_AFTER: Duration = Duration::from_millis(1200);
+const SLIDE_SECS: f32 = 0.18;
 /// Composer row: the input and the send button share this height.
 const CONTROL_H: f32 = 40.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
-    Open,
-    Folded,
+    Pinned,
+    Peek,
+    Collapsed,
 }
 
 struct Msg {
@@ -71,7 +72,8 @@ pub fn run() -> anyhow::Result<()> {
             .with_always_on_top()
             .with_taskbar(false)
             .with_resizable(false)
-            .with_min_inner_size([FOLD, FOLD])
+            .with_transparent(true)
+            .with_min_inner_size([OPEN_W, 200.0])
             .with_inner_size([OPEN_W, 640.0])
             // Hidden until it has been moved to the right screen edge (no jump on start).
             .with_visible(false),
@@ -93,8 +95,10 @@ pub fn run() -> anyhow::Result<()> {
             spawn_stdin_reader(i2.clone(), cc.egui_ctx.clone());
             Ok(Box::new(ChatApp {
                 inbox: i2,
-                mode: Mode::Open,
+                mode: Mode::Pinned,
+                width: STRIP_W,
                 last_geometry: None,
+                left_at: None,
                 draft: String::new(),
                 shown_at: Instant::now(),
                 touched: false,
@@ -142,8 +146,12 @@ fn spawn_stdin_reader(inbox: Arc<Mutex<Inbox>>, ctx: egui::Context) {
 struct ChatApp {
     inbox: Arc<Mutex<Inbox>>,
     mode: Mode,
-    /// Last position and size given to the window: (x, y, w, h).
-    last_geometry: Option<(f32, f32, f32, f32)>,
+    /// How much of the panel is on screen right now (animated): the rest is beyond the right
+    /// screen edge.
+    width: f32,
+    last_geometry: Option<(f32, f32, f32)>,
+    /// When the pointer left the panel while peeking.
+    left_at: Option<Instant>,
     draft: String,
     /// When it last slid out on its own (new message).
     shown_at: Instant,
@@ -176,9 +184,11 @@ impl ChatApp {
         }
     }
 
-    /// Open: the right screen edge, top to bottom (without covering the taskbar). Folded: a
-    /// square in the bottom-right corner. The window is moved only when this changes.
+    /// The window is always the whole panel (`OPEN_W` wide, as tall as the usable screen); it
+    /// sits so that `width` of it is on screen and the rest beyond the right edge.
     fn place(&mut self, ctx: &egui::Context) {
+        // The usable screen without the taskbar (Windows reports the work area; elsewhere the
+        // whole monitor is used).
         let monitor = ctx
             .input(|i| i.viewport().monitor_size)
             .unwrap_or(egui::vec2(1920.0, 1080.0));
@@ -186,28 +196,20 @@ impl ChatApp {
         let (_, top, right, bottom) = work_area()
             .map(|(l, t, r, b)| (l / ppp, t / ppp, r / ppp, b / ppp))
             .unwrap_or((0.0, 0.0, monitor.x, monitor.y));
-        let geo = match self.mode {
-            Mode::Open => (
-                (right - OPEN_W).round(),
-                top.round(),
-                OPEN_W,
-                (bottom - top).round(),
-            ),
-            Mode::Folded => (
-                (right - FOLD - FOLD_MARGIN).round(),
-                (bottom - FOLD - FOLD_MARGIN).round(),
-                FOLD,
-                FOLD,
-            ),
-        };
+        let h = (bottom - top).round();
+        let x = (right - self.width).round();
+        let y = top.round();
+        let geo = (x, y, h);
         if self.last_geometry != Some(geo) {
             let first = self.last_geometry.is_none();
+            if self.last_geometry.is_none_or(|g| g.2 != h) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(OPEN_W, h)));
+            }
             self.last_geometry = Some(geo);
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(geo.2, geo.3)));
-            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(
-                geo.0, geo.1,
-            )));
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(x, y)));
             if first {
+                // Placed beyond the edge (only an unseen strip on screen): show it, then it
+                // slides in.
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
             }
         }
@@ -254,38 +256,58 @@ impl eframe::App for ChatApp {
         dev_screenshot(ctx);
         let p = vimora_ui::palette(ctx);
         if ctx.input(|i| i.viewport().close_requested()) {
-            // Alt+F4 & co. only fold it; the teacher decides when the chat ends.
+            // Alt+F4 & co. only hide it; the teacher decides when the chat ends.
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.mode = Mode::Folded;
+            self.mode = Mode::Collapsed;
         }
 
+        // State machine.
         let hovered = ctx.input(|i| i.pointer.hover_pos().is_some());
         let typing = ctx.memory(|m| m.focused().is_some()) && !self.draft.is_empty();
         {
             let mut inbox = self.inbox.lock().unwrap();
             if std::mem::take(&mut inbox.new_message) {
-                // A new message opens it — not over a full-screen program (a video, a
-                // presentation): then the folded square just counts it.
-                if self.mode == Mode::Folded && !fullscreen_app_active() {
-                    self.mode = Mode::Open;
+                // Pops out once for a new message.
+                if self.mode == Mode::Collapsed {
+                    self.mode = Mode::Pinned;
+                    self.shown_at = Instant::now();
                     self.touched = false;
                 }
-                self.shown_at = Instant::now();
                 self.scroll_down = true;
             }
-            if self.mode == Mode::Open {
+            if self.mode != Mode::Collapsed {
                 inbox.unseen = 0;
             }
         }
-        if self.mode == Mode::Open {
+        if self.mode == Mode::Pinned {
             if hovered || typing {
                 self.touched = true;
                 self.shown_at = Instant::now();
-            } else if self.shown_at.elapsed() > if self.touched { LINGER } else { AUTO_HIDE } {
-                self.mode = Mode::Folded;
+            } else if self.shown_at.elapsed() > if self.touched { PEEK_LINGER } else { AUTO_HIDE } {
+                self.mode = Mode::Collapsed;
             }
             ctx.request_repaint_after(Duration::from_millis(200));
-            // Read receipt: open and on screen for a moment.
+        }
+        match self.mode {
+            Mode::Collapsed if hovered && !fullscreen_app_active() => {
+                self.mode = Mode::Peek;
+                self.left_at = None;
+                self.scroll_down = true;
+            }
+            Mode::Peek if !hovered => {
+                let t = *self.left_at.get_or_insert_with(Instant::now);
+                if t.elapsed() > PEEK_LINGER {
+                    self.mode = Mode::Collapsed;
+                    self.left_at = None;
+                }
+                ctx.request_repaint_after(Duration::from_millis(100));
+            }
+            Mode::Peek if typing => self.left_at = None,
+            Mode::Peek => self.left_at = None,
+            _ => {}
+        }
+        // Read receipt: open and on screen for a moment.
+        if self.mode != Mode::Collapsed && self.width >= OPEN_W - 1.0 {
             let teacher = self
                 .inbox
                 .lock()
@@ -294,63 +316,47 @@ impl eframe::App for ChatApp {
                 .iter()
                 .filter(|m| !m.mine)
                 .count();
-            if teacher > self.read && (hovered || self.shown_at.elapsed() > READ_AFTER) {
+            if teacher > self.read
+                && (hovered || self.shown_at.elapsed() > READ_AFTER || self.mode == Mode::Peek)
+            {
                 self.read = teacher;
                 let mut out = std::io::stdout().lock();
                 let _ = writeln!(out, "READ").and_then(|_| out.flush());
             }
+            ctx.request_repaint_after(Duration::from_millis(300));
+        }
+
+        // Slide.
+        let target = if self.mode == Mode::Collapsed {
+            STRIP_W
+        } else {
+            OPEN_W
+        };
+        // Eased: quick at first, settling softly (like a panel pushed in by hand).
+        let dt = ctx.input(|i| i.stable_dt).min(0.05);
+        if (self.width - target).abs() > 0.5 {
+            let k = 1.0 - (-dt / SLIDE_SECS * 3.2).exp();
+            self.width += (target - self.width) * k;
+            if (self.width - target).abs() <= 0.5 {
+                self.width = target;
+            }
+            ctx.request_repaint();
         }
         self.place(ctx);
 
+        // Fully out: the strip left on screen is see-through and only reacts to the pointer.
+        let hidden = self.width <= STRIP_W + 0.5;
         egui::CentralPanel::default()
-            .frame(egui::Frame::none().fill(if self.mode == Mode::Open {
-                p.panel
+            .frame(egui::Frame::none().fill(if hidden {
+                egui::Color32::TRANSPARENT
             } else {
-                p.accent
+                p.panel
             }))
-            .show(ctx, |ui| match self.mode {
-                Mode::Open => self.panel(ui, &p),
-                Mode::Folded => self.folded(ui, &p),
+            .show(ctx, |ui| {
+                if !hidden {
+                    self.panel(ui, &p);
+                }
             });
-    }
-}
-
-impl ChatApp {
-    /// The folded chat: a message icon and the unread count; a click opens it.
-    fn folded(&mut self, ui: &mut egui::Ui, p: &Palette) {
-        let r = ui.max_rect();
-        let resp = ui.interact(r, egui::Id::new("fold"), egui::Sense::click());
-        ui.painter().text(
-            r.center(),
-            egui::Align2::CENTER_CENTER,
-            icons::MESSAGE_SQUARE_TEXT,
-            egui::FontId::proportional(24.0),
-            p.invert_fg,
-        );
-        let unseen = self.inbox.lock().unwrap().unseen;
-        if unseen > 0 {
-            let b = egui::Rect::from_min_size(
-                egui::pos2(r.right() - 20.0, r.top()),
-                egui::vec2(20.0, 18.0),
-            );
-            ui.painter().rect_filled(b, egui::Rounding::ZERO, p.danger);
-            ui.painter().text(
-                b.center(),
-                egui::Align2::CENTER_CENTER,
-                unseen.min(99).to_string(),
-                egui::FontId::new(11.0, vimora_ui::mono_bold()),
-                egui::Color32::WHITE,
-            );
-        }
-        if resp.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-        if resp.clicked() {
-            self.mode = Mode::Open;
-            self.touched = true;
-            self.shown_at = Instant::now();
-            self.scroll_down = true;
-        }
     }
 }
 
@@ -504,27 +510,6 @@ impl ChatApp {
             egui::FontId::new(15.0, vimora_ui::bold()),
             p.strong,
         );
-        // Fold into the corner (the chat itself stays until the teacher ends it).
-        let fold = egui::Rect::from_min_max(
-            egui::pos2(head.right() - HEADER_H, head.top()),
-            egui::pos2(head.right(), head.bottom() - 1.0),
-        );
-        let fr = ui.interact(fold, egui::Id::new("fold-btn"), egui::Sense::click());
-        if fr.hovered() {
-            ui.painter()
-                .rect_filled(fold, egui::Rounding::ZERO, p.hover);
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-        ui.painter().text(
-            fold.center(),
-            egui::Align2::CENTER_CENTER,
-            icons::CHEVRON_RIGHT,
-            egui::FontId::proportional(18.0),
-            p.muted,
-        );
-        if fr.clicked() {
-            self.mode = Mode::Folded;
-        }
         // Messages
         let list = egui::Rect::from_min_max(
             egui::pos2(full.left(), head.bottom()),

@@ -185,9 +185,24 @@ impl Hub {
         if self.sounds.len() < 4 && !self.sounds.contains(&snd) {
             self.sounds.push(snd);
         }
+        // Short and single: the first line, and the same message again only renews the one
+        // already shown.
+        let text: String = text.into();
+        let text: String = text
+            .lines()
+            .next()
+            .unwrap_or("")
+            .chars()
+            .take(200)
+            .collect();
+        if let Some(t) = self.toasts.iter_mut().find(|t| t.text == text) {
+            t.at = Instant::now();
+            self.repaint();
+            return;
+        }
         self.toasts.push_back(Toast {
             ok,
-            text: text.into(),
+            text,
             at: Instant::now(),
         });
         while self.toasts.len() > 5 {
@@ -710,6 +725,13 @@ async fn session(
                         continue;
                     }
                     let label = info.label().to_string();
+                    // An older Vimora on the computer doesn't know a newer command: say that,
+                    // not the decoder's words.
+                    let message = if message.contains("expected variant index") {
+                        tr("Vimora eski versiyada — avval uni yangilang").to_string()
+                    } else {
+                        message
+                    };
                     let mut h = hub.lock().unwrap();
                     if let Some(s) = h.students.get_mut(&id) {
                         s.last_result = Some((ok, message.clone()));

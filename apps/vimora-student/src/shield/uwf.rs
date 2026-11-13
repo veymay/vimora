@@ -133,8 +133,22 @@ pub fn state_of(c: &Config) -> FreezeState {
     }
 }
 
+/// Runs `uwfmgr`. On failure the error is one short line (its first): uwfmgr prints its whole
+/// usage help after it, which is no message for the teacher.
 fn uwf(args: &[&str]) -> Result<String> {
-    sh::run_ok("uwfmgr.exe", args)
+    let (ok, text) = sh::run("uwfmgr.exe", args)?;
+    if ok {
+        return Ok(text);
+    }
+    let first: String = text
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("xato")
+        .chars()
+        .take(120)
+        .collect();
+    bail!("UWF: {first}")
 }
 
 fn system_drive() -> String {
@@ -453,14 +467,25 @@ impl Backend for Uwf {
         for f in old.iter().filter(|f| !new.contains(f)) {
             let _ = uwf(&["file", "remove-exclusion", f]);
         }
+        let mut failed = 0;
         for f in new.iter().filter(|f| !old.contains(f)) {
-            std::fs::create_dir_all(f)?;
-            uwf(&["file", "add-exclusion", f])?;
+            // A folder is created if missing; for a file only its folder.
+            let path = Path::new(f);
+            let is_file = path.extension().is_some() && !path.is_dir();
+            let _ = std::fs::create_dir_all(if is_file {
+                path.parent().unwrap_or(path)
+            } else {
+                path
+            });
+            if let Err(e) = uwf(&["file", "add-exclusion", f]) {
+                tracing::warn!("uwf exclusion {f}: {e:#}");
+                failed += 1;
+            }
         }
-        Ok(format!(
-            "{} ta papka doim saqlanadi (qayta yuklangandan keyin kuchga kiradi)",
-            new.len()
-        ))
+        if failed > 0 {
+            bail!("{failed} ta yo'lni saqlanadiganlar ro'yxatiga qo'shib bo'lmadi");
+        }
+        Ok(format!("{} ta fayl/papka doim saqlanadi", new.len()))
     }
 
     fn persist(&self, name: &str, contents: &str) -> Result<()> {

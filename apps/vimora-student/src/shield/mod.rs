@@ -352,8 +352,9 @@ impl Shield {
 
     /// Commits the chosen paths. Returns a summary message.
     pub fn commit_paths(&self, paths: &[String]) -> Result<String> {
+        // Not frozen: everything is kept anyway — nothing to do, nothing to report.
         if !self.protected_now() {
-            bail!("Shadow hozir ishlamayapti — commit kerak emas, o'zgarishlar saqlanmoqda");
+            return Ok(String::new());
         }
         let (mut ok, mut failed) = (0, vec![]);
         for p in paths {
