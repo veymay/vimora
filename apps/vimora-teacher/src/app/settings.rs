@@ -385,11 +385,6 @@ fn dropdown<T: Copy + PartialEq>(
     changed
 }
 
-fn note(ui: &mut egui::Ui, p: &Palette, text: &str) {
-    ui.add_space(8.0);
-    ui.label(RichText::new(text).size(12.0).color(p.faint));
-}
-
 // ---------------------------------------------------------------------------------------------
 // Sections
 
@@ -488,7 +483,7 @@ fn appearance(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
         p,
         tr("Mavzu"),
         Some(tr(
-            "\"Tizim\" — kompyuteringizdagi qorong'i/yorug' sozlamaga ergashadi.",
+            "Tizim — kompyuteringizdagi qorong'i yoki yorug' sozlamaga ergashadi.",
         )),
         |ui| {
             if choice(
@@ -496,9 +491,9 @@ fn appearance(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
                 p,
                 &mut t,
                 &[
-                    (Theme::Dark, tr("Qorong'i")),
-                    (Theme::Light, tr("Yorug'")),
                     (Theme::System, tr("Tizim")),
+                    (Theme::Light, tr("Yorug'")),
+                    (Theme::Dark, tr("Qorong'i")),
                 ],
             ) {
                 c.theme_system = t == Theme::System;
@@ -938,11 +933,6 @@ fn updates(
             config::open(vimora_update::RELEASES_PAGE);
         }
     });
-    note(
-        ui,
-        p,
-        tr("Har bir yuklab olingan fayl SHA-256 nazorat yig'indisi bilan tekshiriladi."),
-    );
 }
 
 fn about(ui: &mut egui::Ui, p: &Palette) {
@@ -970,8 +960,6 @@ fn about(ui: &mut egui::Ui, p: &Palette) {
             );
         });
     });
-    ui.add_space(12.0);
-    ui.label(RichText::new(tr("Kompyuter xonalarini boshqarish uchun ochiq kodli dastur: ekranlarni kuzatish, qulflash, namoyish, chat, internet nazorati va muzlatish (Shadow Defender, UWF).")).size(13.0).color(p.text));
 }
 
 fn about_rows(ui: &mut egui::Ui, p: &Palette, cx: &SettingsCtx<'_>) {

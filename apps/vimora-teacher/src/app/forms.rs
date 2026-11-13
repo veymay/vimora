@@ -2626,7 +2626,11 @@ fn devices_form(ui: &mut egui::Ui, p: &Palette, d: &mut vimora_core::DevicePolic
             },
         );
         for (blocked, title, help) in [
-            (&mut d.cd, "CD/DVD", None),
+            (
+                &mut d.cd,
+                "CD/DVD",
+                Some(tr("Yoqilgan — ruxsat, o'chirilgan — taqiqlangan. \"Qo'llash\" bosilganda kuchga kiradi va dastur yopiq bo'lsa ham saqlanadi.")),
+            ),
             (
                 &mut d.printer,
                 tr("Printer"),
@@ -2652,12 +2656,6 @@ fn devices_form(ui: &mut egui::Ui, p: &Palette, d: &mut vimora_core::DevicePolic
             });
         }
     });
-    ui.add_space(8.0);
-    ui.label(
-        RichText::new(tr("Yoqilgan — ruxsat, o'chirilgan — taqiqlangan. \"Qo'llash\" bosilganda kuchga kiradi va dastur yopiq bo'lsa ham saqlanadi."))
-            .size(12.0)
-            .color(p.faint),
-    );
 }
 
 /// One segmented choice above a tab's content (what the list below means).

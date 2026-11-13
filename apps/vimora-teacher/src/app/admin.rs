@@ -214,13 +214,12 @@ impl TeacherApp {
 /// "Jadval": rows of time · days · action · on.
 pub(super) fn schedule_page(ui: &mut egui::Ui, p: &Palette, c: &mut crate::config::TeacherConfig) {
     ui.add_space(10.0);
-    ui_kit::hud(ui, tr("Jadval"), p.muted);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        ui_kit::hud(ui, tr("Jadval"), p.muted);
+        ui_kit::info(ui, tr("O'qituvchi ochiq bo'lsa, belgilangan vaqtda o'zi bajaradi: masalan, har kuni 08:00 da kompyuterlarni yoqish."));
+    });
     ui.add_space(6.0);
-    ui.label(
-        RichText::new(tr("O'qituvchi ochiq bo'lsa, belgilangan vaqtda o'zi bajaradi: masalan, har kuni 08:00 da kompyuterlarni yoqish, 13:00 da qulflash."))
-            .size(12.5)
-            .color(p.muted),
-    );
     ui.add_space(10.0);
     let mut remove = None;
     for (i, s) in c.schedules.iter_mut().enumerate() {
@@ -282,15 +281,15 @@ pub(super) fn schedule_page(ui: &mut egui::Ui, p: &Palette, c: &mut crate::confi
 /// "Hisobotlar": exports.
 pub(super) fn reports_page(ui: &mut egui::Ui, p: &Palette, out: &mut SettingsOut) {
     ui.add_space(10.0);
-    ui_kit::hud(ui, tr("Hisobotlar"), p.muted);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        ui_kit::hud(ui, tr("Hisobotlar"), p.muted);
+        ui_kit::info(
+            ui,
+            tr("CSV fayl Excel'da ochiladi. Hujjatlar/Vimora papkasiga saqlanadi."),
+        );
+    });
     ui.add_space(6.0);
-    ui.label(
-        RichText::new(tr(
-            "CSV fayl Excel'da ochiladi. Hujjatlar/Vimora papkasiga saqlanadi.",
-        ))
-        .size(12.5)
-        .color(p.muted),
-    );
     ui.add_space(10.0);
     for (label, help, which) in [
         (
@@ -330,13 +329,12 @@ pub(super) fn access_page(
     out: &mut SettingsOut,
 ) {
     ui.add_space(10.0);
-    ui_kit::hud(ui, tr("Administrator paroli"), p.muted);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        ui_kit::hud(ui, tr("Administrator paroli"), p.muted);
+        ui_kit::info(ui, tr("Parol qo'yilsa, Muzlatish, Yangilanish, Quvvat, Sozlamalar va IT bo'limlari parol so'raydi. Pastdagi qulf belgisi orqali kirasiz yoki chiqasiz."));
+    });
     ui.add_space(6.0);
-    ui.label(
-        RichText::new(tr("Parol qo'yilsa, dastur o'qituvchi rejimida ochiladi: Muzlatish, Yangilanish, Quvvat, Sozlamalar, kompyuterni o'chirib tashlash va IT bo'limlari parol so'raydi. Pastki paneldagi qulf belgisi orqali administrator bo'lib kirasiz yoki chiqasiz."))
-            .size(12.5)
-            .color(p.muted),
-    );
     ui.add_space(12.0);
     let id = egui::Id::new("admin-new-pw");
     let mut pw: String = ui.data(|d| d.get_temp(id)).unwrap_or_default();

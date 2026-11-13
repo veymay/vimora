@@ -153,7 +153,7 @@ impl Default for TeacherConfig {
             port: DEFAULT_TCP_PORT,
             language,
             dark_mode: true,
-            theme_system: false,
+            theme_system: true,
             sounds: true,
             sort: SortBy::Name,
             check_updates: true,

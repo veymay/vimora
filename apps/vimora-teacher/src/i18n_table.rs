@@ -6,6 +6,13 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("O'qituvchi ochiq bo'lsa, belgilangan vaqtda o'zi bajaradi: masalan, har kuni 08:00 da kompyuterlarni yoqish.", "While the teacher is open it runs at the set time by itself, e.g. every day at 08:00 it turns the computers on.", "Пока программа учителя открыта, она сама выполняет действие в заданное время, например включает компьютеры каждый день в 08:00."),
+    ("Parol qo'yilsa, Muzlatish, Yangilanish, Quvvat, Sozlamalar va IT bo'limlari parol so'raydi. Pastdagi qulf belgisi orqali kirasiz yoki chiqasiz.", "With a password, Freeze, Updates, Power, Settings and the IT sections ask for it. The lock icon at the bottom signs you in and out.", "С паролем разделы «Заморозка», «Обновления», «Питание», «Настройки» и IT запрашивают его. Значок замка внизу — вход и выход."),
+    ("Tizim — kompyuteringizdagi qorong'i yoki yorug' sozlamaga ergashadi.", "System follows your computer's dark or light setting.", "«Системная» следует тёмной или светлой настройке вашего компьютера."),
+    ("Yangi kompyuter topilmadi", "No new computers found", "Новых компьютеров не найдено"),
+    ("Vimora o'rnatilgan, lekin hali hech bir o'qituvchiga qo'shilmagan kompyuterlar shu yerda chiqadi. Kompyuter shu tarmoqda (Wi-Fi yoki LAN) bo'lishi kerak.", "Computers with Vimora that are not added to any teacher yet show up here. They must be on this network (Wi-Fi or LAN).", "Здесь появляются компьютеры с Vimora, ещё не добавленные ни к одному учителю. Они должны быть в этой сети (Wi-Fi или LAN)."),
+    ("Vimora eski versiyada — avval uni yangilang", "Vimora is outdated — update it first", "Vimora устарела — сначала обновите её"),
+    ("{name}: Vimora eski versiyada — avval uni yangilang", "{name}: Vimora is outdated — update it first", "{name}: Vimora устарела — сначала обновите её"),
     ("Windows va drayverlar", "Windows and drivers", "Windows и драйверы"),
     ("Hammasini o'rnatish", "Install all", "Установить все"),
     ("Hamma yangilanishlar o'rnatilgan", "All updates are installed", "Все обновления установлены"),

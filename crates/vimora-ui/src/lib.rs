@@ -682,6 +682,7 @@ pub fn tab_strip(ui: &mut Ui, items: &[TabItem<'_>], selected: usize) -> Option<
         .enumerate()
         .map(|(i, t)| TabParts::new(ui, t.icon, t.label, t.count, i == selected))
         .collect();
+    let base = ui.next_auto_id();
     let avail = ui.available_width();
     let n = parts.len().max(1) as f32;
     let mut with_icon = true;
@@ -707,7 +708,7 @@ pub fn tab_strip(ui: &mut Ui, items: &[TabItem<'_>], selected: usize) -> Option<
             t.content_w(with_icon) + spare
         };
         let rect = Rect::from_min_size(egui::pos2(x, inner.top()), vec2(w, inner.height()));
-        let resp = ui.interact(rect, ui.id().with(("tab-strip", i)), Sense::click());
+        let resp = ui.interact(rect, base.with(("tab-strip", i)), Sense::click());
         t.paint(ui, rect, &resp, with_icon, false);
         if resp.clicked() {
             clicked = Some(i);
@@ -728,6 +729,8 @@ pub fn choices(ui: &mut Ui, items: &[(Option<&str>, &str)], selected: usize) -> 
         .enumerate()
         .map(|(i, (icon, label))| TabParts::new(ui, *icon, label, None, i == selected))
         .collect();
+    // Unique per control (several share one panel): from the id the ui hands out next.
+    let base = ui.next_auto_id();
     let widths: Vec<f32> = parts.iter().map(|t| t.content_w(true) + 22.0).collect();
     let total = widths.iter().sum::<f32>() + PAD * (parts.len() as f32 + 1.0);
     let (track, _) = ui.allocate_exact_size(vec2(total, CHOICE_H + 2.0 * PAD), Sense::hover());
@@ -741,7 +744,7 @@ pub fn choices(ui: &mut Ui, items: &[(Option<&str>, &str)], selected: usize) -> 
     let mut x = track.left() + PAD;
     for (i, (t, w)) in parts.iter().zip(&widths).enumerate() {
         let rect = Rect::from_min_size(egui::pos2(x, track.top() + PAD), vec2(*w, CHOICE_H));
-        let resp = ui.interact(rect, ui.id().with(("choice", i)), Sense::click());
+        let resp = ui.interact(rect, base.with(("choice", i)), Sense::click());
         t.paint(ui, rect, &resp, true, false);
         if resp.clicked() {
             clicked = Some(i);

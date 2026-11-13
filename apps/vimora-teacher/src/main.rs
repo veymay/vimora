@@ -62,6 +62,9 @@ fn main() -> eframe::Result<()> {
         .with_app_id("vimora-teacher")
         .with_inner_size(MIN_WINDOW)
         .with_min_inner_size(MIN_WINDOW)
+        // Capped to the fixed size while windowed (so edges can't grow it); the cap is lifted
+        // only for fullscreen (`toggle_fullscreen`).
+        .with_max_inner_size(MIN_WINDOW)
         // Resizable from the start: fullscreen then happens in one step, from where the window
         // is (making it resizable first made X11 window managers move it to the corner). The
         // size itself stays fixed: `keep_window_size` snaps it back.

@@ -847,7 +847,12 @@ impl TeacherApp {
     /// The only way to change the window's size: fullscreen on / off (F11 or the status bar).
     pub(super) fn toggle_fullscreen(&mut self, ctx: &egui::Context) {
         self.fullscreen = !self.fullscreen;
-        // Straight from where the window is, in one step.
+        if self.fullscreen {
+            // The cap off in the same step, then fullscreen straight from where the window is.
+            ctx.send_viewport_cmd(egui::ViewportCommand::MaxInnerSize(egui::vec2(
+                16384.0, 16384.0,
+            )));
+        }
         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.fullscreen));
         // The size keeper waits until the window manager is done.
         self.fs_step = Some(Instant::now());
@@ -864,6 +869,10 @@ impl TeacherApp {
         }
         self.fs_step = None;
         if !self.fullscreen {
+            // Back to the fixed size, capped again.
+            ctx.send_viewport_cmd(egui::ViewportCommand::MaxInnerSize(
+                crate::MIN_WINDOW.into(),
+            ));
             ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(crate::MIN_WINDOW.into()));
         }
     }
@@ -887,9 +896,9 @@ impl TeacherApp {
         }
         if self
             .last_resize
-            .is_some_and(|t| t.elapsed() < Duration::from_millis(250))
+            .is_some_and(|t| t.elapsed() < Duration::from_millis(60))
         {
-            ctx.request_repaint_after(Duration::from_millis(250));
+            ctx.request_repaint_after(Duration::from_millis(60));
             return;
         }
         self.last_resize = Some(Instant::now());
