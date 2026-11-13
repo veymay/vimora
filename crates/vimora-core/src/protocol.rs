@@ -497,6 +497,23 @@ pub enum Command {
     TeacherInfo {
         name: String,
     },
+    /// How the lock screen looks besides its icon (sent before `Lock`).
+    LockLook(LockLook),
+}
+
+/// The lock screen's look. All zero / empty = the default look.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct LockLook {
+    /// Clock size: 0 normal, 1 small, 2 large, 3 off.
+    pub clock: u8,
+    /// Hide the logo and the brand name.
+    pub no_logo: bool,
+    /// The name next to the logo (empty = "VIMORA").
+    pub brand: String,
+    /// Typeface of the texts: 0 Geist, 1 Geist Mono.
+    pub font: u8,
+    /// Accent colour (RGB); all zero = the default green.
+    pub accent: [u8; 3],
 }
 
 /// Security and inventory facts about a student PC.
@@ -814,6 +831,10 @@ mod wire_tests {
                 name: String::new()
             }),
             tag(&Command::ChatEnd) + 16
+        );
+        assert_eq!(
+            tag(&Command::LockLook(LockLook::default())),
+            tag(&Command::ChatEnd) + 17
         );
         assert_eq!(
             tag(&Command::SetAppAllowlist(vec![])),

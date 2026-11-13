@@ -63,6 +63,8 @@ struct State {
     unlock: Option<(Vec<u8>, Vec<u8>, u8)>,
     /// Icon for the lock screen (empty = default).
     lock_icon: String,
+    /// The rest of the lock screen's look.
+    lock_look: vimora_core::LockLook,
     show: bool,
     apps: Vec<String>,
     /// Only these programs may run (Windows; empty = off).
@@ -544,6 +546,8 @@ struct SavedLock {
     code: Option<(Vec<u8>, Vec<u8>, u8)>,
     #[serde(default)]
     icon: String,
+    #[serde(default)]
+    look: vimora_core::LockLook,
     /// Unix seconds when it was saved.
     at: u64,
 }
@@ -564,6 +568,7 @@ fn save_lock(state: &Shared) {
                 message: message.clone(),
                 code: s.unlock.clone(),
                 icon: s.lock_icon.clone(),
+                look: s.lock_look.clone(),
                 at: now_secs(),
             };
             if let Some(d) = path.parent() {
@@ -593,6 +598,7 @@ fn restore_lock(state: &Shared) {
     s.lock = Some((rec.title, rec.message));
     s.unlock = rec.code;
     s.lock_icon = rec.icon;
+    s.lock_look = rec.look;
     s.disconnected_at = Some(Instant::now());
 }
 

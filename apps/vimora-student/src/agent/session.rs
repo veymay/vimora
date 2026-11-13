@@ -270,6 +270,12 @@ pub(super) async fn handle_command(
             sync().await;
             None
         }
+        Command::LockLook(look) => {
+            state.lock().unwrap().lock_look = look;
+            save_lock(state);
+            sync().await;
+            None
+        }
         Command::UnlockCode { salt, hash, digits } => {
             state.lock().unwrap().unlock =
                 (!hash.is_empty()).then_some((salt, hash, digits.clamp(4, 8)));

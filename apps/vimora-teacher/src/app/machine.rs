@@ -17,7 +17,6 @@ pub(super) enum MachineTab {
     Processes,
     Security,
     Services,
-    Command,
     /// Installed programs; each can be uninstalled.
     Apps,
 }
@@ -30,7 +29,6 @@ pub(super) enum MachineRequest {
     Login,
     /// Start (true) or stop a service.
     Service(String, bool),
-    Run,
     /// Ask for the installed programs.
     RefreshApps,
     /// Uninstall a program: (id, name), confirmed first.
@@ -52,8 +50,6 @@ pub(super) struct MachineForm<'a> {
     pub(super) sort: &'a mut ProcSort,
     /// "End task" pressed: (pid, name), asked for confirmation by the app.
     pub(super) kill: &'a mut Option<(u32, String)>,
-    /// The command typed on the "Buyruq" tab.
-    pub(super) script: &'a mut String,
     pub(super) request: &'a mut Option<MachineRequest>,
 }
 
@@ -178,7 +174,6 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
         ),
         (MachineTab::Apps, icons::LAYOUT_GRID, tr("Dasturlar"), None),
         (MachineTab::Services, icons::SETTINGS, tr("Xizmatlar"), None),
-        (MachineTab::Command, icons::TERMINAL, tr("Buyruq"), None),
     ];
     let items: Vec<ui_kit::TabItem> = tabs
         .iter()
@@ -197,7 +192,7 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
     // The IT tabs are for the administrator.
     if matches!(
         *f.tab,
-        MachineTab::Security | MachineTab::Services | MachineTab::Command | MachineTab::Apps
+        MachineTab::Security | MachineTab::Services | MachineTab::Apps
     ) && !cx.admin
     {
         ui.add_space(20.0);
@@ -232,15 +227,6 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
                 ui.data_mut(|d| d.insert_temp(asked, true));
                 *f.request = Some(MachineRequest::RefreshSecurity);
             }
-            ui.horizontal(|ui| {
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui_kit::button(ui, Some(icons::REFRESH_CW), tr("Yangilash"), Kind::Ghost)
-                        .clicked()
-                    {
-                        *f.request = Some(MachineRequest::RefreshSecurity);
-                    }
-                });
-            });
             let Some(sec) = sec else {
                 ui.add_space(20.0);
                 ui.vertical_centered(|ui| {
@@ -249,15 +235,15 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
                 });
                 return;
             };
+            let mut refresh = false;
             if *f.tab == MachineTab::Security {
-                security(ui, p, &sec);
+                security(ui, p, &sec, &mut refresh);
+                if refresh {
+                    *f.request = Some(MachineRequest::RefreshSecurity);
+                }
             } else {
                 services(ui, p, &sec, f);
             }
-            return;
-        }
-        MachineTab::Command => {
-            command(ui, p, f, cx);
             return;
         }
         MachineTab::Apps => {
@@ -598,70 +584,148 @@ fn state_cell(p: &Palette, ok: bool, yes: &str, no: &str) -> (String, Color32) {
     }
 }
 
-fn security(ui: &mut egui::Ui, p: &Palette, s: &vimora_core::SecurityInfo) {
-    use super::lesson_extra::table;
-    ui_kit::hud(ui, tr("Antivirus"), p.muted);
-    ui.add_space(6.0);
-    let av: Vec<Vec<(String, Color32)>> = s
+/// One group of the security page: an icon + title (and, on the first, the refresh icon), then
+/// rows of "name … value" in the same frame as every list.
+fn sec_group(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    icon: &str,
+    title: &str,
+    refresh: Option<&mut bool>,
+    rows: &[(String, Vec<(String, Color32)>)],
+) {
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        ui.label(RichText::new(icon).size(13.0).color(p.muted));
+        ui_kit::hud(ui, title, p.muted);
+        if let Some(r) = refresh {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui_kit::icon_cell(ui, icons::REFRESH_CW, 28.0, false)
+                    .tip(tr("Yangilash"))
+                    .clicked()
+                {
+                    *r = true;
+                }
+            });
+        }
+    });
+    ui.add_space(4.0);
+    Frame::none()
+        .stroke(Stroke::new(1.0_f32, p.line))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for (i, (name, values)) in rows.iter().enumerate() {
+                let (r, _) =
+                    ui.allocate_exact_size(vec2(ui.available_width(), 36.0), Sense::hover());
+                if i > 0 {
+                    ui.painter()
+                        .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
+                }
+                // Values from the right edge, the name from the left.
+                let mut x = r.right() - 12.0;
+                for (text, color) in values.iter().rev() {
+                    let g = ui.painter().layout_no_wrap(
+                        text.clone(),
+                        FontId::new(12.5, ui_kit::medium()),
+                        *color,
+                    );
+                    let w = g.size().x;
+                    ui.painter()
+                        .galley(pos2(x - w, r.center().y - g.size().y / 2.0), g, *color);
+                    // A coloured dot for states; plain values have none.
+                    if *color != p.text {
+                        ui.painter()
+                            .circle_filled(pos2(x - w - 9.0, r.center().y), 3.0, *color);
+                    }
+                    x -= w + 26.0;
+                }
+                let g = ui_kit::truncated(
+                    ui,
+                    name,
+                    FontId::new(13.0, ui_kit::medium()),
+                    p.text,
+                    (x - r.left() - 24.0).max(40.0),
+                );
+                ui.painter().galley(
+                    pos2(r.left() + 12.0, r.center().y - g.size().y / 2.0),
+                    g,
+                    p.text,
+                );
+            }
+        });
+}
+
+fn security(ui: &mut egui::Ui, p: &Palette, s: &vimora_core::SecurityInfo, refresh: &mut bool) {
+    let av: Vec<(String, Vec<(String, Color32)>)> = s
         .antivirus
         .iter()
         .map(|(n, on, fresh)| {
-            vec![
-                (n.clone(), p.text),
-                state_cell(p, *on, tr("Yoniq"), tr("O'chiq")),
-                state_cell(p, *fresh, tr("Bazasi yangi"), tr("Bazasi eski")),
-            ]
+            (
+                n.clone(),
+                vec![
+                    state_cell(p, *on, tr("Yoniq"), tr("O'chiq")),
+                    state_cell(p, *fresh, tr("Bazasi yangi"), tr("Bazasi eski")),
+                ],
+            )
         })
         .collect();
-    table(
+    sec_group(
         ui,
         p,
-        &[(tr("Nomi"), 0.5), (tr("Holat"), 0.25), (tr("Baza"), 0.25)],
+        icons::SHIELD_CHECK,
+        tr("Antivirus"),
+        Some(refresh),
         &av,
     );
-    ui.add_space(12.0);
-    ui_kit::hud(ui, "Firewall", p.muted);
-    ui.add_space(6.0);
-    let mut fw: Vec<Vec<(String, Color32)>> = s
+    let mut fw: Vec<(String, Vec<(String, Color32)>)> = s
         .firewall
         .iter()
         .map(|(n, on)| {
-            vec![
-                (n.clone(), p.text),
-                state_cell(p, *on, tr("Yoniq"), tr("O'chiq")),
-            ]
+            (
+                n.clone(),
+                vec![state_cell(p, *on, tr("Yoniq"), tr("O'chiq"))],
+            )
         })
         .collect();
     if let Some(uac) = s.uac {
-        fw.push(vec![
-            (tr("UAC (administrator so'rovi)").to_string(), p.text),
-            state_cell(p, uac, tr("Yoniq"), tr("O'chiq")),
-        ]);
+        fw.push((
+            tr("UAC (administrator so'rovi)").to_string(),
+            vec![state_cell(p, uac, tr("Yoniq"), tr("O'chiq"))],
+        ));
     }
-    table(ui, p, &[(tr("Nomi"), 0.6), (tr("Holat"), 0.4)], &fw);
-    ui.add_space(12.0);
-    ui_kit::hud(ui, tr("Qurilma"), p.muted);
-    ui.add_space(6.0);
-    let mut hw: Vec<Vec<(String, Color32)>> = s
+    sec_group(ui, p, icons::SHIELD, "Firewall", None, &fw);
+    let mut hw: Vec<(String, Vec<(String, Color32)>)> = s
         .hardware
         .iter()
-        .map(|(k, v)| vec![(hw_label(k), p.muted), (v.clone(), p.text)])
+        .filter(|(_, v)| !v.trim().is_empty())
+        .map(|(k, v)| (hw_label(k).to_string(), vec![(v.clone(), p.text)]))
         .collect();
     if !s.sessions.is_empty() {
-        hw.push(vec![
-            (tr("Kirgan foydalanuvchilar").to_string(), p.muted),
-            (s.sessions.join(", "), p.text),
-        ]);
+        hw.push((
+            tr("Kirgan foydalanuvchilar").to_string(),
+            vec![(s.sessions.join(", "), p.text)],
+        ));
     }
-    table(ui, p, &[(tr("Nomi"), 0.35), (tr("Qiymat"), 0.65)], &hw);
+    sec_group(ui, p, icons::CPU, tr("Qurilma"), None, &hw);
 }
 
 fn services(ui: &mut egui::Ui, p: &Palette, s: &vimora_core::SecurityInfo, f: MachineForm<'_>) {
-    ui.add(
-        ui_kit::text_field(f.filter)
-            .hint_text(tr("Xizmat nomi bo'yicha qidirish"))
-            .desired_width(ui.available_width()),
-    );
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        ui.add(
+            ui_kit::text_field(f.filter)
+                .hint_text(tr("Xizmat nomi bo'yicha qidirish"))
+                .desired_width(ui.available_width() - 40.0),
+        );
+        if ui_kit::icon_cell(ui, icons::REFRESH_CW, ui_kit::CONTROL_H, false)
+            .tip(tr("Yangilash"))
+            .clicked()
+        {
+            *f.request = Some(MachineRequest::RefreshSecurity);
+        }
+    });
     ui.add_space(8.0);
     let q = f.filter.trim().to_lowercase();
     let mut list: Vec<&vimora_core::ServiceInfo> = s
@@ -728,53 +792,6 @@ fn services(ui: &mut egui::Ui, p: &Palette, s: &vimora_core::SecurityInfo, f: Ma
         if ui_kit::button(&mut b, None, label, Kind::Ghost).clicked() {
             *f.request = Some(MachineRequest::Service(v.name.clone(), start));
         }
-    }
-}
-
-fn command(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, cx: &FormCtx<'_>) {
-    ui.label(
-        RichText::new(tr("Buyruq o'quvchi kompyuterida administrator huquqida bajariladi: Windows'da PowerShell, Ubuntu'da sh. Masalan: ipconfig, Get-Process, reg query … Har bir buyruq faollik jurnaliga yoziladi."))
-            .size(12.5)
-            .color(p.muted),
-    );
-    ui.add_space(8.0);
-    ui.add(
-        ui_kit::text_area(f.script)
-            .hint_text("ipconfig /all")
-            .desired_rows(4)
-            .desired_width(f32::INFINITY)
-            .font(egui::TextStyle::Monospace),
-    );
-    ui.add_space(8.0);
-    ui.add_enabled_ui(!f.script.trim().is_empty(), |ui| {
-        if ui_kit::button(ui, Some(icons::PLAY), tr("Bajarish"), Kind::Primary).clicked() {
-            *f.request = Some(MachineRequest::Run);
-        }
-    });
-    ui.add_space(12.0);
-    let last = cx
-        .hub
-        .lock()
-        .unwrap()
-        .students
-        .get(&f.id)
-        .and_then(|s| s.last_result.clone());
-    if let Some((ok, text)) = last {
-        ui_kit::hud(ui, tr("Oxirgi natija"), if ok { p.muted } else { p.danger });
-        ui.add_space(6.0);
-        Frame::none()
-            .fill(p.sunken)
-            .stroke(Stroke::new(1.0_f32, p.line))
-            .inner_margin(Margin::same(10.0))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.label(
-                    RichText::new(text)
-                        .family(ui_kit::mono())
-                        .size(12.0)
-                        .color(if ok { p.text } else { p.danger }),
-                );
-            });
     }
 }
 

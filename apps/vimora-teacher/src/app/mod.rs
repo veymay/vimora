@@ -4,6 +4,7 @@
 //! then a full-width grid of student cards. No sidebar.
 
 mod admin;
+mod applock;
 mod forms;
 mod grid;
 mod lesson;
@@ -117,6 +118,8 @@ pub struct TeacherApp {
     input_locked: BTreeSet<u64>,
     /// Administrator mode (always on when no administrator password is set).
     admin: bool,
+    /// The code screen that opens the program.
+    applock: applock::AppLock,
     /// What to open after the administrator logged in.
     after_login: Option<Menu>,
     /// A report asked for in the settings (needs the computer list).
@@ -197,6 +200,7 @@ impl TeacherApp {
             relaying: None,
             input_locked: BTreeSet::new(),
             admin: true,
+            applock: applock::AppLock::new(false),
             after_login: None,
             pending_report: None,
             sched_minute: String::new(),
@@ -213,6 +217,14 @@ impl TeacherApp {
                 .map(|p| (p, Instant::now())),
         };
         app.admin = app.cfg.read().unwrap().admin_hash.is_empty();
+        {
+            let mut c = app.cfg.write().unwrap();
+            // Dev aid: VIMORA_PIN=1234 (nothing is saved).
+            if std::env::var_os("VIMORA_PIN").is_some() {
+                applock::dev_pin(&mut c);
+            }
+            app.applock = applock::AppLock::new(!c.app_pin_hash.is_empty());
+        }
         if let Some(n) = std::env::var("VIMORA_DEMO")
             .ok()
             .and_then(|n| n.parse().ok())
@@ -264,18 +276,18 @@ impl TeacherApp {
                 }
                 app.dev_open = Some(Dialog::Lesson(Box::new(l)));
             }
-            Ok(m @ ("machine" | "machine:procs" | "machine:apps")) => {
+            Ok(m @ ("machine" | "machine:procs" | "machine:apps" | "machine:security")) => {
                 app.dev_open = Some(Dialog::Machine {
                     id: 1001,
                     tab: match m {
                         "machine" => MachineTab::Overview,
                         "machine:apps" => MachineTab::Apps,
+                        "machine:security" => MachineTab::Security,
                         _ => MachineTab::Processes,
                     },
                     filter: String::new(),
                     sort: ProcSort::Cpu,
                     kill: None,
-                    script: String::new(),
                     request: None,
                 })
             }
@@ -540,7 +552,24 @@ impl TeacherApp {
                     version: "0.3.7".into(),
                     cursor: 0,
                     sysinfo: Some((demo_sysinfo(i), Instant::now())),
-                    security: None,
+                    security: Some(vimora_core::SecurityInfo {
+                        antivirus: vec![("Windows Defender".into(), false, true)],
+                        firewall: vec![
+                            ("Domain".into(), true),
+                            ("Private".into(), true),
+                            ("Public".into(), true),
+                        ],
+                        uac: Some(true),
+                        hardware: vec![
+                            ("Ishlab chiqaruvchi".into(), "HP".into()),
+                            ("Model".into(), "HP ProBook 4 G1i 16 inch".into()),
+                            ("Seriya raqami".into(), "5CD62637ML".into()),
+                            ("Videokarta".into(), "Intel(R) Graphics".into()),
+                            ("Monitorlar".into(), String::new()),
+                        ],
+                        sessions: vec!["AL-XORAZMIY\\VEYMAY".into()],
+                        services: vec![],
+                    }),
                     last_result: None,
                     reboot_needed: i % 5 == 1,
                     prev_version: if i % 3 == 0 {
@@ -840,19 +869,6 @@ impl TeacherApp {
                 // The list shows the new state shortly after.
                 self.send(&[id], Command::GetSecurityInfo, "");
             }
-            ConfirmAction::RunScript { id, code } => {
-                if let Some(s) = self.hub.lock().unwrap().students.get_mut(&id) {
-                    s.last_result = None;
-                }
-                self.send_priv(
-                    &[id],
-                    PrivCommand::RunScript(code.clone()),
-                    &tf!(
-                        "Buyruq: {code}",
-                        code = code.chars().take(80).collect::<String>()
-                    ),
-                );
-            }
             ConfirmAction::DeleteTest(name) => {
                 if let Some(d) = lesson_extra::tests_dir() {
                     let _ = std::fs::remove_file(d.join(format!("{name}.json")));
@@ -922,6 +938,13 @@ impl TeacherApp {
         let want = egui::Vec2::from(crate::MIN_WINDOW);
         let Some(size) = size else { return };
         if self.fullscreen || self.fs_step.is_some() {
+            return;
+        }
+        // The title bar's maximize button: the window keeps its fixed size, so "maximize" means
+        // fullscreen here (the navbar button and F11 do the same).
+        if max && !full {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+            self.toggle_fullscreen(ctx);
             return;
         }
         if max || full || (size - want).abs().max_elem() < 2.0 {
@@ -996,8 +1019,21 @@ impl TeacherApp {
         // The offline unlock code goes first, so the lock screen already knows it.
         let (salt, hash, digits) = self.unlock_code();
         self.send(ids, Command::UnlockCode { salt, hash, digits }, "");
-        let icon = self.cfg.read().unwrap().lock_icon.clone();
+        let (icon, look) = {
+            let c = self.cfg.read().unwrap();
+            (
+                c.lock_icon.clone(),
+                vimora_core::LockLook {
+                    clock: c.lock_clock,
+                    no_logo: c.lock_no_logo,
+                    brand: c.lock_brand.clone(),
+                    font: c.lock_font,
+                    accent: c.lock_accent,
+                },
+            )
+        };
         self.send(ids, Command::LockStyle { icon }, "");
+        self.send(ids, Command::LockLook(look), "");
         self.send(ids, Command::Lock { title, message }, tr("Qulflash"));
     }
 
@@ -1442,6 +1478,10 @@ impl TeacherApp {
 impl eframe::App for TeacherApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.now_frame += 1;
+        {
+            let c = self.cfg.read().unwrap();
+            self.applock.begin(ctx, &c);
+        }
         self.stay_running(ctx);
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::F11)) {
             self.toggle_fullscreen(ctx);
@@ -1479,6 +1519,10 @@ impl eframe::App for TeacherApp {
         }
         self.selected.retain(|id| all.iter().any(|v| v.id == *id));
         let p = self.theme.palette();
+        {
+            let c = self.cfg.read().unwrap();
+            self.applock.show(ctx, &p, &c);
+        }
 
         self.shortcuts(ctx, &all);
         self.navbar(ctx, &p, &all);

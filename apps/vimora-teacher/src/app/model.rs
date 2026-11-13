@@ -165,8 +165,6 @@ pub(super) enum Dialog {
         sort: ProcSort,
         /// "End task" pressed: (pid, name), confirmed by the app.
         kill: Option<(u32, String)>,
-        /// The "Buyruq" tab's command.
-        script: String,
         request: Option<MachineRequest>,
     },
     /// Three tabs (programs, Windows and drivers, Vimora), one accordion per computer in each.
@@ -206,11 +204,6 @@ pub(crate) enum ConfirmAction {
         id: u64,
         name: String,
         start: bool,
-    },
-    /// Run an administrator command on a student PC.
-    RunScript {
-        id: u64,
-        code: String,
     },
     /// End a process on a student PC.
     KillProcess {

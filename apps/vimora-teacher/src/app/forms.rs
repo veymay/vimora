@@ -211,7 +211,6 @@ pub(super) fn dialog_body(
             filter,
             sort,
             kill,
-            script,
             request,
         } => machine_form(
             ui,
@@ -222,7 +221,6 @@ pub(super) fn dialog_body(
                 filter,
                 sort,
                 kill,
-                script,
                 request,
             },
             cx,
@@ -736,13 +734,6 @@ pub(super) fn tile(
     resp
 }
 
-/// Section title inside drawers.
-pub(super) fn section(ui: &mut egui::Ui, p: &Palette, title: &str) {
-    ui.add_space(6.0);
-    ui_kit::hud(ui, title, p.muted);
-    ui.add_space(2.0);
-}
-
 /// One row per target PC: name on the left, a status chip on the right.
 #[allow(dead_code)]
 pub(super) fn target_rows(
@@ -788,10 +779,6 @@ pub(super) fn target_rows(
                 ui_kit::paint_chip(ui.painter(), r, g, col);
             }
         });
-}
-
-fn note(ui: &mut egui::Ui, p: &Palette, text: &str) {
-    ui.label(RichText::new(text).size(12.5).color(p.muted));
 }
 
 /// The Shadow drawer: one page — the switch, the computers, and what to commit.
@@ -1148,32 +1135,53 @@ pub(super) fn rename_form(
     system_name: &mut String,
     key: &str,
 ) {
-    section(ui, p, tr("Dasturdagi nomi"));
-    ui.add(
-        ui_kit::text_field(alias)
-            .hint_text(key)
-            .desired_width(f32::INFINITY),
-    );
-    note(ui, p, tr("Faqat shu dasturda ko'rinadi, darhol o'zgaradi. Bo'sh qoldirsangiz — tizim nomi ko'rsatiladi."));
-    ui.add_space(8.0);
-    ui.checkbox(system, tr("Kompyuterning tizim nomini ham o'zgartirish"));
-    if *system {
-        ui.add(
-            ui_kit::text_field(system_name)
-                .hint_text("PC-12")
-                .desired_width(f32::INFINITY),
-        );
-        let ok = vimora_core::valid_computer_name(system_name.trim());
-        note(
+    sgroup(ui, p, |ui| {
+        srow(
             ui,
             p,
-            if ok {
-                tr("Windows'da qayta yuklangandan keyin kuchga kiradi. Shadow rejimda ham saqlanadi (commit).")
-            } else {
-                tr("1–15 ta lotin harfi, raqam yoki '-' (faqat raqamdan iborat bo'lmasin).")
+            true,
+            tr("Dasturdagi nomi"),
+            Some(tr("Faqat shu dasturda ko'rinadi, darhol o'zgaradi. Bo'sh qoldirsangiz tizim nomi ko'rsatiladi.")),
+            |ui| {
+                ui.add(
+                    ui_kit::text_field(alias)
+                        .hint_text(key)
+                        .desired_width(240.0),
+                );
             },
         );
-    }
+        srow(
+            ui,
+            p,
+            false,
+            tr("Tizim nomini ham o'zgartirish"),
+            Some(tr("Windows'da qayta yuklangandan keyin kuchga kiradi. Shadow rejimda ham saqlanadi (commit).")),
+            |ui| {
+                ui_kit::toggle(ui, system);
+            },
+        );
+        if *system {
+            let ok = vimora_core::valid_computer_name(system_name.trim());
+            srow(
+                ui,
+                p,
+                false,
+                tr("Tizim nomi"),
+                Some(tr(
+                    "1–15 ta lotin harfi, raqam yoki '-' (faqat raqamdan iborat bo'lmasin).",
+                )),
+                |ui| {
+                    let mut t = ui_kit::text_field(system_name)
+                        .hint_text("PC-12")
+                        .desired_width(240.0);
+                    if !ok {
+                        t = t.text_color(p.danger);
+                    }
+                    ui.add(t);
+                },
+            );
+        }
+    });
 }
 
 /// One settings line inside a drawer: title (+ "?" help) on the left, a control on the right.

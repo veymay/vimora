@@ -98,6 +98,19 @@ pub struct TeacherConfig {
     /// Administrator password (salted hash, hex). Empty = no password: everyone is admin.
     pub admin_salt: String,
     pub admin_hash: String,
+    /// Code that opens the teacher program (salted hash, hex; empty = no code) and its length.
+    pub app_pin_salt: String,
+    pub app_pin_hash: String,
+    pub app_pin_len: u8,
+    /// Minutes without a touch until the program locks itself again (0 = only at start).
+    pub app_lock_min: u32,
+    /// Lock screen look (sent with the lock): clock 0 normal / 1 small / 2 large / 3 off,
+    /// no logo, brand name, typeface 0 Geist / 1 Mono, accent RGB (zero = default).
+    pub lock_clock: u8,
+    pub lock_no_logo: bool,
+    pub lock_brand: String,
+    pub lock_font: u8,
+    pub lock_accent: [u8; 3],
     pub update_policy: vimora_core::UpdatePolicy,
     /// Per computer (key): automatic updates set in the Updates drawer. Computers without an
     /// entry follow `update_policy`.
@@ -193,6 +206,15 @@ impl Default for TeacherConfig {
             schedules: vec![],
             admin_salt: String::new(),
             admin_hash: String::new(),
+            app_pin_salt: String::new(),
+            app_pin_hash: String::new(),
+            app_pin_len: 0,
+            app_lock_min: 5,
+            lock_clock: 0,
+            lock_no_logo: false,
+            lock_brand: String::new(),
+            lock_font: 0,
+            lock_accent: [0; 3],
             update_policies: BTreeMap::new(),
             update_policy: vimora_core::UpdatePolicy {
                 os: vimora_core::OsUpdateMode::Manual,

@@ -136,6 +136,7 @@ pub(super) async fn overlay_task(state: Shared, mut rx: mpsc::Receiver<OverlayRe
                         OverlayCmd::Style {
                             icon: s.lock_icon.clone(),
                         },
+                        OverlayCmd::Look(s.lock_look.clone()),
                         OverlayCmd::Code { salt, hash, digits },
                         OverlayCmd::Lock {
                             title: t.clone(),

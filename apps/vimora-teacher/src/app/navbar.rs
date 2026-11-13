@@ -501,6 +501,15 @@ impl TeacherApp {
                                 self.ask_admin(Some(Menu::Settings));
                             }
                         }
+                        // With a program code: lock the program right now.
+                        if !self.cfg.read().unwrap().app_pin_hash.is_empty() {
+                            let r = btn(icons::LOG_OUT, "", false)
+                                .show(ui, p)
+                                .tip(tr("Dasturni qulflash"));
+                            if r.clicked() {
+                                self.applock.lock_now();
+                            }
+                        }
                         // With an administrator password: who is at the teacher.
                         if !self.cfg.read().unwrap().admin_hash.is_empty() {
                             let (ic, tip) = if self.admin {
@@ -872,7 +881,7 @@ impl TeacherApp {
         let g_label = label_galley(ui, label, p.text);
         let g_count = ui.painter().layout_no_wrap(
             count.to_string(),
-            FontId::new(10.5, ui_kit::mono_bold()),
+            FontId::new(11.5, ui_kit::mono_bold()),
             p.muted,
         );
         let count_w = (g_count.size().x + 10.0).max(20.0);
@@ -917,10 +926,11 @@ impl TeacherApp {
             Rounding::ZERO,
             if selected { p.accent } else { p.sunken },
         );
-        ui.painter().galley(
+        // The colour is set here (the galley's own would win with plain `galley`).
+        ui.painter().galley_with_override_text_color(
             cr.center() - g_count.size() / 2.0,
             g_count,
-            if selected { p.on_accent } else { p.muted },
+            if selected { p.on_accent } else { p.text },
         );
         if hov {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);

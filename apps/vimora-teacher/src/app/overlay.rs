@@ -393,10 +393,12 @@ impl TeacherApp {
         // so the frame never grows past the header and ✕ always sits on the right edge.
         let width = if drawer { DRAWER_W } else { width };
 
-        let count_label: Option<String> = if matches!(
+        let count_label: Option<String> = if let Dialog::Settings(t) = dialog {
+            // "SOZLAMALAR | ASOSIY": the page's name sits in the title, not in the page.
+            Some(t.label().to_uppercase())
+        } else if matches!(
             dialog,
-            Dialog::Settings(_)
-                | Dialog::Freeze { .. }
+            Dialog::Freeze { .. }
                 | Dialog::Room { .. }
                 | Dialog::Activity
                 | Dialog::Rename { .. }
@@ -1179,13 +1181,7 @@ impl TeacherApp {
     /// "Kompyuter holati": ask for a fresh report every few seconds while it is open, and
     /// confirm "end task".
     fn machine_requests(&mut self, ctx: &egui::Context) {
-        let Some(Dialog::Machine {
-            id,
-            request,
-            script,
-            ..
-        }) = &mut self.dialog
-        else {
+        let Some(Dialog::Machine { id, request, .. }) = &mut self.dialog else {
             return;
         };
         let id = *id;
@@ -1227,19 +1223,6 @@ impl TeacherApp {
                     tf!("\"{name}\" shu kompyuterdan o'chiriladi.", name = name),
                     tr("O'chirish"),
                     ConfirmAction::UninstallApp { id, app },
-                );
-                return;
-            }
-            Some(MachineRequest::Run) => {
-                let code = script.trim().to_string();
-                self.ask(
-                    tr("Buyruq bajarilsinmi?"),
-                    tf!(
-                        "Bu buyruq o'quvchi kompyuterida administrator huquqida bajariladi:\n{code}",
-                        code = code.chars().take(300).collect::<String>()
-                    ),
-                    tr("Bajarish"),
-                    ConfirmAction::RunScript { id, code },
                 );
                 return;
             }

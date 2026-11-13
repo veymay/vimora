@@ -27,9 +27,9 @@ impl SettingsTab {
         SettingsTab::Updates,
     ];
 
-    fn label(self) -> &'static str {
+    pub(super) fn label(self) -> &'static str {
         match self {
-            SettingsTab::General => tr("Umumiy"),
+            SettingsTab::General => tr("Asosiy"),
             SettingsTab::LockScreen => tr("Qulf ekrani"),
             SettingsTab::Updates => tr("Dastur haqida"),
             SettingsTab::Schedule => tr("Jadval"),
@@ -389,7 +389,7 @@ pub(super) fn dropdown<T: Copy + PartialEq>(
 // Sections
 
 fn general(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig, out: &mut SettingsOut) {
-    heading(ui, p, tr("Asosiy"));
+    ui.add_space(4.0);
     row(ui, p, tr("Til"), None, |ui| {
         let items: Vec<(Lang, &str)> = Lang::ALL.iter().map(|l| (*l, l.native_name())).collect();
         dropdown(ui, p, "language", &mut c.language, &items);
@@ -553,8 +553,19 @@ const LOCK_ICONS: &[(&str, &str)] = &[
     ("\u{e3ca}", "Miya"),
 ];
 
+/// Accent colours offered for the lock screen (all zero = the default green).
+const LOCK_COLORS: [[u8; 3]; 7] = [
+    [0, 0, 0],
+    [0x3b, 0x82, 0xf6],
+    [0xf5, 0x9e, 0x0b],
+    [0xef, 0x44, 0x44],
+    [0xa8, 0x55, 0xf7],
+    [0x14, 0xb8, 0xa6],
+    [0xe5, 0xe5, 0xe5],
+];
+
 fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
-    heading(ui, p, tr("Qulf ekrani"));
+    ui.add_space(4.0);
     let current = if c.lock_icon.is_empty() {
         LOCK_ICONS[0].0
     } else {
@@ -662,8 +673,79 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
                 .color(p.warning),
         );
     }
+    ui.add_space(12.0);
+    row(ui, p, tr("Soat"), None, |ui| {
+        choice(
+            ui,
+            p,
+            &mut c.lock_clock,
+            &[
+                (1, tr("Kichik")),
+                (0, tr("O'rta")),
+                (2, tr("Katta")),
+                (3, tr("Yo'q")),
+            ],
+        );
+    });
+    row(ui, p, tr("Logo"), None, |ui| {
+        let mut on = !c.lock_no_logo;
+        ui_kit::toggle(ui, &mut on);
+        c.lock_no_logo = !on;
+    });
+    if !c.lock_no_logo {
+        row(
+            ui,
+            p,
+            tr("Logo yonidagi nom"),
+            Some(tr("Bo'sh qoldirsangiz VIMORA yoziladi.")),
+            |ui| {
+                ui.add(
+                    ui_kit::text_field(&mut c.lock_brand)
+                        .hint_text("VIMORA")
+                        .desired_width(200.0),
+                );
+            },
+        );
+    }
+    row(ui, p, tr("Shrift"), None, |ui| {
+        choice(
+            ui,
+            p,
+            &mut c.lock_font,
+            &[(0, tr("Oddiy")), (1, tr("Mono"))],
+        );
+    });
+    row(ui, p, tr("Rang"), None, |ui| {
+        // Right to left: the last swatch is added first.
+        for rgb in LOCK_COLORS.iter().rev() {
+            let (r, resp) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::click());
+            let shown = if *rgb == [0, 0, 0] {
+                [0x7d, 0xba, 0x28]
+            } else {
+                *rgb
+            };
+            ui.painter().rect_filled(
+                r,
+                Rounding::ZERO,
+                Color32::from_rgb(shown[0], shown[1], shown[2]),
+            );
+            let on = c.lock_accent == *rgb;
+            ui.painter().rect_stroke(
+                r.expand(if on { 3.0 } else { 0.0 }),
+                Rounding::ZERO,
+                Stroke::new(if on { 1.5_f32 } else { 0.0 }, p.strong),
+            );
+            if resp.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            if resp.clicked() {
+                c.lock_accent = *rgb;
+            }
+            ui.add_space(6.0);
+        }
+    });
     // Live preview: what the student sees with these texts and this code.
-    heading(ui, p, tr("Ko'rinishi"));
+    ui.add_space(14.0);
     let w = ui.available_width();
     let (r, _) = ui.allocate_exact_size(vec2(w, 230.0), Sense::hover());
     let d = ui_kit::DARK;
@@ -682,6 +764,47 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
         mesh.add_triangle(0, 2, 3);
         painter.add(egui::Shape::mesh(mesh));
     }
+    let acc = if c.lock_accent == [0, 0, 0] {
+        d.accent
+    } else {
+        Color32::from_rgb(c.lock_accent[0], c.lock_accent[1], c.lock_accent[2])
+    };
+    let font = |size: f32| {
+        if c.lock_font == 1 {
+            FontId::new(size, ui_kit::mono())
+        } else {
+            FontId::proportional(size)
+        }
+    };
+    if !c.lock_no_logo {
+        let lr = Rect::from_min_size(r.left_top() + vec2(14.0, 12.0), vec2(14.0, 14.0));
+        ui_kit::logo(&painter, lr);
+        painter.text(
+            pos2(lr.right() + 6.0, lr.center().y),
+            Align2::LEFT_CENTER,
+            if c.lock_brand.trim().is_empty() {
+                "VIMORA".to_string()
+            } else {
+                c.lock_brand.trim().to_uppercase()
+            },
+            FontId::new(8.0, ui_kit::mono_bold()),
+            d.muted,
+        );
+    }
+    if c.lock_clock != 3 {
+        let k = match c.lock_clock {
+            1 => 0.7,
+            2 => 1.5,
+            _ => 1.0,
+        };
+        painter.text(
+            pos2(r.right() - 14.0, r.top() + 12.0 + 4.0 * k),
+            Align2::RIGHT_CENTER,
+            "09:41",
+            FontId::new(12.0 * k, ui_kit::mono_bold()),
+            Color32::WHITE,
+        );
+    }
     let has_code = vimora_core::pin::valid(&c.unlock_pin);
     let has_text = !c.lock_title.trim().is_empty() || !c.lock_message.trim().is_empty();
     let mut y = r.top() + if has_code || has_text { 30.0 } else { 80.0 };
@@ -689,7 +812,7 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
     let centre = pos2(r.center().x, y + 24.0);
     {
         let mut mesh = egui::epaint::Mesh::default();
-        mesh.colored_vertex(centre, d.accent.gamma_multiply(0.28));
+        mesh.colored_vertex(centre, acc.gamma_multiply(0.28));
         const N: u32 = 40;
         for i in 0..N {
             let a = i as f32 / N as f32 * std::f32::consts::TAU;
@@ -709,7 +832,7 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
         Align2::CENTER_CENTER,
         current.as_str(),
         FontId::proportional(40.0),
-        d.accent,
+        acc,
     );
     y += 62.0;
     if !c.lock_title.trim().is_empty() {
@@ -724,13 +847,7 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
         y += 28.0;
     }
     if !c.lock_message.trim().is_empty() {
-        let m = ui_kit::truncated(
-            ui,
-            &c.lock_message,
-            FontId::proportional(13.0),
-            d.muted,
-            w - 40.0,
-        );
+        let m = ui_kit::truncated(ui, &c.lock_message, font(13.0), d.muted, w - 40.0);
         painter.galley(pos2(r.center().x - m.size().x / 2.0, y), m, d.muted);
         y += 24.0;
     }
@@ -744,7 +861,7 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
             painter.rect_filled(cr, Rounding::ZERO, d.sunken);
             painter.rect_stroke(cr, Rounding::ZERO, Stroke::new(1.0_f32, d.line_strong));
             if i < 2 {
-                painter.circle_filled(cr.center(), 4.0, d.accent);
+                painter.circle_filled(cr.center(), 4.0, acc);
             }
         }
     }

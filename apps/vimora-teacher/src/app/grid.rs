@@ -1304,7 +1304,6 @@ impl TeacherApp {
                     filter: String::new(),
                     sort: ProcSort::Cpu,
                     kill: None,
-                    script: String::new(),
                     request: None,
                 });
                 self.send(&[id], Command::GetSystemInfo, "");

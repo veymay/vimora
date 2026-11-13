@@ -34,6 +34,8 @@ pub enum OverlayCmd {
     Style {
         icon: String,
     },
+    /// The rest of the look (clock, logo, typeface, accent).
+    Look(vimora_core::LockLook),
 }
 
 /// Windows: the screen is drawn with GDI (see `winlock`), not through the GPU.
@@ -50,6 +52,7 @@ enum Mode {
 struct Shared {
     /// Icon the teacher chose for the lock screen.
     icon: Option<String>,
+    look: vimora_core::LockLook,
     code: Option<(Vec<u8>, Vec<u8>, u8)>,
     mode: Mode,
     frame: Option<egui::ColorImage>,
@@ -61,6 +64,7 @@ struct Shared {
 pub fn run() -> anyhow::Result<()> {
     let shared = Arc::new(Mutex::new(Shared {
         icon: None,
+        look: Default::default(),
         code: None,
         mode: Mode::Lock {
             title: String::new(),
@@ -188,6 +192,7 @@ fn spawn_stdin_reader(shared: Arc<Mutex<Shared>>, wake: impl Fn() + Send + 'stat
             match cmd {
                 OverlayCmd::Lock { title, message } => s.mode = Mode::Lock { title, message },
                 OverlayCmd::Show => s.mode = Mode::Show,
+                OverlayCmd::Look(l) => s.look = l,
                 OverlayCmd::Bye => s.closing = Some(std::time::Instant::now()),
                 OverlayCmd::Style { icon } => {
                     // Only a single glyph of the icon font is accepted.
@@ -394,6 +399,7 @@ impl eframe::App for OverlayApp {
                 let now = Instant::now();
                 let view = LockView {
                     icon: self.shared.lock().unwrap().icon.clone(),
+                    look: self.shared.lock().unwrap().look.clone(),
                     digits: self.shared.lock().unwrap().code.as_ref().map(|c| c.2),
                     filled: self.entered.len(),
                     wrong_age: self
@@ -462,6 +468,7 @@ impl eframe::App for OverlayApp {
 struct LockView {
     /// The teacher's icon (None = the lock).
     icon: Option<String>,
+    look: vimora_core::LockLook,
     /// Length of the unlock code (None = no code set, nothing to type).
     digits: Option<u8>,
     filled: usize,
@@ -481,7 +488,18 @@ struct LockView {
 #[cfg_attr(windows, allow(dead_code))]
 fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
     use egui::{pos2, vec2, Align2, Color32, FontId, Rect, Rounding, Stroke};
-    let p = vimora_ui::DARK;
+    let mut p = vimora_ui::DARK;
+    if v.look.accent != [0, 0, 0] {
+        let [r, g, b] = v.look.accent;
+        p.accent = Color32::from_rgb(r, g, b);
+    }
+    let text_font = |size: f32| {
+        if v.look.font == 1 {
+            FontId::new(size, vimora_ui::mono())
+        } else {
+            FontId::proportional(size)
+        }
+    };
     let rect = ui.max_rect();
     let painter = ui.painter();
     // Ease-out fade in over 0.25 s, ease-in fade out while leaving.
@@ -523,29 +541,42 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
 
     // Brand (top left) and clock (top right).
     let logo = Rect::from_min_size(rect.left_top() + vec2(48.0, 44.0), vec2(30.0, 30.0));
-    vimora_ui::logo(painter, logo);
-    painter.text(
-        pos2(logo.right() + 12.0, logo.center().y),
-        Align2::LEFT_CENTER,
-        "VIMORA",
-        FontId::new(15.0, vimora_ui::mono_bold()),
-        p.muted.gamma_multiply(fade),
-    );
+    if !v.look.no_logo {
+        vimora_ui::logo(painter, logo);
+        painter.text(
+            pos2(logo.right() + 12.0, logo.center().y),
+            Align2::LEFT_CENTER,
+            if v.look.brand.trim().is_empty() {
+                "VIMORA".to_string()
+            } else {
+                v.look.brand.trim().to_uppercase()
+            },
+            FontId::new(15.0, vimora_ui::mono_bold()),
+            p.muted.gamma_multiply(fade),
+        );
+    }
     let now = chrono::Local::now();
-    painter.text(
-        pos2(rect.right() - 48.0, logo.center().y - 6.0),
-        Align2::RIGHT_CENTER,
-        now.format("%H:%M").to_string(),
-        FontId::new(30.0, vimora_ui::mono_bold()),
-        p.text.gamma_multiply(fade),
-    );
-    painter.text(
-        pos2(rect.right() - 48.0, logo.center().y + 18.0),
-        Align2::RIGHT_CENTER,
-        now.format("%d.%m.%Y").to_string(),
-        FontId::new(12.0, vimora_ui::mono()),
-        p.faint.gamma_multiply(fade),
-    );
+    let k = match v.look.clock {
+        1 => 0.7,
+        2 => 1.5,
+        _ => 1.0,
+    };
+    if v.look.clock != 3 {
+        painter.text(
+            pos2(rect.right() - 48.0, logo.center().y - 6.0 * k),
+            Align2::RIGHT_CENTER,
+            now.format("%H:%M").to_string(),
+            FontId::new(30.0 * k, vimora_ui::mono_bold()),
+            p.text.gamma_multiply(fade),
+        );
+        painter.text(
+            pos2(rect.right() - 48.0, logo.center().y + 18.0 * k),
+            Align2::RIGHT_CENTER,
+            now.format("%d.%m.%Y").to_string(),
+            FontId::new(12.0 * k, vimora_ui::mono()),
+            p.faint.gamma_multiply(fade),
+        );
+    }
 
     // The lock itself: a large icon on the soft glow, no box around it.
     painter.text(
@@ -566,7 +597,7 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
     if !title.trim().is_empty() {
         let g = painter.layout(
             title.to_string(),
-            FontId::proportional(38.0),
+            text_font(38.0),
             p.text.gamma_multiply(fade),
             rect.width() * 0.8,
         );
@@ -580,7 +611,7 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
     if !message.trim().is_empty() {
         let g = painter.layout(
             message.to_string(),
-            FontId::proportional(21.0),
+            text_font(21.0),
             p.muted.gamma_multiply(fade),
             rect.width() * 0.65,
         );

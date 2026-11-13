@@ -54,6 +54,8 @@ struct State {
     drawn: String,
     /// Background for this size (gradient, glow, corners).
     background: Option<(i32, i32, HDC, HBITMAP)>,
+    /// The accent the cached background was drawn with.
+    bg_accent: [u8; 3],
     /// Presentation frame as BGRA, with its size.
     frame: Option<(Vec<u8>, i32, i32)>,
     scale: f32,
@@ -139,8 +141,11 @@ unsafe fn circle(hdc: HDC, x: i32, y: i32, r: i32, c: egui::Color32) {
 }
 
 /// Gradient, soft glow behind the icon and the corner brackets, drawn once per size.
-unsafe fn make_background(screen: HDC, w: i32, h: i32, s: f32) -> (HDC, HBITMAP) {
-    let p = vimora_ui::DARK;
+unsafe fn make_background(screen: HDC, w: i32, h: i32, s: f32, accent: [u8; 3]) -> (HDC, HBITMAP) {
+    let mut p = vimora_ui::DARK;
+    if accent != [0, 0, 0] {
+        p.accent = egui::Color32::from_rgb(accent[0], accent[1], accent[2]);
+    }
     let dc = CreateCompatibleDC(screen);
     let bmp = CreateCompatibleBitmap(screen, w, h);
     SelectObject(dc, bmp as HGDIOBJ);
@@ -298,13 +303,24 @@ unsafe fn paint(hwnd: HWND, st: &mut State) {
             }
         }
         Mode::Lock { title, message } => {
-            if st.background.map(|b| (b.0, b.1)) != Some((w, h)) {
+            let look = st.shared.lock().unwrap().look.clone();
+            let mut p = p;
+            if look.accent != [0, 0, 0] {
+                p.accent = egui::Color32::from_rgb(look.accent[0], look.accent[1], look.accent[2]);
+            }
+            let face = if look.font == 1 {
+                "Geist Mono"
+            } else {
+                "Geist"
+            };
+            if st.background.map(|b| (b.0, b.1)) != Some((w, h)) || st.bg_accent != look.accent {
                 if let Some((_, _, bdc, bb)) = st.background.take() {
                     DeleteDC(bdc);
                     DeleteObject(bb as HGDIOBJ);
                 }
-                let (bdc, bb) = make_background(screen, w, h, s);
+                let (bdc, bb) = make_background(screen, w, h, s, look.accent);
                 st.background = Some((w, h, bdc, bb));
+                st.bg_accent = look.accent;
             }
             if let Some((_, _, bdc, _)) = st.background {
                 BitBlt(dc, 0, 0, w, h, bdc, 0, 0, SRCCOPY);
@@ -327,50 +343,66 @@ unsafe fn paint(hwnd: HWND, st: &mut State) {
 
             // Brand and clock.
             let small = font(15.0 * s, true, "Geist Mono");
-            text(
-                dc,
-                "VIMORA",
-                small,
-                p.muted,
-                RECT {
-                    left: (48.0 * s) as i32,
-                    top: (44.0 * s) as i32,
-                    right: w / 2,
-                    bottom: (74.0 * s) as i32,
-                },
-                DT_LEFT | DT_VCENTER | DT_SINGLELINE,
-            );
+            let brand = if look.brand.trim().is_empty() {
+                "VIMORA".to_string()
+            } else {
+                look.brand.trim().to_uppercase()
+            };
+            if !look.no_logo {
+                text(
+                    dc,
+                    &brand,
+                    small,
+                    p.muted,
+                    RECT {
+                        left: (48.0 * s) as i32,
+                        top: (44.0 * s) as i32,
+                        right: w / 2,
+                        bottom: (74.0 * s) as i32,
+                    },
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+                );
+            }
             DeleteObject(small as HGDIOBJ);
-            let clock = font(30.0 * s, true, "Geist Mono");
+            let k = match look.clock {
+                1 => 0.7,
+                2 => 1.5,
+                _ => 1.0,
+            };
+            let clock = font(30.0 * s * k, true, "Geist Mono");
             let nowc = chrono::Local::now();
-            text(
-                dc,
-                &nowc.format("%H:%M").to_string(),
-                clock,
-                p.text,
-                RECT {
-                    left: w / 2,
-                    top: (34.0 * s) as i32,
-                    right: w - (48.0 * s) as i32,
-                    bottom: (72.0 * s) as i32,
-                },
-                DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
-            );
+            if look.clock != 3 {
+                text(
+                    dc,
+                    &nowc.format("%H:%M").to_string(),
+                    clock,
+                    p.text,
+                    RECT {
+                        left: w / 2,
+                        top: (34.0 * s) as i32,
+                        right: w - (48.0 * s) as i32,
+                        bottom: (72.0 * s) as i32 + (30.0 * s * (k - 1.0)).max(0.0) as i32,
+                    },
+                    DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
+                );
+            }
             DeleteObject(clock as HGDIOBJ);
-            let date = font(13.0 * s, false, "Geist Mono");
-            text(
-                dc,
-                &nowc.format("%d.%m.%Y").to_string(),
-                date,
-                p.faint,
-                RECT {
-                    left: w / 2,
-                    top: (72.0 * s) as i32,
-                    right: w - (48.0 * s) as i32,
-                    bottom: (92.0 * s) as i32,
-                },
-                DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
-            );
+            let date = font(13.0 * s * k, false, "Geist Mono");
+            if look.clock != 3 {
+                text(
+                    dc,
+                    &nowc.format("%d.%m.%Y").to_string(),
+                    date,
+                    p.faint,
+                    RECT {
+                        left: w / 2,
+                        top: (72.0 * s) as i32 + (30.0 * s * (k - 1.0)).max(0.0) as i32,
+                        right: w - (48.0 * s) as i32,
+                        bottom: (92.0 * s) as i32 + (40.0 * s * (k - 1.0)).max(0.0) as i32,
+                    },
+                    DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
+                );
+            }
             DeleteObject(date as HGDIOBJ);
 
             // The icon.
@@ -399,7 +431,7 @@ unsafe fn paint(hwnd: HWND, st: &mut State) {
             // Title and message.
             let mut y = cy + (92.0 * s) as i32;
             if !title.trim().is_empty() {
-                let f = font(38.0 * s, true, "Geist");
+                let f = font(38.0 * s, true, face);
                 let r = RECT {
                     left: w / 10,
                     top: y,
@@ -410,7 +442,7 @@ unsafe fn paint(hwnd: HWND, st: &mut State) {
                 DeleteObject(f as HGDIOBJ);
             }
             if !message.trim().is_empty() {
-                let f = font(21.0 * s, false, "Geist");
+                let f = font(21.0 * s, false, face);
                 let r = RECT {
                     left: w * 175 / 1000,
                     top: y,
@@ -730,6 +762,7 @@ pub(super) fn run(shared: Arc<Mutex<Shared>>) -> anyhow::Result<()> {
                 alpha: 0,
                 drawn: String::new(),
                 background: None,
+                bg_accent: [0; 3],
                 frame: None,
                 scale: dpi as f32 / 96.0,
             })

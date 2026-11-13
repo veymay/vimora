@@ -416,6 +416,78 @@ pub(super) fn access_page(
     c: &mut crate::config::TeacherConfig,
     out: &mut SettingsOut,
 ) {
+    ui.add_space(4.0);
+    // The code that opens the program, and when it locks again.
+    {
+        let id = egui::Id::new("app-new-pin");
+        let mut pin: String = ui.data(|d| d.get_temp(id)).unwrap_or_default();
+        super::settings::row(
+            ui,
+            p,
+            tr("Dastur kodi"),
+            Some(tr(
+                "Dastur ochilganda va bir necha daqiqa tegilmasa shu kod so'raladi. 4–8 raqam.",
+            )),
+            |ui| {
+                if !c.app_pin_hash.is_empty()
+                    && ui_kit::icon_cell(ui, icons::TRASH_2, ui_kit::CONTROL_H, false)
+                        .tip(tr("Kodni olib tashlash"))
+                        .clicked()
+                {
+                    super::applock::set_pin(c, "");
+                }
+                ui.add_enabled_ui(vimora_core::pin::valid(&pin), |ui| {
+                    if ui_kit::icon_cell(ui, icons::CHECK, ui_kit::CONTROL_H, false)
+                        .tip(tr("Saqlash"))
+                        .clicked()
+                    {
+                        super::applock::set_pin(c, &pin);
+                        pin.clear();
+                    }
+                });
+                let r = ui.add(
+                    ui_kit::text_field(&mut pin)
+                        .password(true)
+                        .hint_text(if c.app_pin_hash.is_empty() {
+                            tr("Yangi kod")
+                        } else {
+                            tr("Yangi kod (almashtirish)")
+                        })
+                        .desired_width(150.0),
+                );
+                if r.changed() {
+                    pin.retain(|ch| ch.is_ascii_digit());
+                    pin.truncate(8);
+                }
+            },
+        );
+        ui.data_mut(|d| d.insert_temp(id, pin));
+        if !c.app_pin_hash.is_empty() {
+            super::settings::row(
+                ui,
+                p,
+                tr("Avto-qulf"),
+                Some(tr("Shuncha daqiqa tegilmasa dastur o'zi qulflanadi.")),
+                |ui| {
+                    super::settings::dropdown(
+                        ui,
+                        p,
+                        "app-lock-min",
+                        &mut c.app_lock_min,
+                        &[
+                            (0, tr("Faqat ochilganda")),
+                            (1, tr("1 daqiqa")),
+                            (2, tr("2 daqiqa")),
+                            (5, tr("5 daqiqa")),
+                            (10, tr("10 daqiqa")),
+                            (15, tr("15 daqiqa")),
+                            (30, tr("30 daqiqa")),
+                        ],
+                    );
+                },
+            );
+        }
+    }
     ui.add_space(10.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
