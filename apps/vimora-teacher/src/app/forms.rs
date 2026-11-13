@@ -279,6 +279,7 @@ pub(super) fn dialog_body(
             apps,
             site_cats,
             app_cats,
+            word_cats,
             open_cat,
             devices,
             extra,
@@ -286,8 +287,8 @@ pub(super) fn dialog_body(
             entry,
             import,
         } => net_form(
-            ui, p, tab, domains, keywords, apps, site_cats, app_cats, open_cat, devices, extra,
-            safe, entry, import,
+            ui, p, tab, domains, keywords, apps, site_cats, app_cats, word_cats, open_cat, devices,
+            extra, safe, entry, import,
         ),
         Dialog::Power(a) => {
             ui.horizontal(|ui| {
@@ -2015,6 +2016,7 @@ fn categories(
     cats: &mut Vec<crate::blockcat::BlockCategory>,
     defs: &[crate::blockcat::Def],
     open: &mut Option<String>,
+    allow: bool,
 ) {
     let mut remove: Option<usize> = None;
     let row_h = 44.0;
@@ -2083,10 +2085,11 @@ fn categories(
                     ui.spacing_mut().item_spacing.x = 10.0;
                     let mut all = cat.all;
                     if ui_kit::toggle(ui, &mut all)
-                        .tip(if all {
-                            tr("Toifa to'liq bloklangan")
-                        } else {
-                            tr("Butun toifani bloklash")
+                        .tip(match (all, allow) {
+                            (true, false) => tr("Toifa to'liq bloklangan"),
+                            (false, false) => tr("Butun toifani bloklash"),
+                            (true, true) => tr("Toifa to'liq ruxsat etilgan"),
+                            (false, true) => tr("Butun toifaga ruxsat berish"),
                         })
                         .changed()
                     {
@@ -2178,6 +2181,7 @@ pub(super) fn net_form(
     apps: &mut String,
     site_cats: &mut Vec<crate::blockcat::BlockCategory>,
     app_cats: &mut Vec<crate::blockcat::BlockCategory>,
+    word_cats: &mut Vec<crate::blockcat::BlockCategory>,
     open_cat: &mut Option<String>,
     devices: &mut vimora_core::DevicePolicy,
     extra: &mut NetExtra,
@@ -2197,7 +2201,7 @@ pub(super) fn net_form(
             NetTab::Keywords,
             icons::TEXT_SEARCH,
             tr("So'zlar"),
-            Some(crate::config::active_list(keywords).len()),
+            Some(crate::blockcat::effective(keywords, word_cats).len()),
         ),
         (
             NetTab::Apps,
@@ -2237,44 +2241,39 @@ pub(super) fn net_form(
                 p,
                 &mut extra.web_mode,
                 &[
-                    (0, tr("Ro'yxatdagilar yopiq")),
-                    (1, tr("Faqat ro'yxatdagilar")),
-                    (2, tr("Internet o'chiq")),
+                    (0, tr("Bloklash")),
+                    (1, tr("Faqat ruxsat")),
+                    (2, tr("Internet yo'q")),
                 ],
             );
-            match extra.web_mode {
-                1 => block_list(
-                    ui,
-                    p,
-                    &mut extra.allow_sites,
-                    entry,
-                    import,
-                    tr("sayt: edu.uz"),
-                    tr("Brauzerda faqat shu saytlar ochiladi, qolganlari yopiq. Masalan, dars yoki test sayti."),
-                    &[],
-                    |_| {},
-                ),
-                2 => {
-                    ui.label(
-                        RichText::new(with_icon(
-                            icons::GLOBE_LOCK,
-                            tr("Internet butunlay o'chiq. Sinf tarmog'i (o'qituvchi bilan aloqa) ishlayveradi."),
-                        ))
-                        .size(13.0)
-                        .color(p.text),
-                    );
-                }
-                _ => block_list(
+            if extra.web_mode == 2 {
+                ui.label(
+                    RichText::new(with_icon(
+                        icons::GLOBE_LOCK,
+                        tr("Internet butunlay o'chiq. Sinf tarmog'i (o'qituvchi bilan aloqa) ishlayveradi."),
+                    ))
+                    .size(13.0)
+                    .color(p.text),
+                );
+            } else {
+                // One list for both: "Bloklash" closes what is on it, "Faqat ruxsat" opens only
+                // what is on it.
+                let allow = extra.web_mode == 1;
+                block_list(
                     ui,
                     p,
                     domains,
                     entry,
                     import,
                     tr("sayt: tiktok.com"),
-                    tr("Toifani to'liq bloklasangiz, undagi barcha saytlar ochilmaydi; ichidan bittasini tanlasangiz — faqat o'sha sayt. Yoqilgan saytlarning subdomenlari ham ochilmaydi. Import qilingan ro'yxat (masalan, respublika ro'yxati) alohida toifa bo'ladi."),
+                    if allow {
+                        tr("Brauzerda faqat yoqilgan saytlar ochiladi, qolganlari yopiq (masalan, dars yoki test sayti). Ro'yxat bloklashdagi bilan bir xil.")
+                    } else {
+                        tr("Yoqilgan saytlar ochilmaydi (subdomenlari ham). Toifani to'liq yoki ichidan alohida saytlarni yoqish mumkin. Import qilingan ro'yxat alohida toifa bo'ladi.")
+                    },
                     &[],
-                    |ui| categories(ui, p, site_cats, crate::blockcat::SITES, open_cat),
-                ),
+                    |ui| categories(ui, p, site_cats, crate::blockcat::SITES, open_cat, allow),
+                );
             }
         }
         NetTab::Keywords => block_list(
@@ -2284,72 +2283,33 @@ pub(super) fn net_form(
             entry,
             import,
             tr("so'z: kazino"),
-            tr("Shu so'z bilan qidirilsa, sahifa ochilmaydi (yopiladi), o'quvchiga ogohlantirish oynasi chiqadi va sizga xabar keladi."),
-            &[
-                (
-                    tr("Qimor"),
-                    &[
-                        "kazino",
-                        "casino",
-                        "1xbet",
-                        "poker",
-                        "stavka",
-                        "ставки",
-                        "казино",
-                    ],
-                ),
-                (
-                    tr("Kattalar uchun"),
-                    &["porn", "xxx", "18+", "порно", "sex"],
-                ),
-                (
-                    tr("O'yinlar"),
-                    &[
-                        "minecraft",
-                        "roblox",
-                        "fortnite",
-                        "o'yin yuklab",
-                        "скачать игру",
-                    ],
-                ),
-            ],
-            |_| {},
+            tr("Shu so'z bilan qidirilsa, sahifa yopiladi, o'quvchiga ogohlantirish chiqadi va sizga xabar keladi."),
+            &[],
+            |ui| categories(ui, p, word_cats, crate::blockcat::WORDS, open_cat, false),
         ),
         NetTab::Apps => {
             mode_row(
                 ui,
                 p,
                 &mut extra.app_mode,
-                &[
-                    (0, tr("Ro'yxatdagilar yopiq")),
-                    (1, tr("Faqat ro'yxatdagilar")),
-                ],
+                &[(0, tr("Bloklash")), (1, tr("Faqat ruxsat"))],
             );
-            if extra.app_mode == 1 {
-                block_list(
-                    ui,
-                    p,
-                    &mut extra.allow_apps,
-                    entry,
-                    import,
-                    tr("dastur: winword.exe"),
-                    tr("Faqat shu dasturlar ishlaydi, boshqalari ochilishi bilan yopiladi (Windows). Windows'ning o'z qismlari (Explorer, Sozlamalar) ishlayveradi."),
-                    &[],
-                    |_| {},
-                );
-            } else {
-                block_list(
-                    ui,
-                    p,
-                    apps,
-                    entry,
-                    import,
-                    tr("dastur: steam.exe"),
-                    tr("Ro'yxatdagi dasturlar ochilishi bilan yopiladi. Jarayon nomini yozing (masalan, steam.exe yoki telegram). Toifani to'liq yoki ichidan alohida dasturlarni bloklash mumkin."),
-                    &[],
-                    |ui| categories(ui, p, app_cats, crate::blockcat::APPS, open_cat),
-                );
-            }
+            let allow = extra.app_mode == 1;
+            block_list(
+                ui,
+                p,
+                apps,
+                entry,
+                import,
+                tr("dastur: steam.exe"),
+                if allow {
+                    tr("Faqat yoqilgan dasturlar ishlaydi, boshqalari ochilishi bilan yopiladi (Windows). Explorer va Sozlamalar ishlayveradi. Ro'yxat bloklashdagi bilan bir xil.")
+                } else {
+                    tr("Yoqilgan dasturlar ochilishi bilan yopiladi. Jarayon nomini yozing (steam.exe yoki telegram). Toifani to'liq yoki ichidan alohida dasturlarni yoqish mumkin.")
+                },
+                &[],
+                |ui| categories(ui, p, app_cats, crate::blockcat::APPS, open_cat, allow),
+            );
         }
         NetTab::Devices => devices_form(ui, p, devices),
         NetTab::Search => {

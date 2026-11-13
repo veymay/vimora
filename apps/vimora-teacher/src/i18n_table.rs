@@ -6,6 +6,18 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Toifa to'liq ruxsat etilgan", "The whole category is allowed", "Категория разрешена целиком"),
+    ("Butun toifaga ruxsat berish", "Allow the whole category", "Разрешить всю категорию"),
+    ("Faqat ruxsat", "Only allowed", "Только разрешённые"),
+    ("Internet yo'q", "No internet", "Без интернета"),
+    ("Brauzerda faqat yoqilgan saytlar ochiladi, qolganlari yopiq (masalan, dars yoki test sayti). Ro'yxat bloklashdagi bilan bir xil.", "Only the switched-on sites open in the browser, all others are closed (e.g. a lesson or test site). The list is the same as for blocking.", "В браузере открываются только включённые сайты, остальные закрыты (например, сайт урока или теста). Список тот же, что и для блокировки."),
+    ("Yoqilgan saytlar ochilmaydi (subdomenlari ham). Toifani to'liq yoki ichidan alohida saytlarni yoqish mumkin. Import qilingan ro'yxat alohida toifa bo'ladi.", "Switched-on sites do not open (subdomains too). Switch on a whole category or single sites inside it. An imported list becomes a category of its own.", "Включённые сайты не открываются (поддомены тоже). Можно включить категорию целиком или отдельные сайты. Импортированный список становится отдельной категорией."),
+    ("Shu so'z bilan qidirilsa, sahifa yopiladi, o'quvchiga ogohlantirish chiqadi va sizga xabar keladi.", "If this word is searched for, the page is closed, the student gets a warning and you get a message.", "Если искать это слово, страница закроется, ученик получит предупреждение, а вы — сообщение."),
+    ("Faqat yoqilgan dasturlar ishlaydi, boshqalari ochilishi bilan yopiladi (Windows). Explorer va Sozlamalar ishlayveradi. Ro'yxat bloklashdagi bilan bir xil.", "Only the switched-on programs run, others close as soon as they open (Windows). Explorer and Settings keep working. The list is the same as for blocking.", "Работают только включённые программы, остальные закрываются при запуске (Windows). Проводник и Параметры работают. Список тот же, что и для блокировки."),
+    ("Yoqilgan dasturlar ochilishi bilan yopiladi. Jarayon nomini yozing (steam.exe yoki telegram). Toifani to'liq yoki ichidan alohida dasturlarni yoqish mumkin.", "Switched-on programs close as soon as they open. Type the process name (steam.exe or telegram). Switch on a whole category or single programs inside it.", "Включённые программы закрываются при запуске. Введите имя процесса (steam.exe или telegram). Можно включить категорию целиком или отдельные программы."),
+    ("Zo'ravonlik", "Violence", "Насилие"),
+    ("Giyohvand moddalar", "Drugs", "Наркотики"),
+    ("Ko'chirish va aldash", "Cheating", "Списывание"),
     ("Har kuni", "Every day", "Каждый день"),
     ("O'qituvchi ochiq bo'lsa, belgilangan vaqtda o'zi bajaradi: masalan, har kuni 08:00 da kompyuterlarni yoqish.", "While the teacher is open it runs at the set time by itself, e.g. every day at 08:00 it turns the computers on.", "Пока программа учителя открыта, она сама выполняет действие в заданное время, например включает компьютеры каждый день в 08:00."),
     ("Parol qo'yilsa, Muzlatish, Yangilanish, Quvvat, Sozlamalar va IT bo'limlari parol so'raydi. Pastdagi qulf belgisi orqali kirasiz yoki chiqasiz.", "With a password, Freeze, Updates, Power, Settings and the IT sections ask for it. The lock icon at the bottom signs you in and out.", "С паролем разделы «Заморозка», «Обновления», «Питание», «Настройки» и IT запрашивают его. Значок замка внизу — вход и выход."),

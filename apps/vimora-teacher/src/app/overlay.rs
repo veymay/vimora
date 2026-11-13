@@ -1020,45 +1020,28 @@ impl TeacherApp {
             FileResult::NetImport(name, text) => {
                 if let Some(Dialog::Net {
                     tab,
-                    keywords,
                     site_cats,
                     app_cats,
+                    word_cats,
                     open_cat,
-                    extra,
                     ..
                 }) = &mut self.dialog
                 {
-                    // Allow-list modes: the file's lines join the allow list.
-                    let allow = match tab {
-                        NetTab::Domains if extra.web_mode == 1 => Some(&mut extra.allow_sites),
-                        NetTab::Apps if extra.app_mode == 1 => Some(&mut extra.allow_apps),
-                        _ => None,
-                    };
-                    if let Some(list) = allow {
-                        let n = add_lines(list, &text);
-                        self.hub
-                            .lock()
-                            .unwrap()
-                            .toast(true, tf!("{n} ta qator qo'shildi", n = n));
-                        return;
-                    }
-                    // Sites and programs: the file becomes a category of its own (fully blocked).
+                    // Sites, programs and words: the file becomes a category of its own
+                    // (fully on).
                     let cats = match tab {
-                        NetTab::Keywords => None,
-                        NetTab::Apps => Some(app_cats),
-                        _ => Some(site_cats),
+                        NetTab::Keywords => word_cats,
+                        NetTab::Apps => app_cats,
+                        _ => site_cats,
                     };
-                    let msg = match cats {
-                        None => tf!("{n} ta qator qo'shildi", n = add_lines(keywords, &text)),
-                        Some(cats) => match crate::blockcat::import(cats, &name, &text) {
-                            Some(c) => {
-                                let n = c.items.len();
-                                *open_cat = Some(c.id.clone());
-                                cats.push(c);
-                                tf!("\"{name}\" toifasi qo'shildi: {n} ta", name = name, n = n)
-                            }
-                            None => tr("Faylda yaroqli qator topilmadi.").to_string(),
-                        },
+                    let msg = match crate::blockcat::import(cats, &name, &text) {
+                        Some(c) => {
+                            let n = c.items.len();
+                            *open_cat = Some(c.id.clone());
+                            cats.push(c);
+                            tf!("\"{name}\" toifasi qo'shildi: {n} ta", name = name, n = n)
+                        }
+                        None => tr("Faylda yaroqli qator topilmadi.").to_string(),
                     };
                     self.hub.lock().unwrap().toast(true, msg);
                 }
@@ -1438,24 +1421,27 @@ impl TeacherApp {
                 apps,
                 site_cats,
                 app_cats,
+                word_cats,
                 devices,
                 extra,
                 safe,
                 ..
             } => {
+                // One list per kind; the mode says what it means: blocked (0) or the only
+                // ones allowed (1).
+                let sites = crate::blockcat::effective(&domains, &site_cats);
+                let programs = crate::blockcat::effective(&apps, &app_cats);
                 let access = if clear {
                     vimora_core::AccessPolicy::default()
                 } else {
                     let mut c = self.cfg.write().unwrap();
                     c.web_mode = extra.web_mode;
-                    c.allow_sites = extra.allow_sites.clone();
                     c.app_mode = extra.app_mode;
-                    c.allow_apps = extra.allow_apps.clone();
                     c.blocked_ports = extra.ports.clone();
                     vimora_core::AccessPolicy {
                         internet_off: extra.web_mode == 2,
                         allow_sites: if extra.web_mode == 1 {
-                            crate::config::active_list(&extra.allow_sites)
+                            sites.clone()
                         } else {
                             vec![]
                         },
@@ -1464,7 +1450,7 @@ impl TeacherApp {
                 };
                 self.send_priv(t, PrivCommand::SetAccessPolicy(access), "");
                 let allow_apps = if !clear && extra.app_mode == 1 {
-                    crate::config::active_list(&extra.allow_apps)
+                    programs.clone()
                 } else {
                     vec![]
                 };
@@ -1473,18 +1459,18 @@ impl TeacherApp {
                 self.cfg.write().unwrap().device_policy = devices;
                 self.send_priv(t, PrivCommand::SetDevicePolicy(devices), "");
                 // Programs go to the agent (it closes them), the rest to the service.
-                let programs = if clear {
+                let blocked_programs = if clear || extra.app_mode == 1 {
                     vec![]
                 } else {
-                    crate::blockcat::effective(&apps, &app_cats)
+                    programs
                 };
                 if !clear {
                     let mut c = self.cfg.write().unwrap();
                     c.app_blocklist = apps.clone();
                     c.app_categories = crate::blockcat::to_config(&app_cats);
                 }
-                let n_programs = programs.len();
-                self.send(t, Command::SetAppBlocklist(programs), "");
+                let n_programs = blocked_programs.len();
+                self.send(t, Command::SetAppBlocklist(blocked_programs), "");
                 let policy = if clear {
                     NetPolicy::default()
                 } else {
@@ -1492,10 +1478,12 @@ impl TeacherApp {
                     c.web_blocklist = domains.clone();
                     c.keyword_blocklist = keywords.clone();
                     c.site_categories = crate::blockcat::to_config(&site_cats);
+                    c.word_categories = crate::blockcat::to_config(&word_cats);
                     c.safe_search = safe;
                     NetPolicy {
-                        domains: crate::blockcat::effective(&domains, &site_cats),
-                        keywords: crate::config::active_list(&keywords),
+                        // In "only allowed" mode the list opens sites; nothing is blocked by it.
+                        domains: if extra.web_mode == 0 { sites } else { vec![] },
+                        keywords: crate::blockcat::effective(&keywords, &word_cats),
                         safe_search: safe,
                     }
                 };

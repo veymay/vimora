@@ -78,6 +78,8 @@ pub struct TeacherConfig {
     pub site_categories: Vec<crate::blockcat::BlockCategory>,
     /// Program categories.
     pub app_categories: Vec<crate::blockcat::BlockCategory>,
+    /// Word categories (searches) — like `site_categories`.
+    pub word_categories: Vec<crate::blockcat::BlockCategory>,
     pub safe_search: bool,
     /// What students may use: USB, CD/DVD, printer, camera, microphone, Bluetooth, sound.
     pub device_policy: vimora_core::DevicePolicy,
@@ -179,6 +181,7 @@ impl Default for TeacherConfig {
             keyword_blocklist: "kazino\ncasino\n1xbet".into(),
             site_categories: vec![],
             app_categories: vec![],
+            word_categories: vec![],
             safe_search: true,
             device_policy: Default::default(),
             web_mode: 0,

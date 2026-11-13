@@ -105,8 +105,87 @@ mod imp {
             ours.clear();
         }
         save(&ours);
+        gestures(on);
         touchpad(on);
         Ok(())
+    }
+
+    /// Windows' own touchpad gestures (three / four finger swipes switch virtual desktops and
+    /// show the task view — the lock screen would slide away with the desktop): off while the
+    /// lock screen is up, put back exactly as they were (a value that did not exist is removed).
+    const GESTURE_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\PrecisionTouchPad";
+    const GESTURES: [&str; 5] = [
+        "ThreeFingerSlideEnabled",
+        "ThreeFingerTapEnabled",
+        "FourFingerSlideEnabled",
+        "FourFingerTapEnabled",
+        "ThreeFingerDoubleTapEnabled",
+    ];
+
+    fn gestures_state() -> PathBuf {
+        state_path().with_file_name("kiosk-gestures.json")
+    }
+
+    /// The current DWORD of a registry value, if it exists.
+    fn dword(key: &str, name: &str) -> Option<u32> {
+        let (ok, out) = sh::run("reg", &["query", key, "/v", name]).ok()?;
+        if !ok {
+            return None;
+        }
+        let hex = out
+            .lines()
+            .find(|l| l.contains("REG_DWORD"))?
+            .split_whitespace()
+            .last()?
+            .trim_start_matches("0x");
+        u32::from_str_radix(hex, 16).ok()
+    }
+
+    fn gestures(on: bool) {
+        let path = gestures_state();
+        // (full key, name, original value or none)
+        let mut saved: Vec<(String, String, Option<u32>)> = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        if on {
+            for hive in user_hives() {
+                let key = format!(r"{hive}\{GESTURE_KEY}");
+                for name in GESTURES {
+                    if !saved.iter().any(|(k, n, _)| *k == key && n == name) {
+                        saved.push((key.clone(), name.to_string(), dword(&key, name)));
+                    }
+                    let _ = sh::run(
+                        "reg",
+                        &["add", &key, "/v", name, "/t", "REG_DWORD", "/d", "0", "/f"],
+                    );
+                }
+            }
+            if let Ok(j) = serde_json::to_string(&saved) {
+                let _ = std::fs::write(&path, j);
+            }
+        } else {
+            for (key, name, original) in &saved {
+                let _ = match original {
+                    Some(v) => sh::run(
+                        "reg",
+                        &[
+                            "add",
+                            key,
+                            "/v",
+                            name,
+                            "/t",
+                            "REG_DWORD",
+                            "/d",
+                            &v.to_string(),
+                            "/f",
+                        ],
+                    ),
+                    None => sh::run("reg", &["delete", key, "/v", name, "/f"]),
+                };
+            }
+            let _ = std::fs::remove_file(&path);
+        }
     }
 
     /// Touchpads that Vimora switched off (PnP instance ids), so unlocking (or the next service
@@ -123,7 +202,14 @@ mod imp {
         let path = touchpad_state();
         if on {
             const SCRIPT: &str = r#"
-$ids = Get-CimInstance Win32_PnPEntity | Where-Object { $_.Status -eq 'OK' -and ($_.CompatibleID -contains 'HID_DEVICE_UP:000D_U:0005' -or $_.HardwareID -contains 'HID_DEVICE_UP:000D_U:0005') } | ForEach-Object { $_.PNPDeviceID }
+# Touchpads: by the standard HID usage (digitizer / touch pad), and by name (the mouse-class
+# entries of Synaptics / ELAN / Alps / Precision pads) — never a touch screen.
+$ids = Get-CimInstance Win32_PnPEntity | Where-Object {
+  $_.Status -eq 'OK' -and (
+    ($_.CompatibleID -contains 'HID_DEVICE_UP:000D_U:0005') -or ($_.HardwareID -contains 'HID_DEVICE_UP:000D_U:0005') -or
+    (($_.PNPClass -in 'Mouse','HIDClass') -and ($_.Name -match 'touch ?pad|precision|synaptics|elan|alps') -and ($_.Name -notmatch 'screen|keyboard|pen'))
+  )
+} | ForEach-Object { $_.PNPDeviceID }
 foreach ($id in $ids) { try { Disable-PnpDevice -InstanceId $id -Confirm:$false -ErrorAction Stop; $id } catch {} }
 "#;
             match sh::script(SCRIPT) {

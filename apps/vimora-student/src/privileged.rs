@@ -494,6 +494,7 @@ impl Engine {
                 format!("{a:?}")
             }
             PrivCommand::SetNetPolicy(p) => {
+                save_policy("net-policy.json", &p);
                 let mut net = self.net.lock().unwrap();
                 let msg = net.apply(p)?;
                 self.commit(&net.touched());
@@ -558,6 +559,7 @@ impl Engine {
             }
             PrivCommand::RunScript(code) => crate::secinfo::run_script(&code)?,
             PrivCommand::SetAccessPolicy(a) => {
+                save_policy("access-policy.json", &a);
                 let sites = {
                     let mut net = self.net.lock().unwrap();
                     let m = net.set_allow(&a.allow_sites)?;
@@ -674,6 +676,19 @@ impl Engine {
 
     /// Service start: persistent folders, app-update holds, and an unfinished commit cycle.
     pub fn resume(self: &Arc<Self>) {
+        // The blocks the teacher set work without the teacher: what was set last is put back
+        // (and watched again) as soon as the service starts.
+        if let Some(p) = load_policy::<vimora_core::NetPolicy>("net-policy.json") {
+            if let Err(e) = self.net.lock().unwrap().apply(p) {
+                tracing::warn!("restoring the net policy: {e:#}");
+            }
+        }
+        if let Some(a) = load_policy::<vimora_core::AccessPolicy>("access-policy.json") {
+            let sites = self.net.lock().unwrap().set_allow(&a.allow_sites);
+            if let Err(e) = sites.and_then(|_| crate::firewall::apply(a.internet_off, &a.ports)) {
+                tracing::warn!("restoring the access policy: {e:#}");
+            }
+        }
         let store = self.shield.store();
         // Package-manager holds/pins may live in places the overlay rolled back: re-apply.
         let prefs: Vec<(String, bool)> = store
@@ -791,6 +806,26 @@ pub fn stop_stuck_installer() {
         let _ = sh::run("schtasks", &["/delete", "/tn", "Vimora Update", "/f"]);
     }
     let _ = std::fs::write(update_dir().join("install-result.txt"), "124");
+}
+
+/// Policies kept next to the service's own state (outside the freeze: ProgramData\\Vimora /
+/// /etc/vimora), so they come back after a restart with no teacher around.
+fn policy_path(name: &str) -> std::path::PathBuf {
+    crate::service::config_path().with_file_name(name)
+}
+
+fn save_policy<T: Serialize>(name: &str, value: &T) {
+    if let Ok(j) = serde_json::to_string(value) {
+        let path = policy_path(name);
+        if let Some(d) = path.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        let _ = std::fs::write(path, j);
+    }
+}
+
+fn load_policy<T: serde::de::DeserializeOwned>(name: &str) -> Option<T> {
+    serde_json::from_str(&std::fs::read_to_string(policy_path(name)).ok()?).ok()
 }
 
 /// The installer for `version` (or newer) already finished well, only this service still runs

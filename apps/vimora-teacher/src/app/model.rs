@@ -90,6 +90,7 @@ pub(super) enum Dialog {
         /// Site / program categories with their items (see `blockcat`).
         site_cats: Vec<crate::blockcat::BlockCategory>,
         app_cats: Vec<crate::blockcat::BlockCategory>,
+        word_cats: Vec<crate::blockcat::BlockCategory>,
         /// The category opened in the accordion.
         open_cat: Option<String>,
         devices: vimora_core::DevicePolicy,
@@ -571,11 +572,9 @@ pub(super) struct CtxMenu {
 pub(super) struct NetExtra {
     /// Sites: 0 = listed sites blocked, 1 = only listed sites allowed, 2 = internet off.
     pub(super) web_mode: u8,
-    /// Sites allowed in mode 1 (lines, '#' = off).
-    pub(super) allow_sites: String,
-    /// Programs: 0 = listed blocked, 1 = only listed allowed.
+    /// Programs: 0 = listed blocked, 1 = only listed allowed. (One list for both modes: the
+    /// mode only says what the list means.)
     pub(super) app_mode: u8,
-    pub(super) allow_apps: String,
     /// Blocked outgoing ports, "25, 6881".
     pub(super) ports: String,
 }

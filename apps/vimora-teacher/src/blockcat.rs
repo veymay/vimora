@@ -328,6 +328,86 @@ pub const APPS: &[Def] = &[
     },
 ];
 
+/// Words that are blocked in searches, in categories like the sites and programs.
+pub const WORDS: &[Def] = &[
+    Def {
+        id: "gambling",
+        name: "Qimor",
+        icon: icons::DICES,
+        items: &[
+            "kazino",
+            "casino",
+            "1xbet",
+            "poker",
+            "stavka",
+            "ставки",
+            "казино",
+            "betting",
+        ],
+    },
+    Def {
+        id: "adult",
+        name: "Kattalar uchun",
+        icon: icons::SHIELD_BAN,
+        items: &["porn", "xxx", "18+", "порно", "sex", "erotika", "эротика"],
+    },
+    Def {
+        id: "games",
+        name: "O'yinlar",
+        icon: icons::GAMEPAD,
+        items: &[
+            "minecraft",
+            "roblox",
+            "fortnite",
+            "o'yin yuklab",
+            "скачать игру",
+            "pubg",
+            "free fire",
+        ],
+    },
+    Def {
+        id: "violence",
+        name: "Zo'ravonlik",
+        icon: icons::TRIANGLE_ALERT,
+        items: &[
+            "qurol",
+            "weapon",
+            "оружие",
+            "o'ldirish",
+            "убийство",
+            "bomba",
+            "бомба",
+        ],
+    },
+    Def {
+        id: "drugs",
+        name: "Giyohvand moddalar",
+        icon: icons::BAN,
+        items: &[
+            "giyohvand",
+            "narkotik",
+            "наркотики",
+            "drugs",
+            "марихуана",
+            "vape",
+            "вейп",
+        ],
+    },
+    Def {
+        id: "cheating",
+        name: "Ko'chirish va aldash",
+        icon: icons::FILE_TEXT,
+        items: &[
+            "javoblar",
+            "ответы",
+            "gdz",
+            "reshebnik",
+            "решебник",
+            "cheat sheet",
+        ],
+    },
+];
+
 /// A category as the drawer shows it: config state with its items filled in.
 pub fn merged(defs: &[Def], saved: &[BlockCategory]) -> Vec<BlockCategory> {
     let mut out: Vec<BlockCategory> = defs
