@@ -352,6 +352,21 @@ impl TeacherApp {
 
     /// Dev aid: `VIMORA_DEMO=<n>` fills the teacher with fake computers (never saved to disk).
     fn demo_students(&mut self, n: usize) {
+        // Two schedule rows (Settings > Jadval).
+        {
+            let mut c = self.cfg.write().unwrap();
+            if c.schedules.is_empty() {
+                c.schedules = vec![
+                    config::Schedule::default(),
+                    config::Schedule {
+                        on: false,
+                        time: "13:00".into(),
+                        days: [true, false, true, false, true, false, false],
+                        action: 1,
+                    },
+                ];
+            }
+        }
         // Files kept across restarts (Muzlatish).
         {
             let mut c = self.cfg.write().unwrap();

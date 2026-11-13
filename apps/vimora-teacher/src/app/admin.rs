@@ -219,8 +219,7 @@ pub(super) fn schedule_page(ui: &mut egui::Ui, p: &Palette, c: &mut crate::confi
         ui_kit::hud(ui, tr("Jadval"), p.muted);
         ui_kit::info(ui, tr("O'qituvchi ochiq bo'lsa, belgilangan vaqtda o'zi bajaradi: masalan, har kuni 08:00 da kompyuterlarni yoqish."));
     });
-    ui.add_space(6.0);
-    ui.add_space(10.0);
+    ui.add_space(12.0);
     let mut remove = None;
     for (i, s) in c.schedules.iter_mut().enumerate() {
         Frame::none()
@@ -258,15 +257,15 @@ pub(super) fn schedule_page(ui: &mut egui::Ui, p: &Palette, c: &mut crate::confi
                         }
                     });
                 });
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    for (d, name) in DAYS.iter().enumerate() {
-                        if ui_kit::tab(ui, tr(name), None, s.days[d]).clicked() {
-                            s.days[d] = !s.days[d];
-                        }
-                    }
-                });
+                ui.add_space(8.0);
+                let cells: Vec<(&str, bool)> = DAYS
+                    .iter()
+                    .enumerate()
+                    .map(|(d, name)| (tr(name), s.days[d]))
+                    .collect();
+                if let Some(d) = ui_kit::multi_choices(ui, &cells) {
+                    s.days[d] = !s.days[d];
+                }
             });
         ui.add_space(8.0);
     }
@@ -289,8 +288,7 @@ pub(super) fn reports_page(ui: &mut egui::Ui, p: &Palette, out: &mut SettingsOut
             tr("CSV fayl Excel'da ochiladi. Hujjatlar/Vimora papkasiga saqlanadi."),
         );
     });
-    ui.add_space(6.0);
-    ui.add_space(10.0);
+    ui.add_space(12.0);
     for (label, help, which) in [
         (
             tr("Kompyuterlar ro'yxati"),
@@ -304,20 +302,12 @@ pub(super) fn reports_page(ui: &mut egui::Ui, p: &Palette, out: &mut SettingsOut
         ),
         (tr("Bugungi davomat"), tr("Kim qachon kelgani."), 2),
     ] {
-        ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.label(RichText::new(label).size(13.5).color(p.text));
-                ui.label(RichText::new(help).size(12.0).color(p.faint));
-            });
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui_kit::button(ui, Some(icons::DOWNLOAD), tr("CSV eksport"), Kind::Outline)
-                    .clicked()
-                {
-                    out.report = Some(which);
-                }
-            });
+        super::settings::row(ui, p, label, Some(help), |ui| {
+            if ui_kit::button(ui, Some(icons::DOWNLOAD), tr("CSV eksport"), Kind::Outline).clicked()
+            {
+                out.report = Some(which);
+            }
         });
-        ui.add_space(10.0);
     }
 }
 
@@ -334,7 +324,6 @@ pub(super) fn access_page(
         ui_kit::hud(ui, tr("Administrator paroli"), p.muted);
         ui_kit::info(ui, tr("Parol qo'yilsa, Muzlatish, Yangilanish, Quvvat, Sozlamalar va IT bo'limlari parol so'raydi. Pastdagi qulf belgisi orqali kirasiz yoki chiqasiz."));
     });
-    ui.add_space(6.0);
     ui.add_space(12.0);
     let id = egui::Id::new("admin-new-pw");
     let mut pw: String = ui.data(|d| d.get_temp(id)).unwrap_or_default();

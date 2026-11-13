@@ -223,7 +223,7 @@ fn heading(ui: &mut egui::Ui, p: &Palette, text: &str) {
 }
 
 /// Title (+ optional ⓘ tooltip) on the left, the control on the right, hairline below.
-fn row(
+pub(super) fn row(
     ui: &mut egui::Ui,
     p: &Palette,
     title: &str,

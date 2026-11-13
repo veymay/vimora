@@ -754,6 +754,39 @@ pub fn choices(ui: &mut Ui, items: &[(Option<&str>, &str)], selected: usize) -> 
     clicked
 }
 
+/// Several cells that can each be on or off (days of the week …), in the same track as
+/// [`choices`]. Returns the index of a clicked cell.
+pub fn multi_choices(ui: &mut Ui, items: &[(&str, bool)]) -> Option<usize> {
+    const PAD: f32 = 3.0;
+    let p = palette(ui.ctx());
+    let base = ui.next_auto_id();
+    let parts: Vec<TabParts> = items
+        .iter()
+        .map(|(label, on)| TabParts::new(ui, None, label, None, *on))
+        .collect();
+    let widths: Vec<f32> = parts.iter().map(|t| t.content_w(false) + 20.0).collect();
+    let total = widths.iter().sum::<f32>() + PAD * (parts.len() as f32 + 1.0);
+    let (track, _) = ui.allocate_exact_size(vec2(total, CHOICE_H + 2.0 * PAD), Sense::hover());
+    ui.painter().rect(
+        track,
+        Rounding::ZERO,
+        p.sunken,
+        Stroke::new(1.0_f32, p.line),
+    );
+    let mut clicked = None;
+    let mut x = track.left() + PAD;
+    for (i, (t, w)) in parts.iter().zip(&widths).enumerate() {
+        let rect = Rect::from_min_size(egui::pos2(x, track.top() + PAD), vec2(*w, CHOICE_H));
+        let resp = ui.interact(rect, base.with(("multi", i)), Sense::click());
+        t.paint(ui, rect, &resp, false, false);
+        if resp.clicked() {
+            clicked = Some(i);
+        }
+        x += w + PAD;
+    }
+    clicked
+}
+
 /// Segmented-control container for [`tab`]s.
 pub fn segmented(p: &Palette) -> Frame {
     Frame::none()
