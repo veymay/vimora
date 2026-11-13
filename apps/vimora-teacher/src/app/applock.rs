@@ -3,7 +3,7 @@
 
 use eframe::egui::{self, pos2, vec2, Align2, FontId, Rect, Rounding, Sense, Stroke};
 use std::time::{Duration, Instant};
-use vimora_ui::{self as ui_kit, icons, tr, Palette};
+use vimora_ui::{self as ui_kit, tr, Palette};
 
 fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
@@ -119,8 +119,6 @@ impl AppLock {
         }
         let n = (c.app_pin_len as usize).clamp(4, 8);
         let screen = ctx.screen_rect();
-        let mut tapped: Option<char> = None;
-        let mut back = false;
         egui::Area::new(egui::Id::new("applock"))
             .order(egui::Order::Debug)
             .fixed_pos(screen.min)
@@ -194,66 +192,7 @@ impl AppLock {
                     FontId::new(13.0, ui_kit::mono()),
                     p.danger,
                 );
-                y += 30.0;
-                // The keypad: 1-9, backspace, 0.
-                let key = vec2(68.0, 52.0);
-                let kgap = 8.0;
-                let kx = cx - (3.0 * key.x + 2.0 * kgap) / 2.0;
-                let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "<", "0", ""];
-                for (i, k) in keys.iter().enumerate() {
-                    if k.is_empty() {
-                        continue;
-                    }
-                    let r = Rect::from_min_size(
-                        pos2(
-                            kx + (i % 3) as f32 * (key.x + kgap),
-                            y + (i / 3) as f32 * (key.y + kgap),
-                        ),
-                        key,
-                    );
-                    let resp = ui.interact(r, egui::Id::new(("applock-key", i)), Sense::click());
-                    ui.painter().rect(
-                        r,
-                        Rounding::ZERO,
-                        if resp.hovered() { p.hover } else { p.sunken },
-                        Stroke::new(1.0_f32, p.line_strong),
-                    );
-                    if *k == "<" {
-                        ui.painter().text(
-                            r.center(),
-                            Align2::CENTER_CENTER,
-                            icons::ARROW_LEFT,
-                            FontId::proportional(18.0),
-                            p.muted,
-                        );
-                    } else {
-                        ui.painter().text(
-                            r.center(),
-                            Align2::CENTER_CENTER,
-                            *k,
-                            FontId::new(20.0, ui_kit::mono_bold()),
-                            p.strong,
-                        );
-                    }
-                    if resp.hovered() {
-                        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
-                    }
-                    if resp.clicked() {
-                        if *k == "<" {
-                            back = true;
-                        } else {
-                            tapped = k.chars().next();
-                        }
-                    }
-                }
             });
-        if back {
-            self.entered.pop();
-        }
-        let blocked = self.blocked_until.is_some_and(|t| Instant::now() < t);
-        if let Some(d) = tapped.filter(|_| !blocked) {
-            self.entered.push(d);
-        }
         if self.entered.len() >= n {
             if check_pin(c, &self.entered) {
                 self.locked = false;
