@@ -263,7 +263,7 @@ impl AppLock {
                 self.wrong_at = Some(Instant::now());
                 self.fails += 1;
                 // After five wrong codes: a pause that grows.
-                if self.fails % 5 == 0 {
+                if self.fails.is_multiple_of(5) {
                     self.blocked_until = Some(
                         Instant::now()
                             + Duration::from_secs((30 * (self.fails as u64 / 5)).min(300)),
