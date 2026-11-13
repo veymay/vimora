@@ -12,13 +12,14 @@ use std::time::{Duration, Instant};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
+#[allow(unused_imports)]
+use vimora_core::ClipData;
 use vimora_core::{
     auth, capture,
     net::{read_msg, write_msg},
     Beacon, StreamConfig, StudentInfo, StudentMsg, StudentStatus, TeacherMsg, DISCOVERY_PORT,
     MIN_PROTOCOL_VERSION, PROTOCOL_VERSION,
 };
-#[allow(unused_imports)]
 use vimora_ui::{tf, tr};
 
 pub struct Student {
@@ -884,6 +885,27 @@ async fn session(
                     }
                     h.repaint();
                 }
+                StudentMsg::Clipboard(data) => {
+                    let label = info.label().to_string();
+                    let res =
+                        tokio::task::spawn_blocking(move || to_clipboard(&label, data)).await?;
+                    let mut h = hub.lock().unwrap();
+                    match res {
+                        Ok(what) => h.toast(
+                            true,
+                            tf!(
+                                "{v0}: nusxalangan {what} sizning clipboard'ingizda",
+                                v0 = info.label(),
+                                what = what
+                            ),
+                        ),
+                        Err(e) => h.log(
+                            Level::Warn,
+                            tf!("Clipboard'ni olib bo'lmadi: {e}", e = e.to_string()),
+                        ),
+                    }
+                    h.repaint();
+                }
                 StudentMsg::Cursor(k) => {
                     let mut h = hub.lock().unwrap();
                     if let Some(s) = h.students.get_mut(&id) {
@@ -1102,6 +1124,62 @@ mod wol_tests {
         assert_eq!(&p[..6], &[0xFF; 6]);
         assert_eq!(&p[96..], &[1, 2, 3, 4, 5, 6]);
     }
+}
+
+/// Puts what a watched student copied onto the teacher's own clipboard. Files are saved first
+/// (Documents/Vimora/Clipboard/<pc>) and then put on the clipboard as files. Returns what it
+/// was, in words ("matn", "rasm", "2 ta fayl").
+fn to_clipboard(label: &str, data: ClipData) -> anyhow::Result<String> {
+    let mut board = arboard::Clipboard::new()?;
+    Ok(match data {
+        ClipData::Text(t) => {
+            board.set_text(t)?;
+            tr("matn").to_string()
+        }
+        ClipData::Image(png) => {
+            let img =
+                image::load_from_memory_with_format(&png, image::ImageFormat::Png)?.to_rgba8();
+            board.set_image(arboard::ImageData {
+                width: img.width() as usize,
+                height: img.height() as usize,
+                bytes: std::borrow::Cow::Owned(img.into_raw()),
+            })?;
+            tr("rasm").to_string()
+        }
+        ClipData::Files(files) => {
+            let pc: String = label
+                .chars()
+                .map(|c| {
+                    if c.is_alphanumeric() || c == '-' {
+                        c
+                    } else {
+                        '_'
+                    }
+                })
+                .collect();
+            let dir = dirs::document_dir()
+                .or_else(dirs::home_dir)
+                .unwrap_or_else(std::env::temp_dir)
+                .join("Vimora")
+                .join("Clipboard")
+                .join(pc)
+                .join(chrono::Local::now().format("%H%M%S").to_string());
+            std::fs::create_dir_all(&dir)?;
+            let mut paths = Vec::new();
+            for (name, bytes) in &files {
+                // Only the file's own name: nothing the student sent may leave the folder.
+                let name = std::path::Path::new(name)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "fayl".into());
+                let path = dir.join(name);
+                std::fs::write(&path, bytes)?;
+                paths.push(path);
+            }
+            board.set().file_list(&paths)?;
+            tf!("{n} ta fayl", n = paths.len())
+        }
+    })
 }
 
 /// Documents/Vimora/Topshiriqlar/<day>: where collected assignments go (one folder per PC).

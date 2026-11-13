@@ -14,6 +14,7 @@ mod apps;
 mod audio;
 mod blocked;
 mod chat;
+mod clip;
 mod config;
 mod desktop;
 mod devices;

@@ -691,6 +691,16 @@ pub enum StudentMsg {
     RebootNeeded(bool),
     /// The system and its pending updates (Windows Update with drivers / apt).
     Updates(UpdatesInfo),
+    /// Something the student copied (only while the teacher watches this computer live).
+    Clipboard(ClipData),
+}
+
+/// What is on a clipboard: text, a picture (PNG) or files (name, content).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ClipData {
+    Text(String),
+    Image(Vec<u8>),
+    Files(Vec<(String, Vec<u8>)>),
 }
 
 /// What a student computer's system is and which updates wait for it.
@@ -768,6 +778,10 @@ mod wire_tests {
         assert_eq!(tag(&PrivCommand::InstallUpdateIds(vec![])), 22);
         assert_eq!(tag(&PrivCommand::UpgradeApps(vec![])), 23);
         assert_eq!(tag(&StudentMsg::Updates(Default::default())), 20);
+        assert_eq!(
+            tag(&StudentMsg::Clipboard(ClipData::Text(String::new()))),
+            21
+        );
         assert_eq!(tag(&StudentMsg::SecurityInfo(Default::default())), 17);
         assert_eq!(
             tag(&StudentMsg::Free(StudentInfo {

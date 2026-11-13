@@ -6,6 +6,14 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Sayt nomi yoki qidiruv so'zi, keyin Enter", "Site name or search words, then Enter", "Название сайта или запрос, затем Enter"),
+    ("Ochilgan saytlar shu yerda ko'rinadi.", "Opened sites will show up here.", "Здесь появятся открытые сайты."),
+    ("Saralangandan olib tashlash", "Remove from favourites", "Убрать из избранного"),
+    ("matn", "text", "текст"),
+    ("rasm", "picture", "картинка"),
+    ("Clipboard'ni olib bo'lmadi: {e}", "Could not take the clipboard: {e}", "Не удалось получить буфер обмена: {e}"),
+    ("{n} ta fayl", "{n} files", "Файлов: {n}"),
+    ("{v0}: nusxalangan {what} sizning clipboard'ingizda", "{v0}: copied {what} is now on your clipboard", "{v0}: скопированное ({what}) теперь в вашем буфере обмена"),
     ("Toifa to'liq ruxsat etilgan", "The whole category is allowed", "Категория разрешена целиком"),
     ("Butun toifaga ruxsat berish", "Allow the whole category", "Разрешить всю категорию"),
     ("Faqat ruxsat", "Only allowed", "Только разрешённые"),

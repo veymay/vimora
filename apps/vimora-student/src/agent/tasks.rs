@@ -18,6 +18,8 @@ pub(super) fn capture_loop(
     let mut warned = false;
     let mut last_sent = Instant::now() - Duration::from_secs(60);
     let mut last_cursor = u8::MAX;
+    let mut clip = crate::clip::Watch::new();
+    let mut clip_at = Instant::now();
     while !stop.load(Ordering::Relaxed) {
         let c = *cfg.lock().unwrap();
         // Live view: tell the teacher which pointer shape the student sees.
@@ -26,8 +28,16 @@ pub(super) fn capture_loop(
                 last_cursor = k;
                 let _ = tx.try_send(StudentMsg::Cursor(k));
             }
+            // What the student copies goes to the teacher who is watching.
+            if clip_at.elapsed() >= Duration::from_millis(600) {
+                clip_at = Instant::now();
+                if let Some(d) = clip.poll() {
+                    let _ = tx.try_send(StudentMsg::Clipboard(d));
+                }
+            }
         } else {
             last_cursor = u8::MAX;
+            clip.reset();
         }
         if c.interval_ms == 0 {
             std::thread::sleep(Duration::from_millis(200));

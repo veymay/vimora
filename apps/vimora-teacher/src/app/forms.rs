@@ -456,7 +456,8 @@ fn site_row(
     (hit.is_none() && resp.clicked(), hit)
 }
 
-/// The "Sayt" tab: one box (no `https://` to type or see), favourites, recent sites.
+/// The "Sayt" tab: one box (Enter opens), and one list of sites: saved ones first (marked),
+/// then the recent ones. A click opens a site on the students' screens.
 fn launch_site(
     ui: &mut egui::Ui,
     p: &Palette,
@@ -465,140 +466,96 @@ fn launch_site(
     recent: &mut Vec<String>,
     confirm: &mut bool,
 ) {
-    let norm = crate::app::overlay::normalize_url(url);
-    let saved = norm.as_ref().and_then(|u| {
-        let l = site_label(u);
-        bookmarks.iter().position(|b| site_label(b) == l)
-    });
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 8.0;
-        let r = ui.add(
-            ui_kit::text_field(url)
-                .hint_text(tr("youtube.com yoki qidiruv so'zi"))
-                .desired_width(ui.available_width() - 150.0),
-        );
-        if ui.memory(|m| m.focused().is_none()) {
-            r.request_focus();
-        }
-        if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-            *confirm = true;
-        }
-        ui.add_enabled_ui(norm.is_some(), |ui| {
-            let (ic, label) = if saved.is_some() {
-                (icons::BOOKMARK_CHECK, tr("Saqlangan"))
-            } else {
-                (icons::BOOKMARK_PLUS, tr("Saqlash"))
-            };
-            if ui_kit::button(ui, Some(ic), label, Kind::Outline).clicked() {
-                match (saved, &norm) {
-                    (Some(i), _) => {
-                        bookmarks.remove(i);
-                    }
-                    (None, Some(u)) => bookmarks.push(u.clone()),
-                    _ => {}
-                }
-            }
-        });
-    });
+    let r = ui.add(
+        ui_kit::text_field(url)
+            .hint_text(tr("Sayt nomi yoki qidiruv so'zi, keyin Enter"))
+            .desired_width(f32::INFINITY),
+    );
+    if ui.memory(|m| m.focused().is_none()) {
+        r.request_focus();
+    }
+    // Enter opens the site (the field gives up focus on Enter, so look at both states).
+    if (r.has_focus() || r.lost_focus()) && ui.input(|i| i.key_pressed(Key::Enter)) {
+        *confirm = true;
+    }
+    ui.add_space(12.0);
 
-    // Favourites: one click opens the site on the students' screens.
-    let head = |ui: &mut egui::Ui, icon: &str, title: &str| {
-        ui.add_space(12.0);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 6.0;
-            ui.label(RichText::new(icon).size(13.0).color(p.muted));
-            ui_kit::hud(ui, title, p.muted);
-        });
-        ui.add_space(4.0);
-    };
-    head(ui, icons::BOOKMARK, tr("Saralangan"));
-    if bookmarks.is_empty() {
+    // Saved sites first, then the recent ones that are not saved.
+    let rows: Vec<(String, bool)> = bookmarks
+        .iter()
+        .map(|b| (b.clone(), true))
+        .chain(
+            recent
+                .iter()
+                .filter(|r| !bookmarks.iter().any(|b| site_label(b) == site_label(r)))
+                .map(|r| (r.clone(), false)),
+        )
+        .collect();
+    if rows.is_empty() {
         ui.label(
-            RichText::new(tr("Bo'sh. Manzil yozib \"Saqlash\" ni bosing."))
+            RichText::new(tr("Ochilgan saytlar shu yerda ko'rinadi."))
                 .size(12.5)
                 .color(p.faint),
         );
-    } else {
-        let mut remove: Option<usize> = None;
-        Frame::none()
-            .stroke(Stroke::new(1.0_f32, p.line))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.spacing_mut().item_spacing.y = 0.0;
-                for (i, b) in bookmarks.iter().enumerate() {
-                    let (open, act) = site_row(
-                        ui,
-                        p,
-                        i == 0,
-                        &site_label(b),
-                        &[(icons::X, p.danger, tr("Olib tashlash"))],
-                    );
-                    if act.is_some() {
-                        remove = Some(i);
-                    } else if open {
-                        *url = b.clone();
+        return;
+    }
+    let mut toggle: Option<usize> = None;
+    let mut remove: Option<usize> = None;
+    Frame::none()
+        .stroke(Stroke::new(1.0_f32, p.line))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for (i, (site, saved)) in rows.iter().enumerate() {
+                let (open, act) = site_row(
+                    ui,
+                    p,
+                    i == 0,
+                    &site_label(site),
+                    &[
+                        (
+                            if *saved {
+                                icons::BOOKMARK_CHECK
+                            } else {
+                                icons::BOOKMARK_PLUS
+                            },
+                            p.accent_ink,
+                            if *saved {
+                                tr("Saralangandan olib tashlash")
+                            } else {
+                                tr("Saralanganlarga")
+                            },
+                        ),
+                        (icons::X, p.danger, tr("Olib tashlash")),
+                    ],
+                );
+                match act {
+                    Some(0) => toggle = Some(i),
+                    Some(_) => remove = Some(i),
+                    None if open => {
+                        *url = site.clone();
                         *confirm = true;
                     }
+                    None => {}
                 }
-            });
-        if let Some(i) = remove {
-            bookmarks.remove(i);
+            }
+        });
+    if let Some(i) = toggle {
+        let (site, saved) = &rows[i];
+        let l = site_label(site);
+        if *saved {
+            bookmarks.retain(|b| site_label(b) != l);
+            if !recent.iter().any(|r| site_label(r) == l) {
+                recent.insert(0, site.clone());
+            }
+        } else {
+            bookmarks.push(site.clone());
         }
     }
-
-    if !recent.is_empty() {
-        head(ui, icons::HISTORY, tr("Oxirgi"));
-        let mut remove: Option<usize> = None;
-        let mut star: Option<usize> = None;
-        Frame::none()
-            .stroke(Stroke::new(1.0_f32, p.line))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.spacing_mut().item_spacing.y = 0.0;
-                for (i, r) in recent.iter().enumerate() {
-                    let l = site_label(r);
-                    let is_saved = bookmarks.iter().any(|b| site_label(b) == l);
-                    let (open, act) = site_row(
-                        ui,
-                        p,
-                        i == 0,
-                        &l,
-                        &[
-                            (
-                                if is_saved {
-                                    icons::BOOKMARK_CHECK
-                                } else {
-                                    icons::BOOKMARK_PLUS
-                                },
-                                p.accent_ink,
-                                tr("Saralanganlarga"),
-                            ),
-                            (icons::X, p.danger, tr("Olib tashlash")),
-                        ],
-                    );
-                    match act {
-                        Some(0) => star = Some(i),
-                        Some(_) => remove = Some(i),
-                        None if open => {
-                            *url = r.clone();
-                            *confirm = true;
-                        }
-                        None => {}
-                    }
-                }
-            });
-        if let Some(i) = star {
-            let l = site_label(&recent[i]);
-            match bookmarks.iter().position(|b| site_label(b) == l) {
-                Some(j) => {
-                    bookmarks.remove(j);
-                }
-                None => bookmarks.push(recent[i].clone()),
-            }
-        }
-        if let Some(i) = remove {
-            recent.remove(i);
-        }
+    if let Some(i) = remove {
+        let l = site_label(&rows[i].0);
+        bookmarks.retain(|b| site_label(b) != l);
+        recent.retain(|r| site_label(r) != l);
     }
 }
 
