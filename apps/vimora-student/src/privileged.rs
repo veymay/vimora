@@ -523,9 +523,9 @@ impl Engine {
                     return Ok(msg);
                 }
                 self.job("Yangilanishlar o'rnatilmoqda", move |e| {
-                    let report = updates::install_ids(&ids)?;
+                    let report = updates::install_ids(&ids);
                     let _ = e.refresh_updates();
-                    Ok(report)
+                    report
                 })?
             }
             PrivCommand::UpgradeApps(ids) => {
@@ -535,9 +535,11 @@ impl Engine {
                     return Ok(msg);
                 }
                 self.job("Dasturlar yangilanmoqda", move |e| {
-                    let report = apps::upgrade(&ids)?;
+                    // The list is looked at again whatever came of it: what went in loses its
+                    // update button, what failed keeps it.
+                    let report = apps::upgrade(&ids);
                     let _ = e.refresh_apps();
-                    Ok(report)
+                    report
                 })?
             }
             PrivCommand::UninstallVimora => {

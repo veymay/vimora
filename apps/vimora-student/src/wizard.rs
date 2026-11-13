@@ -85,6 +85,18 @@ fn t(l: Lang, key: &str) -> &'static str {
         ("installing", Lang::Uz) => "O'rnatilmoqda…",
         ("installing", Lang::Ru) => "Установка…",
         ("installing", Lang::En) => "Installing…",
+        ("step_start", Lang::Uz) => "Tayyorlanmoqda…",
+        ("step_start", Lang::Ru) => "Подготовка…",
+        ("step_start", Lang::En) => "Preparing…",
+        ("step_files", Lang::Uz) => "Fayllar o'rnatilmoqda…",
+        ("step_files", Lang::Ru) => "Установка файлов…",
+        ("step_files", Lang::En) => "Installing files…",
+        ("step_setup", Lang::Uz) => "Sozlanmoqda…",
+        ("step_setup", Lang::Ru) => "Настройка…",
+        ("step_setup", Lang::En) => "Setting up…",
+        ("step_done", Lang::Uz) => "Tugatilmoqda…",
+        ("step_done", Lang::Ru) => "Завершение…",
+        ("step_done", Lang::En) => "Finishing…",
         ("done", Lang::Uz) => "Tayyor",
         ("done", Lang::Ru) => "Готово",
         ("done", Lang::En) => "Done",
@@ -147,7 +159,7 @@ fn window(installer: String) -> anyhow::Result<i32> {
             let mut w = Wizard {
                 installer,
                 lang: Lang::Uz,
-                role: None,
+                role: Some(false),
                 step: Step::Language,
                 exit: 1,
             };
@@ -180,6 +192,15 @@ impl eframe::App for Exit {
 
 impl Wizard {
     fn start(&mut self, teacher: bool) {
+        // The last install's step file must not pass for this one.
+        if let Some(dir) = std::env::var_os("ProgramData") {
+            let _ = std::fs::remove_file(
+                std::path::Path::new(&dir)
+                    .join("Vimora")
+                    .join("updates")
+                    .join("install-step.txt"),
+            );
+        }
         let role = if teacher { "teacher" } else { "student" };
         let comp = if teacher { "teacher" } else { "agent" };
         let child = Command::new(&self.installer)
@@ -414,10 +435,10 @@ impl Wizard {
                     });
                 }
                 Step::Installing(..) => {
-                    ui.add_space(64.0);
+                    ui.add_space(56.0);
                     ui.vertical_centered(|ui| {
-                        ui.add(egui::Spinner::new().size(30.0).color(p.accent));
-                        ui.add_space(14.0);
+                        ui.label(vimora_ui::icon(icons::DOWNLOAD, 34.0, p.accent));
+                        ui.add_space(12.0);
                         ui.label(
                             egui::RichText::new(t(l, "installing"))
                                 .family(vimora_ui::bold())
@@ -425,6 +446,26 @@ impl Wizard {
                                 .color(p.strong),
                         );
                     });
+                    ui.add_space(22.0);
+                    // Where the installer is (it writes its step into a small file): always a
+                    // bar that moves, never a frozen window.
+                    let (pct, key) = match install_step().as_deref() {
+                        Some("files") => (0.35, "step_files"),
+                        Some("restart") | Some("setup") => (0.7, "step_setup"),
+                        Some("done") => (0.95, "step_done"),
+                        _ => (0.12, "step_start"),
+                    };
+                    let (row, _) =
+                        ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
+                    // Creeps on between steps so the bar never stands still.
+                    let t_s = ctx.input(|i| i.time) as f32;
+                    let creep = (t_s * 0.02).fract() * 0.1;
+                    let shown = (pct + creep).min(0.97) * 100.0;
+                    let _ = key;
+                    vimora_ui::progress(ui, row, vimora_ui::Progress::Percent(shown));
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new(t(l, key)).size(12.5).color(p.muted));
+                    ctx.request_repaint_after(std::time::Duration::from_millis(100));
                 }
                 Step::Done => {
                     ui.add_space(50.0);
@@ -460,6 +501,19 @@ impl Wizard {
                 }
             });
     }
+}
+
+/// The step the installer wrote last (`install-step.txt` in the service's update folder).
+fn install_step() -> Option<String> {
+    let dir = std::env::var_os("ProgramData")?;
+    std::fs::read_to_string(
+        std::path::Path::new(&dir)
+            .join("Vimora")
+            .join("updates")
+            .join("install-step.txt"),
+    )
+    .ok()
+    .map(|s| s.trim().to_string())
 }
 
 fn heading(ui: &mut egui::Ui, p: &vimora_ui::Palette, text: &str) {

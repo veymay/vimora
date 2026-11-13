@@ -253,7 +253,7 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
     v.error_fg_color = p.danger;
     for (w, fill, stroke, fg) in [
         (&mut v.widgets.noninteractive, p.card, p.line, p.muted),
-        (&mut v.widgets.inactive, p.sunken, p.line, p.text),
+        (&mut v.widgets.inactive, p.sunken, p.line_strong, p.text),
         (&mut v.widgets.hovered, p.hover, p.line_strong, p.strong),
         (&mut v.widgets.active, p.sunken, p.line_strong, p.strong),
         (&mut v.widgets.open, p.sunken, p.line_strong, p.strong),

@@ -1040,12 +1040,11 @@ fn commit_section(ui: &mut egui::Ui, p: &Palette, f: &mut ShadowForm<'_>, cx: &F
             let plus = ui_kit::button(ui, Some(icons::PLUS), tr("Qo'shish"), Kind::Outline);
             let r = ui.add(
                 ui_kit::text_field(f.manual)
-                    .hint_text(tr(
-                        "Masalan: D:\\Darslar yoki C:\\Users\\Public\\Desktop\\dars.pptx",
-                    ))
+                    .hint_text(tr("D:\\Darslar"))
                     .desired_width(ui.available_width()),
             );
-            let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+            let enter =
+                (r.has_focus() || r.lost_focus()) && ui.input(|i| i.key_pressed(Key::Enter));
             if plus.clicked() || enter {
                 let path = f
                     .manual
@@ -1061,13 +1060,7 @@ fn commit_section(ui: &mut egui::Ui, p: &Palette, f: &mut ShadowForm<'_>, cx: &F
         },
     );
     ui.add_space(8.0);
-    if list.is_empty() {
-        ui.label(
-            RichText::new(tr("Ro'yxat bo'sh."))
-                .size(12.5)
-                .color(p.faint),
-        );
-    } else {
+    if !list.is_empty() {
         let mut remove = None;
         Frame::none()
             .stroke(Stroke::new(1.0_f32, p.line))
@@ -1134,7 +1127,7 @@ fn commit_section(ui: &mut egui::Ui, p: &Palette, f: &mut ShadowForm<'_>, cx: &F
         if ui_kit::button(
             ui,
             Some(icons::SHIELD_CHECK),
-            tr("Hozirgi o'zgarishlarni commit qilish"),
+            tr("Hozir saqlash"),
             Kind::Primary,
         )
         .tip(tr(
@@ -2426,16 +2419,7 @@ pub(super) fn net_form(
     ui.add_space(12.0);
     match tab {
         NetTab::Domains => {
-            mode_row(
-                ui,
-                p,
-                &mut extra.web_mode,
-                &[
-                    (0, tr("Bloklash")),
-                    (1, tr("Faqat ruxsat")),
-                    (2, tr("Internet yo'q")),
-                ],
-            );
+            mode_switches(ui, p, &mut extra.web_mode, true);
             if extra.web_mode == 2 {
                 ui.label(
                     RichText::new(with_icon(
@@ -2457,9 +2441,9 @@ pub(super) fn net_form(
                     import,
                     tr("sayt: tiktok.com"),
                     if allow {
-                        tr("Brauzerda faqat yoqilgan saytlar ochiladi, qolganlari yopiq (masalan, dars yoki test sayti). Ro'yxat bloklashdagi bilan bir xil.")
+                        tr("Faqat yoqilgan saytlar ochiladi.")
                     } else {
-                        tr("Yoqilgan saytlar ochilmaydi (subdomenlari ham). Toifani to'liq yoki ichidan alohida saytlarni yoqish mumkin. Import qilingan ro'yxat alohida toifa bo'ladi.")
+                        tr("Yoqilgan saytlar ochilmaydi.")
                     },
                     &[],
                     |ui| categories(ui, p, site_cats, crate::blockcat::SITES, open_cat, allow),
@@ -2478,12 +2462,7 @@ pub(super) fn net_form(
             |ui| categories(ui, p, word_cats, crate::blockcat::WORDS, open_cat, false),
         ),
         NetTab::Apps => {
-            mode_row(
-                ui,
-                p,
-                &mut extra.app_mode,
-                &[(0, tr("Bloklash")), (1, tr("Faqat ruxsat"))],
-            );
+            mode_switches(ui, p, &mut extra.app_mode, false);
             let allow = extra.app_mode == 1;
             block_list(
                 ui,
@@ -2493,9 +2472,9 @@ pub(super) fn net_form(
                 import,
                 tr("dastur: steam.exe"),
                 if allow {
-                    tr("Faqat yoqilgan dasturlar ishlaydi, boshqalari ochilishi bilan yopiladi (Windows). Explorer va Sozlamalar ishlayveradi. Ro'yxat bloklashdagi bilan bir xil.")
+                    tr("Faqat yoqilgan dasturlar ishlaydi.")
                 } else {
-                    tr("Yoqilgan dasturlar ochilishi bilan yopiladi. Jarayon nomini yozing (steam.exe yoki telegram). Toifani to'liq yoki ichidan alohida dasturlarni yoqish mumkin.")
+                    tr("Yoqilgan dasturlar ochilishi bilan yopiladi.")
                 },
                 &[],
                 |ui| categories(ui, p, app_cats, crate::blockcat::APPS, open_cat, allow),
@@ -2838,12 +2817,46 @@ fn devices_form(ui: &mut egui::Ui, p: &Palette, d: &mut vimora_core::DevicePolic
 }
 
 /// One segmented choice above a tab's content (what the list below means).
-fn mode_row(ui: &mut egui::Ui, _p: &Palette, value: &mut u8, items: &[(u8, &str)]) {
-    let cells: Vec<(Option<&str>, &str)> = items.iter().map(|(_, l)| (None, *l)).collect();
-    let current = items.iter().position(|(v, _)| v == value).unwrap_or(0);
-    if let Some(i) = ui_kit::choices(ui, &cells, current) {
-        *value = items[i].0;
-    }
+/// The block list's mode as plain switches: off = the list is blocked; "only the list" = only
+/// what is on the list opens; (sites) "no internet" = nothing opens. 0 / 1 / 2 in `mode`.
+fn mode_switches(ui: &mut egui::Ui, p: &Palette, mode: &mut u8, with_none: bool) {
+    let mut only = *mode == 1;
+    let mut none = *mode == 2;
+    sgroup(ui, p, |ui| {
+        srow(
+            ui,
+            p,
+            true,
+            tr("Faqat ro'yxatdagilarga ruxsat"),
+            Some(tr(
+                "O'chiq: ro'yxatdagilar bloklanadi. Yoqilgan: faqat ro'yxatdagilar ochiladi.",
+            )),
+            |ui| {
+                ui.add_enabled_ui(!none, |ui| {
+                    ui_kit::toggle(ui, &mut only);
+                });
+            },
+        );
+        if with_none {
+            srow(
+                ui,
+                p,
+                false,
+                tr("Internet yo'q"),
+                Some(tr("Internet butunlay o'chiq. Sinf tarmog'i (o'qituvchi bilan aloqa) ishlayveradi.")),
+                |ui| {
+                    ui_kit::toggle(ui, &mut none);
+                },
+            );
+        }
+    });
+    *mode = if none {
+        2
+    } else if only {
+        1
+    } else {
+        0
+    };
     ui.add_space(10.0);
 }
 
@@ -2992,5 +3005,47 @@ fn free_pcs_form(
         .clicked()
     {
         add.extend(free.iter().map(|f| f.0.clone()));
+    }
+}
+
+#[cfg(test)]
+mod launch_tests {
+    use super::*;
+
+    /// Typing a site and pressing Enter must confirm the dialog (the site opens).
+    #[test]
+    fn enter_opens_the_site() {
+        let ctx = egui::Context::default();
+        let p = vimora_ui::palette(&ctx);
+        let (mut url, mut b, mut r) = (String::new(), vec![], vec![]);
+        let mut confirm = false;
+        let mut frame = |events: Vec<egui::Event>, url: &mut String, confirm: &mut bool| {
+            let input = egui::RawInput {
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    launch_site(ui, &p, url, &mut b, &mut r, confirm);
+                });
+            });
+        };
+        frame(vec![], &mut url, &mut confirm);
+        frame(
+            vec![egui::Event::Text("youtube.com".into())],
+            &mut url,
+            &mut confirm,
+        );
+        assert_eq!(url, "youtube.com");
+        assert!(!confirm);
+        let enter = |pressed| egui::Event::Key {
+            key: egui::Key::Enter,
+            physical_key: Some(egui::Key::Enter),
+            pressed,
+            repeat: false,
+            modifiers: Default::default(),
+        };
+        frame(vec![enter(true), enter(false)], &mut url, &mut confirm);
+        assert!(confirm, "Enter did not confirm");
     }
 }

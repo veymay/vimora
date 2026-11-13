@@ -38,9 +38,30 @@ pub fn open_url(url: &str) -> Result<()> {
         bail!("only http(s) links are allowed");
     }
     #[cfg(windows)]
-    Command::new("rundll32")
-        .args(["url.dll,FileProtocolHandler", &url])
-        .spawn()?;
+    {
+        // Several ways, one after another: the first that starts wins.
+        use std::os::windows::process::CommandExt;
+        const NO_WINDOW: u32 = 0x0800_0000;
+        let tries: [(&str, Vec<&str>); 3] = [
+            ("rundll32", vec!["url.dll,FileProtocolHandler", &url]),
+            ("explorer.exe", vec![&url]),
+            ("cmd.exe", vec!["/c", "start", "", &url]),
+        ];
+        let mut last = None;
+        for (prog, args) in tries {
+            match Command::new(prog)
+                .args(&args)
+                .creation_flags(NO_WINDOW)
+                .spawn()
+            {
+                Ok(_) => return Ok(()),
+                Err(e) => last = Some(e),
+            }
+        }
+        if let Some(e) = last {
+            bail!("brauzerni ochib bo'lmadi: {e}");
+        }
+    }
     #[cfg(target_os = "macos")]
     Command::new("open").arg(&url).spawn()?;
     #[cfg(all(unix, not(target_os = "macos")))]

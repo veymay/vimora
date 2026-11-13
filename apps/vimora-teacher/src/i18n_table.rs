@@ -6,6 +6,13 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Hozir saqlash", "Save now", "Сохранить сейчас"),
+    ("Faqat yoqilgan saytlar ochiladi.", "Only the enabled sites open.", "Открываются только включённые сайты."),
+    ("Yoqilgan saytlar ochilmaydi.", "The enabled sites are blocked.", "Включённые сайты блокируются."),
+    ("Faqat yoqilgan dasturlar ishlaydi.", "Only the enabled programs run.", "Работают только включённые программы."),
+    ("Yoqilgan dasturlar ochilishi bilan yopiladi.", "The enabled programs are closed as they open.", "Включённые программы закрываются при запуске."),
+    ("Faqat ro'yxatdagilarga ruxsat", "Allow only the list", "Разрешить только список"),
+    ("O'chiq: ro'yxatdagilar bloklanadi. Yoqilgan: faqat ro'yxatdagilar ochiladi.", "Off: the list is blocked. On: only the list opens.", "Выкл: список блокируется. Вкл: открывается только список."),
     ("Terminal", "Terminal", "Терминал"),
     ("Administrator huquqida. Har bir buyruq faollik jurnaliga yoziladi.", "Runs as administrator. Every command is written to the activity log.", "От имени администратора. Каждая команда записывается в журнал."),
     ("Ubuntu kompyuterlarida bajariladi: {n} ta", "Runs on Ubuntu computers: {n}", "Выполнится на компьютерах Ubuntu: {n}"),

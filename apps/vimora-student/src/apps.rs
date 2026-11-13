@@ -58,13 +58,39 @@ pub fn upgrade(ids: &[String]) -> Result<String> {
         }
         match imp::upgrade_one(id) {
             Ok(()) => done += 1,
-            Err(e) => failed.push(format!("{id}: {e:#}")),
+            Err(e) => failed.push(format!("{id}: {}", short_error(&format!("{e:#}")))),
         }
     }
     if done == 0 && !failed.is_empty() {
         anyhow::bail!("{}", failed.join("; "));
     }
-    Ok(format!("{done} ta dastur yangilandi"))
+    if failed.is_empty() {
+        Ok(format!("{done} ta dastur yangilandi"))
+    } else {
+        Ok(format!(
+            "{done} ta dastur yangilandi, {} tasi o'rnatilmadi ({})",
+            failed.len(),
+            failed.join("; ")
+        ))
+    }
+}
+
+/// An installer's long complaint in a few words: its exit code when it has one, else the first
+/// part of the text without file paths ("… log is available at C:\…").
+fn short_error(text: &str) -> String {
+    let lower = text.to_lowercase();
+    if let Some(i) = lower.find("exit code:") {
+        let code: String = text[i + 10..]
+            .trim_start()
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '-')
+            .collect();
+        if !code.is_empty() {
+            return format!("o'rnatuvchi xatosi ({code})");
+        }
+    }
+    let cut = lower.find(" · installer log").unwrap_or(text.len());
+    text[..cut].chars().take(100).collect()
 }
 
 /// Upgrades every application with an available update except the blocked ones.
