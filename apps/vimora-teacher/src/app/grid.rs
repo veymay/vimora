@@ -1003,10 +1003,14 @@ impl TeacherApp {
                         );
                     }
                     let online: Vec<&&View> = group.iter().filter(|v| v.online).collect();
-                    let mut rows: Vec<(&str, &str, Action, Option<Color32>)> = vec![];
+                    type Row<'a> = (&'a str, &'a str, Action, Option<Color32>);
+                    // Three groups: watch · control · the computer itself.
+                    let mut watch: Vec<Row> = vec![];
+                    let mut control: Vec<Row> = vec![];
+                    let mut about: Vec<Row> = vec![];
                     if !many && v.online {
-                        rows.push((icons::EYE, tr("Ko'rish"), Action::View(id, false), None));
-                        rows.push((
+                        watch.push((icons::EYE, tr("Ko'rish"), Action::View(id, false), None));
+                        watch.push((
                             icons::MOUSE_POINTER_2,
                             tr("Boshqarish"),
                             Action::View(id, true),
@@ -1016,10 +1020,10 @@ impl TeacherApp {
                     // Only what makes sense: "lock" when something is unlocked, "unlock" when
                     // something is locked (both only for a mixed selection).
                     if online.iter().any(|v| !v.status.locked) {
-                        rows.push((icons::LOCK, tr("Qulflash"), Action::Lock(id), None));
+                        control.push((icons::LOCK, tr("Qulflash"), Action::Lock(id), None));
                     }
                     if online.iter().any(|v| v.status.locked) {
-                        rows.push((
+                        control.push((
                             icons::LOCK_OPEN,
                             tr("unlock|Ochish"),
                             Action::Unlock(id),
@@ -1028,48 +1032,48 @@ impl TeacherApp {
                     }
                     if !online.is_empty() {
                         if online.iter().any(|v| !self.input_locked.contains(&v.id)) {
-                            rows.push((
+                            control.push((
                                 icons::KEYBOARD_OFF,
-                                tr("Klaviatura va sichqonchani bloklash"),
+                                tr("Kiritishni bloklash"),
                                 Action::InputLock(id, true),
                                 None,
                             ));
                         }
                         if online.iter().any(|v| self.input_locked.contains(&v.id)) {
-                            rows.push((
+                            control.push((
                                 icons::KEYBOARD,
-                                tr("Klaviatura va sichqonchani ochish"),
+                                tr("Kiritishni ochish"),
                                 Action::InputLock(id, false),
                                 None,
                             ));
                         }
                     }
                     if !many && v.online {
-                        rows.push((
+                        control.push((
                             icons::MESSAGE_SQUARE_TEXT,
                             tr("Xabar"),
                             Action::Message(id),
                             None,
                         ));
-                        rows.push((
-                            icons::GAUGE,
-                            tr("Kompyuter holati"),
-                            Action::Machine(id),
-                            None,
-                        ));
+                        about.push((icons::GAUGE, tr("Holati"), Action::Machine(id), None));
                     }
                     if !many {
-                        rows.push((
-                            icons::SETTINGS,
-                            tr("Nomini o'zgartirish"),
-                            Action::Rename(id),
-                            None,
-                        ));
+                        about.push((icons::SETTINGS, tr("Nomi"), Action::Rename(id), None));
                     }
-                    for (ic, label, a, ink) in rows {
-                        if menu_row(ui, p, ic, label, None, ink, false).clicked() {
-                            actions.push(a);
-                            close = true;
+                    let mut first = true;
+                    for group in [watch, control, about] {
+                        if group.is_empty() {
+                            continue;
+                        }
+                        if !first {
+                            menu_sep(ui, p);
+                        }
+                        first = false;
+                        for (ic, label, a, ink) in group {
+                            if menu_row(ui, p, ic, label, None, ink, false).clicked() {
+                                actions.push(a);
+                                close = true;
+                            }
                         }
                     }
                     if !v.online && !many {
@@ -1100,7 +1104,7 @@ impl TeacherApp {
                         ui,
                         p,
                         icons::LAYOUT_GRID,
-                        tr("Xonaga biriktirish"),
+                        tr("Xona"),
                         Some(arrow),
                         None,
                         false,
@@ -1117,15 +1121,14 @@ impl TeacherApp {
                                 close = true;
                             }
                         }
-                        if menu_row(ui, p, icons::PLUS, tr("Yangi xona…"), None, None, false)
+                        if menu_row(ui, p, icons::PLUS, tr("Yangi xona"), None, None, false)
                             .clicked()
                         {
                             actions.push(Action::NewRoomFor(id));
                             close = true;
                         }
                         if v.room.is_some()
-                            && menu_row(ui, p, icons::X, tr("Xonadan chiqarish"), None, None, false)
-                                .clicked()
+                            && menu_row(ui, p, icons::X, tr("Xonasiz"), None, None, false).clicked()
                         {
                             actions.push(Action::Assign(id, None));
                             close = true;

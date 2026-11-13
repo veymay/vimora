@@ -834,7 +834,7 @@ pub fn text_area(text: &mut dyn egui::TextBuffer) -> egui::TextEdit<'_> {
 pub fn input_frame(p: &Palette) -> Frame {
     Frame::none()
         .fill(p.sunken)
-        .stroke(Stroke::new(1.0_f32, p.line))
+        .stroke(Stroke::new(1.0_f32, p.line_strong))
         .rounding(Rounding::ZERO)
         .inner_margin(Margin {
             left: 10.0,

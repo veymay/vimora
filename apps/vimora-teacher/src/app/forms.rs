@@ -1544,7 +1544,21 @@ pub(super) fn updates_form(
                                             &a.name,
                                             Some((&sub, col)),
                                             |ui| {
+                                                // The one being updated right now: a spinner.
+                                                let working = busy.is_some_and(|b| {
+                                                    b.starts_with("Dasturlar yangilanmoqda")
+                                                        && b.contains(a.id.as_str())
+                                                });
+                                                if working {
+                                                    ui.add(
+                                                        egui::Spinner::new()
+                                                            .size(16.0)
+                                                            .color(p.accent),
+                                                    );
+                                                    return;
+                                                }
                                                 if a.available.is_some()
+                                                    && busy.is_none()
                                                     && ui_kit::button(
                                                         ui,
                                                         Some(icons::DOWNLOAD),

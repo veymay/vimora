@@ -6,6 +6,9 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Kiritishni bloklash", "Block input", "Заблокировать ввод"),
+    ("Kiritishni ochish", "Unblock input", "Разблокировать ввод"),
+    ("Holati", "Status", "Состояние"),
     ("Dastur kodi", "Program code", "Код программы"),
     ("Kodni olib tashlash", "Remove the code", "Убрать код"),
     ("Yangi kod", "New code", "Новый код"),

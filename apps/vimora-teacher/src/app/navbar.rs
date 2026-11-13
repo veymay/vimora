@@ -330,8 +330,12 @@ impl TeacherApp {
         // Exactly the height of a button (CONTROL_H), drawn by hand: a Frame's stroke would make
         // it a pixel or two off.
         let (r, _) = ui.allocate_exact_size(vec2(190.0, ui_kit::CONTROL_H), Sense::hover());
-        ui.painter()
-            .rect(r, Rounding::ZERO, p.sunken, Stroke::new(1.0_f32, p.line));
+        ui.painter().rect(
+            r,
+            Rounding::ZERO,
+            p.sunken,
+            Stroke::new(1.0_f32, p.line_strong),
+        );
         let mut c = ui.new_child(
             egui::UiBuilder::new()
                 .max_rect(r.shrink2(vec2(10.0, 0.0)))

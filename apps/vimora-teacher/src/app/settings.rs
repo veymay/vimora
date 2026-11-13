@@ -310,7 +310,7 @@ pub(super) fn dropdown<T: Copy + PartialEq>(
             } else if hov {
                 p.line_strong
             } else {
-                p.line
+                p.line_strong
             },
         ),
     );
@@ -572,180 +572,8 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
         c.lock_icon.as_str()
     }
     .to_string();
-    ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(tr("Ikonka")).size(13.5).color(p.text));
-        ui_kit::info(ui, tr("Qulflanganda o'quvchi ekranining o'rtasida chiqadigan belgi. Keyingi qulflashda ko'rinadi."));
-    });
-    ui.add_space(6.0);
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-        for (glyph, name) in LOCK_ICONS {
-            let on = current == *glyph;
-            let (r, resp) = ui.allocate_exact_size(vec2(38.0, 38.0), Sense::click());
-            let hov = resp.hovered();
-            ui.painter().rect(
-                r,
-                Rounding::ZERO,
-                if on {
-                    p.card
-                } else if hov {
-                    p.hover
-                } else {
-                    p.sunken
-                },
-                Stroke::new(
-                    1.0_f32,
-                    if on {
-                        p.accent
-                    } else if hov {
-                        p.line_strong
-                    } else {
-                        p.line
-                    },
-                ),
-            );
-            ui.painter().text(
-                r.center(),
-                Align2::CENTER_CENTER,
-                *glyph,
-                FontId::proportional(19.0),
-                if on { p.accent_ink } else { p.muted },
-            );
-            if hov {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-            }
-            if resp.tip(tr(name)).clicked() {
-                c.lock_icon = if *glyph == LOCK_ICONS[0].0 {
-                    String::new()
-                } else {
-                    glyph.to_string()
-                };
-            }
-        }
-    });
-    ui.add_space(8.0);
-    row(
-        ui,
-        p,
-        tr("Sarlavha"),
-        Some(tr(
-            "Bo'sh qoldirsangiz, qulf ekranida sarlavha ko'rinmaydi.",
-        )),
-        |ui| {
-            ui.add(ui_kit::text_field(&mut c.lock_title).desired_width(300.0));
-        },
-    );
-    ui.add_space(12.0);
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(tr("Matn")).size(13.5).color(p.text));
-        ui_kit::info(ui, tr("Qulflanganda o'quvchi ekranining o'rtasida chiqadi. Bo'sh qoldirsangiz ko'rinmaydi. O'zgarish keyingi qulflashda ko'rinadi."));
-    });
-    ui.add_space(6.0);
-    ui.add(
-        ui_kit::text_area(&mut c.lock_message)
-            .desired_rows(3)
-            .desired_width(f32::INFINITY),
-    );
-    ui.add_space(12.0);
-    row(
-        ui,
-        p,
-        tr("Ochish kodi"),
-        Some(tr("4–8 raqam. Internet uzilib qolsa, o'quvchi ekrandagi qulfni shu kod bilan ochadi. Bo'sh qoldirsangiz kod so'ralmaydi. Keyingi qulflashdan boshlab kuchga kiradi.")),
-        |ui| {
-            let r = ui.add(
-                ui_kit::text_field(&mut c.unlock_pin)
-                    .password(true)
-                    .hint_text(tr("masalan 4821"))
-                    .desired_width(160.0),
-            );
-            if r.changed() {
-                c.unlock_pin.retain(|ch| ch.is_ascii_digit());
-                c.unlock_pin.truncate(8);
-            }
-        },
-    );
-    if !c.unlock_pin.is_empty() && !vimora_core::pin::valid(&c.unlock_pin) {
-        ui.label(
-            RichText::new(tr("Kod kamida 4 raqamdan iborat bo'lishi kerak."))
-                .size(12.0)
-                .color(p.warning),
-        );
-    }
-    ui.add_space(12.0);
-    row(ui, p, tr("Soat"), None, |ui| {
-        choice(
-            ui,
-            p,
-            &mut c.lock_clock,
-            &[
-                (1, tr("Kichik")),
-                (0, tr("O'rta")),
-                (2, tr("Katta")),
-                (3, tr("Yo'q")),
-            ],
-        );
-    });
-    row(ui, p, tr("Logo"), None, |ui| {
-        let mut on = !c.lock_no_logo;
-        ui_kit::toggle(ui, &mut on);
-        c.lock_no_logo = !on;
-    });
-    if !c.lock_no_logo {
-        row(
-            ui,
-            p,
-            tr("Logo yonidagi nom"),
-            Some(tr("Bo'sh qoldirsangiz VIMORA yoziladi.")),
-            |ui| {
-                ui.add(
-                    ui_kit::text_field(&mut c.lock_brand)
-                        .hint_text("VIMORA")
-                        .desired_width(200.0),
-                );
-            },
-        );
-    }
-    row(ui, p, tr("Shrift"), None, |ui| {
-        choice(
-            ui,
-            p,
-            &mut c.lock_font,
-            &[(0, tr("Oddiy")), (1, tr("Mono"))],
-        );
-    });
-    row(ui, p, tr("Rang"), None, |ui| {
-        // Right to left: the last swatch is added first.
-        for rgb in LOCK_COLORS.iter().rev() {
-            let (r, resp) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::click());
-            let shown = if *rgb == [0, 0, 0] {
-                [0x7d, 0xba, 0x28]
-            } else {
-                *rgb
-            };
-            ui.painter().rect_filled(
-                r,
-                Rounding::ZERO,
-                Color32::from_rgb(shown[0], shown[1], shown[2]),
-            );
-            let on = c.lock_accent == *rgb;
-            ui.painter().rect_stroke(
-                r.expand(if on { 3.0 } else { 0.0 }),
-                Rounding::ZERO,
-                Stroke::new(if on { 1.5_f32 } else { 0.0 }, p.strong),
-            );
-            if resp.hovered() {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-            }
-            if resp.clicked() {
-                c.lock_accent = *rgb;
-            }
-            ui.add_space(6.0);
-        }
-    });
+    // What the student will see, first: every change below shows here at once.
     // Live preview: what the student sees with these texts and this code.
-    ui.add_space(14.0);
     let w = ui.available_width();
     let (r, _) = ui.allocate_exact_size(vec2(w, 230.0), Sense::hover());
     let d = ui_kit::DARK;
@@ -865,6 +693,178 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
             }
         }
     }
+    heading(ui, p, tr("Matn"));
+    row(
+        ui,
+        p,
+        tr("Sarlavha"),
+        Some(tr(
+            "Bo'sh qoldirsangiz, qulf ekranida sarlavha ko'rinmaydi.",
+        )),
+        |ui| {
+            ui.add(ui_kit::text_field(&mut c.lock_title).desired_width(300.0));
+        },
+    );
+    ui.add_space(12.0);
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(tr("Matn")).size(13.5).color(p.text));
+        ui_kit::info(ui, tr("Qulflanganda o'quvchi ekranining o'rtasida chiqadi. Bo'sh qoldirsangiz ko'rinmaydi. O'zgarish keyingi qulflashda ko'rinadi."));
+    });
+    ui.add_space(6.0);
+    ui.add(
+        ui_kit::text_area(&mut c.lock_message)
+            .desired_rows(3)
+            .desired_width(f32::INFINITY),
+    );
+    ui.add_space(12.0);
+    row(
+        ui,
+        p,
+        tr("Ochish kodi"),
+        Some(tr("4–8 raqam. Internet uzilib qolsa, o'quvchi ekrandagi qulfni shu kod bilan ochadi. Bo'sh qoldirsangiz kod so'ralmaydi. Keyingi qulflashdan boshlab kuchga kiradi.")),
+        |ui| {
+            let r = ui.add(
+                ui_kit::text_field(&mut c.unlock_pin)
+                    .password(true)
+                    .hint_text(tr("masalan 4821"))
+                    .desired_width(160.0),
+            );
+            if r.changed() {
+                c.unlock_pin.retain(|ch| ch.is_ascii_digit());
+                c.unlock_pin.truncate(8);
+            }
+        },
+    );
+    if !c.unlock_pin.is_empty() && !vimora_core::pin::valid(&c.unlock_pin) {
+        ui.label(
+            RichText::new(tr("Kod kamida 4 raqamdan iborat bo'lishi kerak."))
+                .size(12.0)
+                .color(p.warning),
+        );
+    }
+    heading(ui, p, tr("Ko'rinish"));
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(tr("Ikonka")).size(13.5).color(p.text));
+        ui_kit::info(ui, tr("Qulflanganda o'quvchi ekranining o'rtasida chiqadigan belgi. Keyingi qulflashda ko'rinadi."));
+    });
+    ui.add_space(6.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+        for (glyph, name) in LOCK_ICONS {
+            let on = current == *glyph;
+            let (r, resp) = ui.allocate_exact_size(vec2(38.0, 38.0), Sense::click());
+            let hov = resp.hovered();
+            ui.painter().rect(
+                r,
+                Rounding::ZERO,
+                if on {
+                    p.card
+                } else if hov {
+                    p.hover
+                } else {
+                    p.sunken
+                },
+                Stroke::new(
+                    1.0_f32,
+                    if on {
+                        p.accent
+                    } else if hov {
+                        p.line_strong
+                    } else {
+                        p.line
+                    },
+                ),
+            );
+            ui.painter().text(
+                r.center(),
+                Align2::CENTER_CENTER,
+                *glyph,
+                FontId::proportional(19.0),
+                if on { p.accent_ink } else { p.muted },
+            );
+            if hov {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            if resp.tip(tr(name)).clicked() {
+                c.lock_icon = if *glyph == LOCK_ICONS[0].0 {
+                    String::new()
+                } else {
+                    glyph.to_string()
+                };
+            }
+        }
+    });
+    ui.add_space(8.0);
+    row(ui, p, tr("Soat"), None, |ui| {
+        choice(
+            ui,
+            p,
+            &mut c.lock_clock,
+            &[
+                (1, tr("Kichik")),
+                (0, tr("O'rta")),
+                (2, tr("Katta")),
+                (3, tr("Yo'q")),
+            ],
+        );
+    });
+    row(ui, p, tr("Logo"), None, |ui| {
+        let mut on = !c.lock_no_logo;
+        ui_kit::toggle(ui, &mut on);
+        c.lock_no_logo = !on;
+    });
+    if !c.lock_no_logo {
+        row(
+            ui,
+            p,
+            tr("Logo yonidagi nom"),
+            Some(tr("Bo'sh qoldirsangiz VIMORA yoziladi.")),
+            |ui| {
+                ui.add(
+                    ui_kit::text_field(&mut c.lock_brand)
+                        .hint_text("VIMORA")
+                        .desired_width(200.0),
+                );
+            },
+        );
+    }
+    row(ui, p, tr("Shrift"), None, |ui| {
+        choice(
+            ui,
+            p,
+            &mut c.lock_font,
+            &[(0, tr("Oddiy")), (1, tr("Mono"))],
+        );
+    });
+    row(ui, p, tr("Rang"), None, |ui| {
+        // Right to left: the last swatch is added first.
+        for rgb in LOCK_COLORS.iter().rev() {
+            let (r, resp) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::click());
+            let shown = if *rgb == [0, 0, 0] {
+                [0x7d, 0xba, 0x28]
+            } else {
+                *rgb
+            };
+            ui.painter().rect_filled(
+                r,
+                Rounding::ZERO,
+                Color32::from_rgb(shown[0], shown[1], shown[2]),
+            );
+            let on = c.lock_accent == *rgb;
+            ui.painter().rect_stroke(
+                r.expand(if on { 3.0 } else { 0.0 }),
+                Rounding::ZERO,
+                Stroke::new(if on { 1.5_f32 } else { 0.0 }, p.strong),
+            );
+            if resp.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            if resp.clicked() {
+                c.lock_accent = *rgb;
+            }
+            ui.add_space(6.0);
+        }
+    });
 }
 
 fn updates(

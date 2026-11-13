@@ -537,7 +537,14 @@ impl Engine {
                 self.job("Dasturlar yangilanmoqda", move |e| {
                     // The list is looked at again whatever came of it: what went in loses its
                     // update button, what failed keeps it.
-                    let report = apps::upgrade(&ids);
+                    // Which one is being updated, and how far: the teacher draws a bar.
+                    let report = apps::upgrade(&ids, &|i, n, id| {
+                        e.inner.lock().unwrap().busy = Some(format!(
+                            "Dasturlar yangilanmoqda: {id} ({}/{n}) {}%",
+                            i + 1,
+                            i * 100 / n.max(1)
+                        ));
+                    });
                     let _ = e.refresh_apps();
                     report
                 })?
@@ -716,7 +723,7 @@ impl Engine {
                 system::rename_computer(name).map(|_| format!("Kompyuter nomi: {name}"))
             }
             Task::InstallUpdateIds(ids) => updates::install_ids(ids),
-            Task::UpgradeApps(ids) => apps::upgrade(ids),
+            Task::UpgradeApps(ids) => apps::upgrade(ids, &|_, _, _| {}),
         });
         for (ok, m) in events {
             self.push(ok, m);

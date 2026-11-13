@@ -49,13 +49,15 @@ pub fn uninstall(id: &str) -> Result<String> {
 }
 
 /// Updates these applications now (winget on Windows; snap or apt on Ubuntu).
-pub fn upgrade(ids: &[String]) -> Result<String> {
+pub fn upgrade(ids: &[String], progress: &dyn Fn(usize, usize, &str)) -> Result<String> {
     let mut done = 0;
     let mut failed = vec![];
-    for id in ids {
+    let total = ids.len();
+    for (i, id) in ids.iter().enumerate() {
         if id.trim().is_empty() || id.starts_with('-') {
             continue;
         }
+        progress(i, total, id);
         match imp::upgrade_one(id) {
             Ok(()) => done += 1,
             Err(e) => failed.push(format!("{id}: {}", short_error(&format!("{e:#}")))),
