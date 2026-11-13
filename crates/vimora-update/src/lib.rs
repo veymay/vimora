@@ -519,57 +519,7 @@ pub fn install_student(path: &Path) -> Result<()> {
     let file = path.to_string_lossy().into_owned();
     #[cfg(windows)]
     {
-        // A small script runs the installer and writes its exit code next to it
-        // (`install_result`), so the service can tell whether the update really went in. The
-        // task points at the script, so there is nothing to quote in the task's command line.
-        let dir = path.parent().context("yangilanish papkasi yo'q")?;
-        let result = dir.join("install-result.txt");
-        let _ = std::fs::remove_file(&result);
-        let script = dir.join("run-update.cmd");
-        std::fs::write(
-            &script,
-            format!(
-                "@echo off\r\n\"{file}\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TYPE=student /COMPONENTS=agent\r\necho %errorlevel% > \"{}\"\r\n",
-                result.display()
-            ),
-        )
-        .context("yangilanish skriptini yozib bo'lmadi")?;
-        let tr = script.to_string_lossy().into_owned();
-        let task = run(
-            "schtasks",
-            &[
-                "/create",
-                "/tn",
-                "Vimora Update",
-                "/tr",
-                &tr,
-                "/sc",
-                "once",
-                "/st",
-                "23:59",
-                "/ru",
-                "SYSTEM",
-                "/rl",
-                "HIGHEST",
-                "/f",
-            ],
-        )
-        .and_then(|_| run("schtasks", &["/run", "/tn", "Vimora Update"]));
-        if let Err(e) = task {
-            // No task scheduler: start the script directly, detached from this service (the
-            // installer stops the service; the script must outlive it).
-            tracing::warn!("update task: {e:#}; starting the installer directly");
-            use std::os::windows::process::CommandExt;
-            const DETACHED_PROCESS: u32 = 0x0000_0008;
-            const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            std::process::Command::new("cmd.exe")
-                .args(["/c", &tr])
-                .creation_flags(DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB | CREATE_NO_WINDOW)
-                .spawn()
-                .context("o'rnatuvchini ishga tushirib bo'lmadi")?;
-        }
-        Ok(())
+        windows_install(path, &file)
     }
     #[cfg(not(windows))]
     {
@@ -590,6 +540,157 @@ pub fn install_student(path: &Path) -> Result<()> {
             ],
         )
     }
+}
+
+/// Windows: runs the installer outside the service, trying several ways one after another —
+/// the first that starts wins. Every attempt uses a script with a fresh name (a leftover script
+/// that is still running or locked must not block the update: "Access is denied").
+///  1. a one-off SYSTEM scheduled task that runs the script,
+///  2. the script started directly, detached from the service,
+///  3. the installer itself started directly (no result file, the version change tells),
+///  4. a scheduled task that runs the installer with no script at all.
+#[cfg(windows)]
+fn windows_install(path: &Path, file: &str) -> Result<()> {
+    use std::os::windows::process::CommandExt;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const FLAGS: u32 = DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB | CREATE_NO_WINDOW;
+    const ARGS: [&str; 4] = [
+        "/VERYSILENT",
+        "/SUPPRESSMSGBOXES",
+        "/NORESTART",
+        "/TYPE=student",
+    ];
+    let dir = path
+        .parent()
+        .context("yangilanish papkasi yo'q")?
+        .to_path_buf();
+    let result = dir.join("install-result.txt");
+    // An old result must not pass for this one; when it cannot be deleted, empty it.
+    if std::fs::remove_file(&result).is_err() && result.exists() {
+        let _ = std::fs::write(&result, "");
+    }
+    let _ = std::fs::remove_file(dir.join("install-step.txt"));
+    // Old scripts of earlier attempts (best effort).
+    if let Ok(rd) = std::fs::read_dir(&dir) {
+        for e in rd.flatten() {
+            let n = e.file_name().to_string_lossy().to_lowercase();
+            if n.starts_with("run-update") && n.ends_with(".cmd") {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let body = format!(
+        "@echo off\r\n\"{file}\" {} /COMPONENTS=agent\r\necho %errorlevel% > \"{}\"\r\n",
+        ARGS.join(" "),
+        result.display()
+    );
+    // A script in the updates folder, or (when that folder refuses) in the system's own.
+    let mut folders = vec![dir.clone()];
+    if let Some(w) = std::env::var_os("SystemRoot") {
+        folders.push(PathBuf::from(w).join("Temp"));
+    }
+    if let Some(pd) = std::env::var_os("ProgramData") {
+        folders.push(PathBuf::from(pd).join("Vimora"));
+    }
+    let mut script = None;
+    let mut last_err = None;
+    for (i, f) in folders.iter().enumerate() {
+        let candidate = f.join(format!("run-update-{stamp}-{i}.cmd"));
+        match std::fs::write(&candidate, &body) {
+            Ok(()) => {
+                script = Some(candidate);
+                break;
+            }
+            Err(e) => last_err = Some(e),
+        }
+    }
+    let mut errors: Vec<String> = Vec::new();
+    if let Some(script) = &script {
+        let tr = script.to_string_lossy().into_owned();
+        // 1. Scheduled task as SYSTEM.
+        let task = run(
+            "schtasks",
+            &[
+                "/create",
+                "/tn",
+                "Vimora Update",
+                "/tr",
+                &tr,
+                "/sc",
+                "once",
+                "/st",
+                "23:59",
+                "/ru",
+                "SYSTEM",
+                "/rl",
+                "HIGHEST",
+                "/f",
+            ],
+        )
+        .and_then(|_| run("schtasks", &["/run", "/tn", "Vimora Update"]));
+        match task {
+            Ok(()) => return Ok(()),
+            Err(e) => errors.push(format!("task: {e:#}")),
+        }
+        // 2. The script, detached.
+        match std::process::Command::new("cmd.exe")
+            .args(["/c", &tr])
+            .creation_flags(FLAGS)
+            .spawn()
+        {
+            Ok(_) => return Ok(()),
+            Err(e) => errors.push(format!("cmd: {e}")),
+        }
+    } else if let Some(e) = last_err {
+        errors.push(format!("script: {e}"));
+    }
+    // 3. The installer itself, detached.
+    match std::process::Command::new(file)
+        .args(ARGS)
+        .arg("/COMPONENTS=agent")
+        .creation_flags(FLAGS)
+        .spawn()
+    {
+        Ok(_) => return Ok(()),
+        Err(e) => errors.push(format!("exe: {e}")),
+    }
+    // 4. A task that runs the installer with no script.
+    let cmdline = format!("\"{file}\" {} /COMPONENTS=agent", ARGS.join(" "));
+    match run(
+        "schtasks",
+        &[
+            "/create",
+            "/tn",
+            "Vimora Update",
+            "/tr",
+            &cmdline,
+            "/sc",
+            "once",
+            "/st",
+            "23:59",
+            "/ru",
+            "SYSTEM",
+            "/rl",
+            "HIGHEST",
+            "/f",
+        ],
+    )
+    .and_then(|_| run("schtasks", &["/run", "/tn", "Vimora Update"]))
+    {
+        Ok(()) => return Ok(()),
+        Err(e) => errors.push(format!("task2: {e:#}")),
+    }
+    tracing::warn!("update: {}", errors.join("; "));
+    bail!(
+        "o'rnatuvchini ishga tushirib bo'lmadi ({})",
+        errors.join("; ")
+    )
 }
 
 /// Exit code of the last student installer started by [`install_student`] (Windows), once it
