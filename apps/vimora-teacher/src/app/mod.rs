@@ -335,9 +335,27 @@ impl TeacherApp {
                     send: false,
                 })
             }
+            Ok("terminal") => {
+                app.dev_open = Some(Dialog::Launch {
+                    web: false,
+                    terminal: true,
+                    shell: 0,
+                    code: String::new(),
+                    run: false,
+                    url: String::new(),
+                    program: String::new(),
+                    args: String::new(),
+                    bookmarks: vec![],
+                    recent: vec![],
+                })
+            }
             Ok("launch") => {
                 app.dev_open = Some(Dialog::Launch {
                     web: true,
+                    terminal: false,
+                    shell: 0,
+                    code: String::new(),
+                    run: false,
                     url: String::new(),
                     program: String::new(),
                     args: String::new(),
@@ -1312,6 +1330,10 @@ impl TeacherApp {
                 };
                 self.open_dialog(Dialog::Launch {
                     web: m == Menu::Web,
+                    terminal: false,
+                    shell: 0,
+                    code: String::new(),
+                    run: false,
                     url: String::new(),
                     program: String::new(),
                     args: String::new(),

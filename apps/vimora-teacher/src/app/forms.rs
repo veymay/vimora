@@ -230,24 +230,49 @@ pub(super) fn dialog_body(
         Dialog::Message { .. } => {} // laid out by chat_form
         Dialog::Launch {
             web,
+            terminal,
+            shell,
+            code,
+            run,
             url,
             program,
             args,
             bookmarks,
             recent,
         } => {
-            if let Some(i) = ui_kit::choices(
-                ui,
-                &[
-                    (Some(icons::GLOBE), tr("Sayt")),
-                    (Some(icons::PLAY), tr("Dastur")),
-                ],
-                if *web { 0 } else { 1 },
-            ) {
+            // The tabs span the whole width.
+            let cur = if *terminal {
+                2
+            } else if *web {
+                0
+            } else {
+                1
+            };
+            let items = [
+                ui_kit::TabItem {
+                    icon: Some(icons::GLOBE),
+                    label: tr("Sayt"),
+                    count: None,
+                },
+                ui_kit::TabItem {
+                    icon: Some(icons::PLAY),
+                    label: tr("Dastur"),
+                    count: None,
+                },
+                ui_kit::TabItem {
+                    icon: Some(icons::TERMINAL),
+                    label: tr("Terminal"),
+                    count: None,
+                },
+            ];
+            if let Some(i) = ui_kit::tab_strip(ui, &items, cur) {
                 *web = i == 0;
+                *terminal = i == 2;
             }
             ui.add_space(10.0);
-            if *web {
+            if *terminal {
+                terminal_tab(ui, p, shell, code, run, cx);
+            } else if *web {
                 launch_site(ui, p, url, bookmarks, recent, confirm);
             } else {
                 wide(
@@ -382,6 +407,100 @@ pub(super) fn dialog_body(
                 .color(p.faint),
             );
         }
+    }
+}
+
+/// The "Terminal" tab: a shell, a command, and the answer of every chosen computer.
+fn terminal_tab(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    shell: &mut u8,
+    code: &mut String,
+    run: &mut bool,
+    cx: &FormCtx<'_>,
+) {
+    if let Some(i) = ui_kit::choices(
+        ui,
+        &[(None, "PowerShell"), (None, "CMD"), (None, "Bash")],
+        *shell as usize,
+    ) {
+        *shell = i as u8;
+    }
+    let chosen: Vec<&View> = cx
+        .all
+        .iter()
+        .filter(|v| cx.targets.contains(&v.id))
+        .collect();
+    let fits = |v: &&&View| v.os.to_lowercase().contains("windows") == (*shell != 2);
+    let n = chosen.iter().filter(fits).count();
+    ui.add_space(6.0);
+    ui.label(
+        RichText::new(if *shell == 2 {
+            tf!("Ubuntu kompyuterlarida bajariladi: {n} ta", n = n)
+        } else {
+            tf!("Windows kompyuterlarida bajariladi: {n} ta", n = n)
+        })
+        .size(12.5)
+        .color(p.muted),
+    );
+    ui.label(
+        RichText::new(tr(
+            "Administrator huquqida. Har bir buyruq faollik jurnaliga yoziladi.",
+        ))
+        .size(12.0)
+        .color(p.faint),
+    );
+    ui.add_space(8.0);
+    ui.add(
+        ui_kit::text_area(code)
+            .hint_text(if *shell == 1 {
+                "ipconfig /all"
+            } else if *shell == 2 {
+                "uname -a"
+            } else {
+                "Get-Process"
+            })
+            .desired_rows(4)
+            .desired_width(f32::INFINITY)
+            .font(egui::TextStyle::Monospace),
+    );
+    ui.add_space(8.0);
+    ui.add_enabled_ui(n > 0 && !code.trim().is_empty(), |ui| {
+        if ui_kit::button(ui, Some(icons::PLAY), tr("Bajarish"), Kind::Primary).clicked() {
+            *run = true;
+        }
+    });
+    // The answers, one frame per computer.
+    let answers: Vec<(String, (bool, String))> = {
+        let h = cx.hub.lock().unwrap();
+        chosen
+            .iter()
+            .filter(fits)
+            .filter_map(|v| {
+                h.students
+                    .get(&v.id)
+                    .and_then(|s| s.last_result.clone())
+                    .map(|r| (v.label.clone(), r))
+            })
+            .collect()
+    };
+    for (name, (ok, text)) in answers {
+        ui.add_space(10.0);
+        ui_kit::hud(ui, &name, if ok { p.muted } else { p.danger });
+        ui.add_space(4.0);
+        Frame::none()
+            .fill(p.sunken)
+            .stroke(Stroke::new(1.0_f32, p.line))
+            .inner_margin(Margin::same(10.0))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    RichText::new(text)
+                        .family(ui_kit::mono())
+                        .size(12.0)
+                        .color(if ok { p.text } else { p.danger }),
+                );
+            });
     }
 }
 

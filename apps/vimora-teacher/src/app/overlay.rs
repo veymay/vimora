@@ -555,6 +555,7 @@ impl TeacherApp {
                         | Dialog::Machine { .. }
                         | Dialog::Lesson(_)
                         | Dialog::FreePcs { .. }
+                        | Dialog::Launch { terminal: true, .. }
                 );
                 let body_max = if drawer {
                     // Full window height: the drawer hangs on the right edge, top to bottom.
@@ -790,6 +791,7 @@ impl TeacherApp {
                 h.chat_out(who, body, targets.clone());
             }
         }
+        self.terminal_run(all, &targets);
         self.shadow_requests(&targets);
         self.machine_requests(ctx);
         self.lesson_requests(&targets);
@@ -1346,6 +1348,58 @@ impl TeacherApp {
                 }
             }
         }
+    }
+
+    /// The "Terminal" tab's run button: the command goes to the chosen computers whose system
+    /// has that shell (PowerShell and CMD: Windows; Bash: Ubuntu). The window stays open and the
+    /// answers show in it.
+    fn terminal_run(&mut self, all: &[View], targets: &[u64]) {
+        let Some(Dialog::Launch {
+            terminal: true,
+            shell,
+            code,
+            run,
+            ..
+        }) = &mut self.dialog
+        else {
+            return;
+        };
+        if !std::mem::take(run) || code.trim().is_empty() {
+            return;
+        }
+        let (shell, code) = (*shell, code.trim().to_string());
+        let is_win = |id: &u64| {
+            all.iter()
+                .find(|v| v.id == *id)
+                .is_some_and(|v| v.os.to_lowercase().contains("windows"))
+        };
+        let ids: Vec<u64> = targets
+            .iter()
+            .copied()
+            .filter(|id| is_win(id) == (shell != 2))
+            .collect();
+        let script = if shell == 1 {
+            // Through PowerShell (the one way the student runs things) into cmd.exe.
+            format!("cmd.exe /d /c '{}'", code.replace('\'', "''"))
+        } else {
+            code.clone()
+        };
+        {
+            let mut h = self.hub.lock().unwrap();
+            for id in &ids {
+                if let Some(s) = h.students.get_mut(id) {
+                    s.last_result = None;
+                }
+            }
+        }
+        self.send_priv(
+            &ids,
+            PrivCommand::RunScript(script),
+            &tf!(
+                "Buyruq: {code}",
+                code = code.chars().take(80).collect::<String>()
+            ),
+        );
     }
 
     pub(super) fn run_dialog(&mut self, d: Dialog, t: &[u64], clear: bool) {

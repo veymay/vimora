@@ -71,6 +71,12 @@ pub(super) enum Dialog {
     },
     Launch {
         web: bool,
+        /// The "Terminal" tab (then `web` is off): shell (0 PowerShell, 1 CMD, 2 Bash), the
+        /// command, and "run it now" (set by the button, taken after the frame).
+        terminal: bool,
+        shell: u8,
+        code: String,
+        run: bool,
         url: String,
         program: String,
         args: String,

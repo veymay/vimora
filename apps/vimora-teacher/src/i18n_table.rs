@@ -6,6 +6,10 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Terminal", "Terminal", "Терминал"),
+    ("Administrator huquqida. Har bir buyruq faollik jurnaliga yoziladi.", "Runs as administrator. Every command is written to the activity log.", "От имени администратора. Каждая команда записывается в журнал."),
+    ("Ubuntu kompyuterlarida bajariladi: {n} ta", "Runs on Ubuntu computers: {n}", "Выполнится на компьютерах Ubuntu: {n}"),
+    ("Windows kompyuterlarida bajariladi: {n} ta", "Runs on Windows computers: {n}", "Выполнится на компьютерах Windows: {n}"),
     ("Sayt nomi yoki qidiruv so'zi, keyin Enter", "Site name or search words, then Enter", "Название сайта или запрос, затем Enter"),
     ("Ochilgan saytlar shu yerda ko'rinadi.", "Opened sites will show up here.", "Здесь появятся открытые сайты."),
     ("Saralangandan olib tashlash", "Remove from favourites", "Убрать из избранного"),
