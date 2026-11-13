@@ -266,12 +266,12 @@ impl Backend for Overlayroot {
             let _ = std::fs::create_dir_all(real(f));
         }
         write_conf(true)?;
-        Ok("Shadow rejim qayta yuklangandan keyin yoqiladi".into())
+        Ok("Shadow rejim yoqildi — qayta yuklash kerak".into())
     }
 
     fn disable(&self) -> Result<String> {
         write_conf(false)?;
-        Ok("Shadow rejim qayta yuklangandan keyin o'chadi".into())
+        Ok("Shadow rejim o'chirildi — qayta yuklash kerak".into())
     }
 
     fn commit_file(&self, path: &Path) -> Result<()> {
@@ -328,10 +328,7 @@ impl Backend for Overlayroot {
                 std::fs::create_dir_all(f)?;
             }
         }
-        Ok(format!(
-            "{} ta papka doim saqlanadi (qayta yuklangandan keyin kuchga kiradi)",
-            new.len()
-        ))
+        Ok(format!("{} ta papka doim saqlanadi", new.len()))
     }
 
     fn mount_persistent(&self, folders: &[String]) {

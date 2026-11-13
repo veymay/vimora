@@ -337,7 +337,7 @@ impl Backend for Uwf {
                 },
                 usage: None,
                 note: Some(if pending {
-                    "UWF o'rnatilgan — qayta yuklangach ishga tushadi (Muzlatishni yoqsangiz, Vimora o'zi qayta yuklaydi)".into()
+                    "UWF o'rnatildi — qayta yuklash kerak".into()
                 } else {
                     "UWF yo'q: Windows 10/11 Education yoki Enterprise kerak (Muzlatish yoqilsa, Vimora o'zi o'rnatadi)".into()
                 }),
@@ -404,7 +404,7 @@ impl Backend for Uwf {
         }
         self.add_exclusions(persistent);
         Ok(format!(
-            "Muzlatish (UWF) qayta yuklangandan keyin yoqiladi: {}",
+            "Muzlatish (UWF) yoqildi — qayta yuklash kerak: {}",
             drives.join(", ")
         ))
     }
@@ -414,7 +414,7 @@ impl Backend for Uwf {
             bail!("UWF o'rnatilmagan");
         }
         uwf(&["filter", "disable"])?;
-        Ok("Muzlatish (UWF) qayta yuklangandan keyin o'chadi".into())
+        Ok("Muzlatish (UWF) o'chirildi — qayta yuklash kerak".into())
     }
 
     fn commit_file(&self, path: &Path) -> Result<()> {

@@ -14,6 +14,7 @@ pub struct AviWriter {
     movi_start: u64,
     max_frame: u32,
     fps: u32,
+    started: std::time::Instant,
 }
 
 fn u32le(v: u32) -> [u8; 4] {
@@ -34,7 +35,13 @@ impl AviWriter {
             movi_start,
             max_frame: 0,
             fps,
+            started: std::time::Instant::now(),
         })
+    }
+
+    /// Seconds since the recording started.
+    pub fn elapsed_secs(&self) -> u64 {
+        self.started.elapsed().as_secs()
     }
 
     fn header(w: u32, h: u32, fps: u32, frames: u32, max_frame: u32, movi_size: u32) -> Vec<u8> {

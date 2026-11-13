@@ -133,7 +133,7 @@ impl Engine {
         // update_vimora shows its progress as "busy"; outside a job nobody else clears it.
         self.inner.lock().unwrap().busy = None;
         match res {
-            Ok(m) if m.contains("o'rnatilmoqda") => self.push(true, m),
+            // Started: the progress shows it; only the end is reported.
             Ok(_) => {}
             Err(e) => {
                 let msg = format!("{e:#}");
@@ -321,7 +321,9 @@ impl Engine {
         // Shown as "busy" while it runs; nobody else clears it.
         self.inner.lock().unwrap().busy = None;
         if let Ok(m) = &res {
-            self.push(true, m.clone());
+            if !m.contains("o'rnatilmoqda") {
+                self.push(true, m.clone());
+            }
         }
         res
     }
@@ -426,7 +428,9 @@ impl Engine {
                 Err(e) => me.push(false, format!("{e:#}")),
             }
         });
-        Ok(format!("{label}…"))
+        // Nothing to report yet: the teacher sees the progress; the result comes when the
+        // computer has finished.
+        Ok(String::new())
     }
 
     pub fn execute(self: &Arc<Self>, cmd: PrivCommand) -> Result<String> {

@@ -571,10 +571,11 @@ impl TeacherApp {
         if open {
             self.send(targets, Command::OpenFile(top.clone()), "");
         }
-        self.hub
-            .lock()
-            .unwrap()
-            .toast(true, tf!("{top}: {n} ta fayl yuborildi", top = top, n = n));
+        // The computers confirm what they saved; here only the log.
+        self.hub.lock().unwrap().log(
+            crate::net::Level::Info,
+            tf!("{top}: {n} ta fayl yuborildi", top = top, n = n),
+        );
     }
 }
 

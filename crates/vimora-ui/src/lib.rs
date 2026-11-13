@@ -1229,6 +1229,7 @@ pub fn tip_at_pointer(resp: &Response, text: &str) {
 }
 
 /// The state of a job, drawn the same way everywhere ([`progress`]).
+#[derive(Clone, Copy)]
 pub enum Progress<'a> {
     /// Running, how far unknown: a spinner and a word.
     Waiting(&'a str),

@@ -280,7 +280,7 @@ impl Backend for ShadowDefender {
             Err(_) => {
                 cmd(&[&drive])?;
                 write_state("on-pending");
-                Ok("Shadow Defender qayta yuklangandan keyin yoqiladi".into())
+                Ok("Shadow Defender yoqildi — qayta yuklash kerak".into())
             }
         }
     }
@@ -288,7 +288,7 @@ impl Backend for ShadowDefender {
     fn disable(&self) -> Result<String> {
         cmd(&[&format!("/exit:{}", system_drive_letter())])?;
         write_state("off-pending");
-        Ok("Shadow Defender qayta yuklangandan keyin o'chadi".into())
+        Ok("Shadow Defender o'chirildi — qayta yuklash kerak".into())
     }
 
     fn commit_file(&self, path: &Path) -> Result<()> {
@@ -299,10 +299,7 @@ impl Backend for ShadowDefender {
     /// Shadow Defender's own exclusion list can't be set from outside: the service commits
     /// the listed paths every few minutes instead (see `Shield::reconcile`).
     fn set_persistent(&self, new: &[String], _old: &[String]) -> Result<String> {
-        Ok(format!(
-            "{} ta fayl/papka doim saqlanadi (har 5 daqiqada commit qilinadi)",
-            new.len()
-        ))
+        Ok(format!("{} ta fayl/papka doim saqlanadi", new.len()))
     }
 
     fn mount_persistent(&self, _folders: &[String]) {

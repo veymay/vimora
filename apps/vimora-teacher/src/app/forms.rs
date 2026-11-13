@@ -1342,7 +1342,54 @@ pub(super) fn updates_form(
                         .unwrap_or_default(),
                 };
                 let is_open = *open == Some(v.id);
-                if acc_header(ui, p, i == 0, is_open, &v.label, &sub, summary) {
+                // The one thing to do on this computer, as a button in the title.
+                let (action_label, action_req): (Option<&str>, Option<UpdateRequest>) = if busy
+                    .is_some()
+                {
+                    (None, None)
+                } else {
+                    match *tab {
+                        UpdateTab::Apps if !app_updates.is_empty() => (
+                            Some(tr("Hammasini yangilash")),
+                            Some(UpdateRequest::UpgradeApps {
+                                id: v.id,
+                                ids: app_updates.iter().map(|a| a.id.clone()).collect(),
+                            }),
+                        ),
+                        UpdateTab::System
+                            if !reboot && info.as_ref().is_some_and(|u| !u.items.is_empty()) =>
+                        {
+                            (
+                                Some(tr("Hammasini o'rnatish")),
+                                Some(UpdateRequest::InstallIds {
+                                    id: v.id,
+                                    ids: info
+                                        .iter()
+                                        .flat_map(|u| u.items.iter().map(|i| i.id.clone()))
+                                        .collect(),
+                                }),
+                            )
+                        }
+                        UpdateTab::Vimora if behind.contains(&v.id) => (
+                            Some(tr("Yangilash")),
+                            Some(UpdateRequest::Vimora(vec![v.id])),
+                        ),
+                        _ => (None, None),
+                    }
+                };
+                let head = AccHead {
+                    first: i == 0,
+                    open: is_open,
+                    name: &v.label,
+                    sub: &sub,
+                    state: summary,
+                    action: action_label,
+                };
+                let out = acc_header(ui, p, head);
+                if out.action {
+                    *request = action_req.clone();
+                }
+                if out.clicked {
                     *open = if is_open { None } else { Some(v.id) };
                 }
                 ui_kit::accordion_body(
@@ -1397,33 +1444,6 @@ pub(super) fn updates_form(
                                     acc_waiting(ui, p);
                                 }
                                 Some(list) => {
-                                    if app_updates.len() > 1 {
-                                        let all: Vec<String> =
-                                            app_updates.iter().map(|a| a.id.clone()).collect();
-                                        acc_row(
-                                            ui,
-                                            p,
-                                            icons::CIRCLE_ARROW_UP,
-                                            p.accent,
-                                            &tf!("{n} ta dasturga yangilanish bor", n = all.len()),
-                                            None,
-                                            |ui| {
-                                                if ui_kit::button(
-                                                    ui,
-                                                    Some(icons::DOWNLOAD),
-                                                    tr("Hammasini yangilash"),
-                                                    Kind::Primary,
-                                                )
-                                                .clicked()
-                                                {
-                                                    *request = Some(UpdateRequest::UpgradeApps {
-                                                        id: v.id,
-                                                        ids: all.clone(),
-                                                    });
-                                                }
-                                            },
-                                        );
-                                    }
                                     // Those with an update first.
                                     let mut list: Vec<&vimora_core::AppInfo> =
                                         list.iter().collect();
@@ -1482,26 +1502,7 @@ pub(super) fn updates_form(
                                         p.accent,
                                         &u.os_name,
                                         Some((&build, p.muted)),
-                                        |ui| {
-                                            if u.items.len() > 1
-                                                && ui_kit::button(
-                                                    ui,
-                                                    Some(icons::DOWNLOAD),
-                                                    tr("Hammasini o'rnatish"),
-                                                    Kind::Primary,
-                                                )
-                                                .clicked()
-                                            {
-                                                *request = Some(UpdateRequest::InstallIds {
-                                                    id: v.id,
-                                                    ids: u
-                                                        .items
-                                                        .iter()
-                                                        .map(|i| i.id.clone())
-                                                        .collect(),
-                                                });
-                                            }
-                                        },
+                                        |_| {},
                                     );
                                     if u.items.is_empty() {
                                         acc_row(
@@ -1578,19 +1579,7 @@ pub(super) fn updates_form(
                                     p.accent,
                                     "Vimora",
                                     Some((&now, p.muted)),
-                                    |ui| {
-                                        if behind.contains(&v.id)
-                                            && ui_kit::button(
-                                                ui,
-                                                Some(icons::CLOUD_DOWNLOAD),
-                                                tr("Yangilash"),
-                                                Kind::Primary,
-                                            )
-                                            .clicked()
-                                        {
-                                            *request = Some(UpdateRequest::Vimora(vec![v.id]));
-                                        }
-                                    },
+                                    |_| {},
                                 );
                                 let before = if prev.is_empty() {
                                     tr("ma'lum emas").to_string()
@@ -1610,6 +1599,27 @@ pub(super) fn updates_form(
                         }
                     },
                 );
+                // The list is long and scrolled: the computer's title stays at the top, so it
+                // is clear whose rows these are.
+                if is_open {
+                    let clip = ui.clip_rect();
+                    let body_end = ui.cursor().top();
+                    if out.rect.top() < clip.top() - 0.5 && body_end > clip.top() + 12.0 {
+                        let y = clip.top().min(body_end - ACC_H);
+                        let r = Rect::from_min_size(
+                            pos2(out.rect.left(), y),
+                            vec2(out.rect.width(), ACC_H),
+                        );
+                        let pin =
+                            acc_header_pinned(ui, p, r, egui::Id::new(("upd-pin", v.id)), head);
+                        if pin.action {
+                            *request = action_req.clone();
+                        }
+                        if pin.clicked {
+                            *open = None;
+                        }
+                    }
+                }
             }
         });
 }
@@ -1623,81 +1633,164 @@ fn ask_once(ui: &mut egui::Ui, key: (&str, u64), ask: impl FnOnce()) {
     }
 }
 
-/// An accordion's header: chevron, computer icon, name and a short line under it, the state on
-/// the right. One line above it (none above the first: the frame has it). Returns true when
-/// clicked.
-fn acc_header(
-    ui: &mut egui::Ui,
-    p: &Palette,
+/// What an accordion header shows.
+#[derive(Clone, Copy)]
+struct AccHead<'a> {
     first: bool,
     open: bool,
-    name: &str,
-    sub: &str,
-    state: ui_kit::Progress<'_>,
-) -> bool {
+    name: &'a str,
+    sub: &'a str,
+    state: ui_kit::Progress<'a>,
+    /// A button at the right end ("Hammasini yangilash").
+    action: Option<&'a str>,
+}
+
+/// What a header reported.
+struct AccOut {
+    rect: Rect,
+    clicked: bool,
+    action: bool,
+}
+
+const ACC_H: f32 = 54.0;
+
+/// An accordion's header: chevron, computer icon, name and a short line under it, the state and
+/// (when there is something to do) one button on the right. One line above it (none above the
+/// first: the frame has it).
+fn acc_header(ui: &mut egui::Ui, p: &Palette, h: AccHead<'_>) -> AccOut {
     let w = ui.available_width();
-    let (r, resp) = ui.allocate_exact_size(vec2(w, 54.0), Sense::click());
-    if !first {
-        ui.painter()
-            .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
+    let (r, resp) = ui.allocate_exact_size(vec2(w, ACC_H), Sense::click());
+    let action = paint_acc_header(ui, p, r, resp.hovered(), false, h);
+    AccOut {
+        rect: r,
+        clicked: resp.clicked() && !action,
+        action,
     }
-    let fill = if open {
-        p.card
-    } else if resp.hovered() {
-        p.hover
+}
+
+/// The header again, pinned to the top of the visible area while its list is scrolled: opaque,
+/// so what scrolls below it does not show through.
+fn acc_header_pinned(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    r: Rect,
+    id: egui::Id,
+    h: AccHead<'_>,
+) -> AccOut {
+    let resp = ui.interact(r, id, Sense::click());
+    let action = paint_acc_header(ui, p, r, resp.hovered(), true, h);
+    AccOut {
+        rect: r,
+        clicked: resp.clicked() && !action,
+        action,
+    }
+}
+
+fn paint_acc_header(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    r: Rect,
+    hovered: bool,
+    solid: bool,
+    h: AccHead<'_>,
+) -> bool {
+    let w = r.width();
+    if solid {
+        ui.painter().rect_filled(r, Rounding::ZERO, p.card);
+        ui.painter().hline(
+            r.x_range(),
+            r.bottom() - 0.5,
+            Stroke::new(1.0_f32, p.line_strong),
+        );
     } else {
-        Color32::TRANSPARENT
-    };
-    let inner = if first {
-        r.shrink(1.0)
-    } else {
-        Rect::from_min_max(r.min + vec2(1.0, 1.0), r.max - vec2(1.0, 0.0))
-    };
-    ui.painter().rect_filled(inner, Rounding::ZERO, fill);
-    if resp.hovered() {
+        if !h.first {
+            ui.painter()
+                .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
+        }
+        let fill = if h.open {
+            p.card
+        } else if hovered {
+            p.hover
+        } else {
+            Color32::TRANSPARENT
+        };
+        let inner = if h.first {
+            r.shrink(1.0)
+        } else {
+            Rect::from_min_max(r.min + vec2(1.0, 1.0), r.max - vec2(1.0, 0.0))
+        };
+        ui.painter().rect_filled(inner, Rounding::ZERO, fill);
+    }
+    if hovered {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     let y = r.center().y;
     ui.painter().text(
         pos2(r.left() + 18.0, y),
         Align2::CENTER_CENTER,
-        if open {
+        if h.open {
             icons::CHEVRON_DOWN
         } else {
             icons::CHEVRON_RIGHT
         },
         FontId::proportional(14.0),
-        if open { p.accent_ink } else { p.muted },
+        if h.open { p.accent_ink } else { p.muted },
     );
     ui.painter().text(
         pos2(r.left() + 44.0, y),
         Align2::CENTER_CENTER,
         icons::MONITOR,
         FontId::proportional(17.0),
-        if open { p.accent } else { p.muted },
+        if h.open { p.accent } else { p.muted },
     );
-    let nw = w * 0.42;
-    let g = ui_kit::truncated(ui, name, FontId::new(13.5, ui_kit::bold()), p.strong, nw);
-    let gy = if sub.is_empty() {
+    let nw = w * 0.34;
+    let g = ui_kit::truncated(ui, h.name, FontId::new(13.5, ui_kit::bold()), p.strong, nw);
+    let gy = if h.sub.is_empty() {
         y - g.size().y / 2.0
     } else {
         y - 9.0 - g.size().y / 2.0
     };
     ui.painter().galley(pos2(r.left() + 64.0, gy), g, p.strong);
-    if !sub.is_empty() {
-        let s = ui_kit::truncated(ui, sub, FontId::new(11.5, ui_kit::mono()), p.muted, nw);
+    if !h.sub.is_empty() {
+        let s = ui_kit::truncated(ui, h.sub, FontId::new(11.5, ui_kit::mono()), p.muted, nw);
         ui.painter().galley(
             pos2(r.left() + 64.0, y + 9.0 - s.size().y / 2.0),
             s,
             p.muted,
         );
     }
+    // The button first (it takes its width from the right), then the state in what is left.
+    let mut clicked = false;
+    let mut right = r.right() - 14.0;
+    if let Some(label) = h.action {
+        let mut c = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(Rect::from_min_max(
+                    pos2(r.left() + 64.0 + nw, r.top() + 8.0),
+                    pos2(r.right() - 14.0, r.bottom() - 8.0),
+                ))
+                .layout(Layout::right_to_left(Align::Center)),
+        );
+        let b = ui_kit::button(&mut c, Some(icons::DOWNLOAD), label, Kind::Primary);
+        clicked = b.clicked();
+        right = b.rect.left() - 14.0;
+    }
     let cell = Rect::from_min_max(
-        pos2(r.left() + 64.0 + nw + 16.0, r.top()),
-        r.max - vec2(16.0, 0.0),
+        pos2(r.left() + 64.0 + nw + 12.0, r.top()),
+        pos2(right.max(r.left() + 64.0 + nw + 12.0), r.bottom()),
     );
-    ui_kit::progress(ui, cell, state);
-    resp.clicked()
+    ui_kit::progress(ui, cell, h.state);
+    clicked
+}
+
+/// The line down the left of an open accordion's rows, under the computer's icon: it says whose
+/// rows these are.
+fn acc_rail(ui: &egui::Ui, p: &Palette, r: Rect) {
+    ui.painter().vline(
+        r.left() + 44.0,
+        r.y_range(),
+        Stroke::new(2.0_f32, p.accent.gamma_multiply(0.55)),
+    );
 }
 
 /// A row inside an open accordion: icon, a title and a line under it, a control on the right.
@@ -1723,6 +1816,7 @@ fn acc_row(
         r.top(),
         Stroke::new(1.0_f32, p.line),
     );
+    acc_rail(ui, p, r);
     let y = r.center().y;
     ui.painter().text(
         pos2(r.left() + 76.0, y),

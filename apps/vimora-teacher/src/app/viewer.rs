@@ -99,21 +99,32 @@ impl TeacherApp {
                         ui.add_space(16.0);
                         ui_kit::tag(ui, &format!("{:02}", info.number), p.hover, p.text);
                         ui.add_space(10.0);
-                        ui.label(
-                            RichText::new(&info.label)
-                                .family(ui_kit::bold())
-                                .size(16.0)
-                                .color(p.strong),
+                        // The left side gets what the right group (last frame's width) leaves.
+                        let right_w: f32 = ui
+                            .data(|d| d.get_temp(egui::Id::new("viewer-right-w")))
+                            .unwrap_or(620.0);
+                        let room = (bar.width() - 4.0 * BAR_H - 80.0 - right_w).max(0.0);
+                        let name = ui_kit::truncated(
+                            ui,
+                            &info.label,
+                            FontId::new(16.0, ui_kit::bold()),
+                            p.strong,
+                            room,
                         );
-                        ui.add_space(14.0);
-                        let res = if info.frame_size.0 > 0 {
-                            format!(" · {}×{}", info.frame_size.0, info.frame_size.1)
-                        } else {
-                            String::new()
-                        };
-                        ui_kit::hud(ui, &format!("{} · {}{res}", info.user, info.ip), p.muted);
+                        let name_w = name.size().x;
+                        ui.label(egui::WidgetText::from(name));
+                        // The user / address line only when there is room left for it.
+                        if room - name_w > 230.0 {
+                            ui.add_space(14.0);
+                            let res = if info.frame_size.0 > 0 {
+                                format!(" · {}×{}", info.frame_size.0, info.frame_size.1)
+                            } else {
+                                String::new()
+                            };
+                            ui_kit::hud(ui, &format!("{} · {}{res}", info.user, info.ip), p.muted);
+                        }
 
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let right = ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             ui.spacing_mut().item_spacing.x = 0.0;
                             // Far right: back to the list.
                             if ui_kit::icon_cell(ui, icons::X, BAR_H, false)
@@ -148,26 +159,35 @@ impl TeacherApp {
                             {
                                 act.relay = true;
                             }
-                            if ui_kit::button(
-                                ui,
-                                Some(icons::CIRCLE_DOT),
-                                if recording {
+                            // Recording: a red square and the running time; screenshot: a square.
+                            let rec_secs = self
+                                .hub
+                                .lock()
+                                .unwrap()
+                                .recording
+                                .get(&id)
+                                .map(|(w, _)| w.elapsed_secs());
+                            if let Some(secs) = rec_secs {
+                                ui.label(
+                                    RichText::new(format!("{:02}:{:02}", secs / 60, secs % 60))
+                                        .family(ui_kit::mono_bold())
+                                        .size(13.0)
+                                        .color(p.danger),
+                                );
+                                ui.add_space(6.0);
+                                ctx.request_repaint_after(std::time::Duration::from_millis(500));
+                            }
+                            if square_button(ui, p, icons::CIRCLE_DOT, recording)
+                                .tip(if recording {
                                     tr("Yozuvni to'xtatish")
                                 } else {
-                                    tr("Yozib olish")
-                                },
-                                if recording {
-                                    Kind::Danger
-                                } else {
-                                    Kind::Outline
-                                },
-                            )
-                            .tip(tr("Ekran video faylga yoziladi (Videolar/Vimora)"))
-                            .clicked()
+                                    tr("Ekran video faylga yoziladi (Videolar/Vimora)")
+                                })
+                                .clicked()
                             {
                                 act.record = true;
                             }
-                            if ui_kit::icon_cell(ui, icons::CAMERA, 36.0, false)
+                            if square_button(ui, p, icons::CAMERA, false)
                                 .tip(tr("Skrinshot (Rasmlar/Vimora)"))
                                 .clicked()
                             {
@@ -222,12 +242,27 @@ impl TeacherApp {
                                 act.message = true;
                             }
                             ui.add_space(8.0);
-                            for badge in status_badges(ui, p, &info.status) {
+                            // The status badges only in a wide window: in the usual one the
+                            // name needs the room (decided by the window, not by what is left,
+                            // so nothing flickers).
+                            let badges = if bar.width() >= 1320.0 {
+                                status_badges(ui, p, &info.status)
+                            } else {
+                                vec![]
+                            };
+                            for badge in badges {
                                 let (r, _) =
                                     ui.allocate_exact_size(vec2(badge.width, 20.0), Sense::hover());
                                 badge.paint(ui.painter(), r);
                                 ui.add_space(4.0);
                             }
+                        });
+                        // Remembered for the next frame: how wide the right group is.
+                        ui.data_mut(|d| {
+                            d.insert_temp(
+                                egui::Id::new("viewer-right-w"),
+                                bar.right() - right.response.rect.left(),
+                            )
                         });
                     },
                 );
@@ -418,4 +453,35 @@ mod tests {
         assert_eq!(neighbours(&[1], 1), (None, None));
         assert_eq!(neighbours(&[1, 2], 9), (None, None));
     }
+}
+
+/// A small square icon button (screenshot, record). `red`: it is on (recording).
+fn square_button(ui: &mut egui::Ui, p: &Palette, icon: &str, red: bool) -> egui::Response {
+    let (r, resp) = ui.allocate_exact_size(vec2(32.0, 32.0), Sense::click());
+    let fill = if red {
+        p.danger
+    } else if resp.hovered() {
+        p.hover
+    } else {
+        Color32::TRANSPARENT
+    };
+    ui.painter()
+        .rect(r, Rounding::ZERO, fill, Stroke::new(1.0_f32, p.line_strong));
+    ui.painter().text(
+        r.center(),
+        egui::Align2::CENTER_CENTER,
+        icon,
+        FontId::proportional(16.0),
+        if red {
+            Color32::WHITE
+        } else if resp.hovered() {
+            p.strong
+        } else {
+            p.muted
+        },
+    );
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp
 }
