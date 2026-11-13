@@ -303,16 +303,7 @@ pub(super) fn dropdown<T: Copy + PartialEq>(
         r,
         Rounding::ZERO,
         if hov || open { p.hover } else { p.sunken },
-        Stroke::new(
-            1.0_f32,
-            if open {
-                p.accent
-            } else if hov {
-                p.line_strong
-            } else {
-                p.line_strong
-            },
-        ),
+        Stroke::new(1.0_f32, if open { p.accent } else { p.line_strong }),
     );
     let label = items
         .iter()
