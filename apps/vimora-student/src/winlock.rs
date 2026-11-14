@@ -151,7 +151,7 @@ unsafe fn logo(hdc: HDC, x: i32, y: i32, size: i32) {
         let (_, _, rgba) = vimora_ui::logo_rgba(size);
         // GDI wants premultiplied BGRA.
         let mut bgra = Vec::with_capacity(rgba.len());
-        for px in rgba.chunks_exact(4) {
+        for px in rgba.as_chunks::<4>().0 {
             let a = px[3] as u32;
             let m = |c: u8| ((c as u32 * a + 127) / 255) as u8;
             bgra.extend_from_slice(&[m(px[2]), m(px[1]), m(px[0]), px[3]]);
