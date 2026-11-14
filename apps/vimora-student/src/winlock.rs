@@ -13,7 +13,7 @@ use std::ptr::{null, null_mut};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use vimora_ui::icons;
-use windows_sys::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows_sys::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -138,6 +138,42 @@ unsafe fn circle(hdc: HDC, x: i32, y: i32, r: i32, c: egui::Color32) {
     SelectObject(hdc, ob);
     SelectObject(hdc, op);
     DeleteObject(b as HGDIOBJ);
+}
+
+/// The brand mark (from `vimora_ui::logo_shapes`) in the square starting at (x, y).
+unsafe fn logo(hdc: HDC, x: i32, y: i32, size: i32) {
+    let (top, bottom) = vimora_ui::LOGO_GRADIENT;
+    // The gradient square, row by row.
+    for row in 0..size {
+        let t = row as f32 / size.max(1) as f32;
+        fill(
+            hdc,
+            RECT {
+                left: x,
+                top: y + row,
+                right: x + size,
+                bottom: y + row + 1,
+            },
+            mix(top, bottom, t),
+        );
+    }
+    let k = size as f32 / 256.0;
+    for (pts, color) in vimora_ui::logo_shapes() {
+        let points: Vec<POINT> = pts
+            .iter()
+            .map(|&(px, py)| POINT {
+                x: x + (px * k).round() as i32,
+                y: y + ((py + vimora_ui::LOGO_SHIFT) * k).round() as i32,
+            })
+            .collect();
+        let b = CreateSolidBrush(rgb(color));
+        let ob = SelectObject(hdc, b as HGDIOBJ);
+        let op = SelectObject(hdc, GetStockObject(NULL_PEN));
+        Polygon(hdc, points.as_ptr(), points.len() as i32);
+        SelectObject(hdc, ob);
+        SelectObject(hdc, op);
+        DeleteObject(b as HGDIOBJ);
+    }
 }
 
 /// Gradient, soft glow behind the icon and the corner brackets, drawn once per size.
@@ -349,13 +385,15 @@ unsafe fn paint(hwnd: HWND, st: &mut State) {
                 look.brand.trim().to_uppercase()
             };
             if !look.no_logo {
+                // The same mark as the egui screens (see `vimora_ui::logo_shapes`).
+                logo(dc, (48.0 * s) as i32, (44.0 * s) as i32, (30.0 * s) as i32);
                 text(
                     dc,
                     &brand,
                     small,
                     p.muted,
                     RECT {
-                        left: (48.0 * s) as i32,
+                        left: (48.0 * s) as i32 + (42.0 * s) as i32,
                         top: (44.0 * s) as i32,
                         right: w / 2,
                         bottom: (74.0 * s) as i32,

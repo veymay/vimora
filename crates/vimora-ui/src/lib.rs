@@ -849,10 +849,38 @@ pub fn input_frame(p: &Palette) -> Frame {
 
 /// Paints the Vimora mark (clay tile, two-tone V, square dot) into `rect`.
 /// Same geometry as `assets/brand/vimora.svg` (256 grid).
+/// The logo's geometry in a 256 × 256 box: the gradient of its square (top, bottom) and its
+/// shapes (points, colour). The one place that says what the logo looks like: the egui
+/// painter below and the Windows lock screen (GDI) both draw from it.
+pub const LOGO_GRADIENT: (Color32, Color32) = (
+    Color32::from_rgb(0x93, 0xcf, 0x3f),
+    Color32::from_rgb(0x69, 0xa3, 0x1c),
+);
+
+pub fn logo_shapes() -> [(&'static [(f32, f32)], Color32); 3] {
+    [
+        (
+            &[(160.0, 70.0), (206.0, 70.0), (147.0, 196.0), (109.0, 196.0)],
+            Color32::from_rgb(0xe6, 0xf4, 0xcc),
+        ),
+        (
+            &[(50.0, 70.0), (96.0, 70.0), (147.0, 196.0), (109.0, 196.0)],
+            Color32::WHITE,
+        ),
+        (
+            &[(110.0, 32.0), (146.0, 32.0), (146.0, 68.0), (110.0, 68.0)],
+            Color32::WHITE,
+        ),
+    ]
+}
+
+/// The logo's vertical offset inside its box (in 256ths).
+pub const LOGO_SHIFT: f32 = 6.0;
+
+/// The brand mark, drawn inside `rect` (a square).
 pub fn logo(painter: &egui::Painter, rect: Rect) {
     use egui::{epaint::PathShape, pos2, Pos2};
-    let top = hex(0x93cf3f);
-    let bottom = hex(0x69a31c);
+    let (top, bottom) = LOGO_GRADIENT;
     let mut mesh = egui::Mesh::default();
     mesh.colored_vertex(rect.left_top(), top);
     mesh.colored_vertex(rect.right_top(), top);
@@ -862,23 +890,12 @@ pub fn logo(painter: &egui::Painter, rect: Rect) {
     mesh.add_triangle(0, 2, 3);
     painter.add(mesh);
     let k = rect.width() / 256.0;
-    let at = |x: f32, y: f32| -> Pos2 { pos2(rect.left() + x * k, rect.top() + (y + 6.0) * k) };
-    let poly = |pts: &[(f32, f32)], c: Color32| {
+    let at =
+        |x: f32, y: f32| -> Pos2 { pos2(rect.left() + x * k, rect.top() + (y + LOGO_SHIFT) * k) };
+    for (pts, color) in logo_shapes() {
         let pts = pts.iter().map(|&(x, y)| at(x, y)).collect();
-        painter.add(PathShape::convex_polygon(pts, c, Stroke::NONE));
-    };
-    poly(
-        &[(160.0, 70.0), (206.0, 70.0), (147.0, 196.0), (109.0, 196.0)],
-        hex(0xe6f4cc),
-    );
-    poly(
-        &[(50.0, 70.0), (96.0, 70.0), (147.0, 196.0), (109.0, 196.0)],
-        Color32::WHITE,
-    );
-    poly(
-        &[(110.0, 32.0), (146.0, 32.0), (146.0, 68.0), (110.0, 68.0)],
-        Color32::WHITE,
-    );
+        painter.add(PathShape::convex_polygon(pts, color, Stroke::NONE));
+    }
 }
 
 /// Small "?" that explains a setting; the tooltip appears at once, with an arrow.
