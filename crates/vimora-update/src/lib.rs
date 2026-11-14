@@ -70,6 +70,8 @@ pub fn verify_sums(sums: &[u8], sig_hex: &str) -> Result<()> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Target {
     Windows,
+    /// The student program file itself (Windows): the second way to update, no installer.
+    StudentBinary,
     StudentDeb,
     TeacherDeb,
 }
@@ -97,6 +99,9 @@ impl Target {
         let n = name.to_lowercase();
         match self {
             Target::Windows => n.ends_with(".exe") && n.contains("windows"),
+            Target::StudentBinary => {
+                n.starts_with("vimora-student-") && n.ends_with("-win-x64.bin")
+            }
             Target::StudentDeb => n.starts_with("vimora-student") && n.ends_with(".deb"),
             Target::TeacherDeb => n.starts_with("vimora-teacher") && n.ends_with(".deb"),
         }
@@ -572,6 +577,7 @@ fn windows_install(path: &Path, file: &str) -> Result<()> {
         let _ = std::fs::write(&result, "");
     }
     let _ = std::fs::remove_file(dir.join("install-step.txt"));
+    let _ = std::fs::remove_file(dir.join("install-log.txt"));
     // Old scripts of earlier attempts (best effort).
     if let Ok(rd) = std::fs::read_dir(&dir) {
         for e in rd.flatten() {
@@ -586,9 +592,10 @@ fn windows_install(path: &Path, file: &str) -> Result<()> {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let body = format!(
-        "@echo off\r\n\"{file}\" {} /COMPONENTS=agent\r\necho %errorlevel% > \"{}\"\r\n",
+        "@echo off\r\necho %date% %time% start >> \"{log}\"\r\n\"{file}\" {} /COMPONENTS=agent\r\necho %errorlevel% > \"{}\"\r\necho %date% %time% exit %errorlevel% >> \"{log}\"\r\n",
         ARGS.join(" "),
-        result.display()
+        result.display(),
+        log = dir.join("install-log.txt").display()
     );
     // A script in the updates folder, or (when that folder refuses) in the system's own.
     let mut folders = vec![dir.clone()];
@@ -739,6 +746,11 @@ mod tests {
         assert_eq!(pick_target(sums, Target::Windows).unwrap().1, "aa");
         assert_eq!(pick_target(sums, Target::StudentDeb).unwrap().1, "bb");
         assert_eq!(pick_target(sums, Target::TeacherDeb).unwrap().1, "cc");
+        // The bare program file (the second way to update) is never taken for an installer.
+        let both = format!("{sums}dd  vimora-student-1.2.3-win-x64.bin\n");
+        assert_eq!(pick_target(&both, Target::StudentBinary).unwrap().1, "dd");
+        assert_eq!(pick_target(&both, Target::Windows).unwrap().1, "aa");
+        assert_eq!(pick_target(&both, Target::StudentDeb).unwrap().1, "bb");
         assert_eq!(
             version_in_name("vimora-1.2.3-windows-x64-setup.exe").as_deref(),
             Some("1.2.3")

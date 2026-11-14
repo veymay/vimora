@@ -858,31 +858,59 @@ pub fn input_frame(p: &Palette) -> Frame {
 
 /// Paints the Vimora mark (clay tile, two-tone V, square dot) into `rect`.
 /// Same geometry as `assets/brand/vimora.svg` (256 grid).
-/// The brand mark: one picture (`assets/brand/logo-512.png`, made from the vector master in
-/// `branding/`). Everything that draws the logo goes through here, so a new logo is one file.
-const LOGO_PNG: &[u8] = include_bytes!("../../../assets/brand/logo-512.png");
+/// The brand mark, as on white paper (green shapes, white face), drawn from the file the
+/// closest above the size asked for, so small sizes stay sharp (`assets/brand/logo-<n>.png`,
+/// made from the vector master in `branding/`). Everything that draws the logo goes through
+/// here, so a new logo is one set of files.
+const LOGOS: [(u32, &[u8]); 6] = [
+    (32, include_bytes!("../../../assets/brand/logo-32.png")),
+    (48, include_bytes!("../../../assets/brand/logo-48.png")),
+    (64, include_bytes!("../../../assets/brand/logo-64.png")),
+    (128, include_bytes!("../../../assets/brand/logo-128.png")),
+    (256, include_bytes!("../../../assets/brand/logo-256.png")),
+    (512, include_bytes!("../../../assets/brand/logo-512.png")),
+];
 
-/// The logo scaled to `size` × `size` pixels, RGBA (not premultiplied).
-pub fn logo_rgba(size: u32) -> (u32, u32, Vec<u8>) {
-    let img = image::load_from_memory_with_format(LOGO_PNG, image::ImageFormat::Png)
+fn logo_source(want: u32) -> (u32, image::RgbaImage) {
+    let (n, bytes) = LOGOS
+        .iter()
+        .find(|(n, _)| *n >= want)
+        .unwrap_or(&LOGOS[LOGOS.len() - 1]);
+    let img = image::load_from_memory_with_format(bytes, image::ImageFormat::Png)
         .map(|i| i.to_rgba8())
         .unwrap_or_else(|_| image::RgbaImage::new(1, 1));
+    (*n, img)
+}
+
+/// The logo at `size` × `size` pixels, RGBA (not premultiplied).
+pub fn logo_rgba(size: u32) -> (u32, u32, Vec<u8>) {
     let size = size.max(1);
+    let (n, img) = logo_source(size);
+    if n == size {
+        return (img.width(), img.height(), img.into_raw());
+    }
     let img = image::imageops::resize(&img, size, size, image::imageops::FilterType::Lanczos3);
     (img.width(), img.height(), img.into_raw())
 }
 
-/// The brand mark, drawn inside `rect` (a square): a texture, made once per window.
+/// The brand mark, drawn inside `rect` (a square): a texture of the fitting size, made once.
 pub fn logo(painter: &egui::Painter, rect: Rect) {
     let ctx = painter.ctx();
-    let id = egui::Id::new("vimora-logo-texture");
+    // Pixels on the screen (the picture is picked for them, not for points).
+    let px = (rect.width() * ctx.pixels_per_point()).ceil().max(1.0) as u32;
+    let (n, _) = LOGOS
+        .iter()
+        .map(|(n, _)| (*n, ()))
+        .find(|(n, _)| *n >= px)
+        .unwrap_or((512, ()));
+    let id = egui::Id::new(("vimora-logo-texture", n));
     let tex: egui::TextureHandle = match ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
         Some(t) => t,
         None => {
-            let (w, h, px) = logo_rgba(512);
+            let (w, h, pixels) = logo_rgba(n);
             let t = ctx.load_texture(
-                "vimora-logo",
-                egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &px),
+                format!("vimora-logo-{n}"),
+                egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &pixels),
                 egui::TextureOptions::LINEAR,
             );
             ctx.data_mut(|d| d.insert_temp(id, t.clone()));

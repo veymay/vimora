@@ -77,8 +77,8 @@ pub fn brand_icons() -> Option<Icons> {
         Some(rgba(img.width(), img.height(), img.into_raw()))
     };
     Some(Icons {
-        on_dark: load(include_bytes!("../../../assets/brand/tray-white-64.png"))?,
-        on_light: load(include_bytes!("../../../assets/brand/tray-black-64.png"))?,
+        on_dark: load(include_bytes!("../../../assets/brand/tray-white-32.png"))?,
+        on_light: load(include_bytes!("../../../assets/brand/tray-black-32.png"))?,
     })
 }
 

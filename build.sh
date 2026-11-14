@@ -98,6 +98,9 @@ if [[ $WHAT != linux ]]; then
     -DOUTFILE="../../dist/vimora-$VER-windows-x64-setup.exe" \
     installer/windows/vimora.nsi
   [[ -f "dist/vimora-$VER-windows-x64-setup.exe" ]] || fail "Windows o'rnatuvchisi yaratilmadi"
+  # The student program file on its own: the second way to update a PC (no installer), signed
+  # with the rest. The name must not contain "windows" (old programs pick installers by it).
+  cp target/x86_64-pc-windows-gnu/release/vimora-student.exe "dist/vimora-student-$VER-win-x64.bin"
 fi
 
 # --- SHA256SUMS ------------------------------------------------------------------------------
@@ -105,7 +108,7 @@ step "SHA256SUMS"
 (
   cd dist
   files=()
-  for f in "vimora-$VER-windows-x64-setup.exe" "vimora-teacher_${VER}_amd64.deb" "vimora-student_${VER}_amd64.deb"; do
+  for f in "vimora-$VER-windows-x64-setup.exe" "vimora-student-$VER-win-x64.bin" "vimora-teacher_${VER}_amd64.deb" "vimora-student_${VER}_amd64.deb"; do
     [[ -f $f ]] && files+=("$f")
   done
   sha256sum "${files[@]}" >SHA256SUMS

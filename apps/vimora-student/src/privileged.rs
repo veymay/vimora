@@ -148,7 +148,7 @@ impl Engine {
     }
 
     /// After an installer was started: did the new version arrive? Told to the teacher once.
-    fn check_pending_update(&self) {
+    fn check_pending_update(self: &Arc<Self>) {
         let Some(mut p) = PendingUpdate::load() else {
             return;
         };
@@ -164,11 +164,24 @@ impl Engine {
         if !p.reported && (code.is_some() || now_secs().saturating_sub(p.at) > 300) {
             p.reported = true;
             p.save();
-            let why = match code {
-                Some(124) => "o'rnatuvchi qotib qoldi va to'xtatildi".to_string(),
-                Some(c) => format!("o'rnatuvchi xato kodi {c}"),
-                None => "o'rnatuvchi tugamadi".to_string(),
+            // Where the installer got to (its step file), so the cause is known.
+            let step = match install_step() {
+                Some(s) => format!(", oxirgi qadam: {s}"),
+                None => ", o'rnatuvchi umuman ishga tushmadi".to_string(),
             };
+            let why = match code {
+                Some(124) => format!("o'rnatuvchi qotib qoldi va to'xtatildi{step}"),
+                Some(c) => format!("o'rnatuvchi xato kodi {c}{step}"),
+                None => format!("o'rnatuvchi tugamadi{step}"),
+            };
+            // The first failure on Windows: the second way (the program file itself, no
+            // installer) goes at once; the teacher hears of it only if that fails too.
+            #[cfg(windows)]
+            if p.tries <= 1 {
+                tracing::warn!("installer failed ({why}): trying the second way");
+                let _ = self.job("Vimora yangilanmoqda (2-usul)", |e| e.update_by_swap());
+                return;
+            }
             let text = format!(
                 "Vimora {} o'rnatilmadi ({why}, {}-urinish) — keyinroq yana urinib ko'riladi",
                 p.version, p.tries
@@ -194,6 +207,11 @@ impl Engine {
         {
             return Ok(m);
         }
+        // The installer failed for this version before: the other way, not the same again.
+        #[cfg(windows)]
+        if PendingUpdate::load().is_some_and(|p| p.version == rel.version && p.tries >= 1) {
+            return self.update_by_swap();
+        }
         let _lock = UpdateLock::take()?;
         // Progress goes to the teacher through the status ("busy"), e.g.
         // "Vimora 0.3.9 yuklanmoqda 45%" — the teacher draws a bar from the percent.
@@ -213,6 +231,104 @@ impl Engine {
         vimora_update::clear_old(&update_dir());
         let path = vimora_update::download(&rel, Role::Student, &update_dir(), &progress)?;
         self.start_install(&path, &rel.version)
+    }
+
+    /// The second way to update (Windows), with no installer: the signed program file is
+    /// downloaded, the running one is renamed aside (Windows allows that) and the new one takes
+    /// its place; the program registers itself again (`setup`) and this service steps aside,
+    /// so the watchdog starts it on the new file. Used when the installer failed once.
+    #[cfg(windows)]
+    fn update_by_swap(self: &Arc<Self>) -> Result<String> {
+        use vimora_update::Target;
+        let rel = vimora_update::latest()?;
+        if !rel.is_newer() {
+            return Ok(format!(
+                "Vimora {} — eng so'nggi versiya",
+                vimora_update::current()
+            ));
+        }
+        let _lock = UpdateLock::take()?;
+        let v = rel.version.clone();
+        let last = std::sync::Mutex::new(u64::MAX);
+        let progress = |done: u64, total: u64| {
+            if total == 0 {
+                return;
+            }
+            let pct = (done * 100 / total).min(100);
+            let mut l = last.lock().unwrap();
+            if *l != pct {
+                *l = pct;
+                self.inner.lock().unwrap().busy =
+                    Some(format!("Vimora {v} yuklanmoqda (2-usul) {pct}%"));
+            }
+        };
+        let pkg =
+            vimora_update::download_target(&rel, Target::StudentBinary, &update_dir(), &progress)?;
+        let exe = std::env::current_exe()?;
+        let dir = exe.parent().context("dastur papkasi yo'q")?.to_path_buf();
+        let new = dir.join("vimora-student.new");
+        std::fs::copy(&pkg.path, &new).context("yangi fayl nusxalanmadi")?;
+        // A program file is megabytes: anything small is not one.
+        if std::fs::metadata(&new).map_or(0, |m| m.len()) < 1_000_000 {
+            let _ = std::fs::remove_file(&new);
+            bail!("yuklangan fayl noto'g'ri");
+        }
+        if self.shield.protected_now() {
+            // Under the freeze the new file would be thrown away at the next restart.
+            self.shield
+                .queue_commit(vec![dir.to_string_lossy().into_owned()]);
+        }
+        self.inner.lock().unwrap().busy =
+            Some(format!("Vimora {} o'rnatilmoqda (2-usul)", rel.version));
+        let tries = PendingUpdate::load()
+            .filter(|p| p.version == rel.version)
+            .map_or(0, |p| p.tries)
+            + 1;
+        PendingUpdate {
+            version: rel.version.clone(),
+            at: now_secs(),
+            tries,
+            reported: true,
+        }
+        .save();
+        let _ = std::fs::remove_file(update_dir().join("install-result.txt"));
+        let ticks = now_secs();
+        let old = dir.join(format!("vimora-student.old-{ticks}.exe"));
+        std::fs::rename(&exe, &old).context("eski faylni chetga surib bo'lmadi")?;
+        if let Err(e) = std::fs::rename(&new, &exe) {
+            let _ = std::fs::rename(&old, &exe);
+            bail!("yangi faylni joyiga qo'yib bo'lmadi: {e}");
+        }
+        // The registrations (service, start-up, firewall …), as the installer would make them.
+        match sh::quiet(std::process::Command::new(&exe).arg("setup")).spawn() {
+            Ok(mut child) => {
+                let t0 = std::time::Instant::now();
+                loop {
+                    match child.try_wait() {
+                        Ok(Some(_)) => break,
+                        Ok(None) if t0.elapsed() < Duration::from_secs(90) => {
+                            std::thread::sleep(Duration::from_millis(500));
+                        }
+                        _ => {
+                            let _ = child.kill();
+                            break;
+                        }
+                    }
+                }
+            }
+            Err(e) => tracing::warn!("setup after the swap: {e}"),
+        }
+        let _ = std::fs::write(update_dir().join("install-result.txt"), "0");
+        // Step aside: the watchdog starts the service again, now from the new file.
+        std::thread::spawn(|| {
+            std::thread::sleep(Duration::from_secs(2));
+            tracing::info!("new program file in place: restarting the service");
+            std::process::exit(0);
+        });
+        Ok(format!(
+            "Vimora {} o'rnatildi — qayta ishga tushmoqda",
+            rel.version
+        ))
     }
 
     /// A fresh look at pending updates: counts and the detailed list (kept for the teacher).

@@ -20,6 +20,9 @@ BLACK, WHITE = "#000000", "#FFFFFF"
 
 master = (B / "source" / "vimora-master.svg").read_text()
 paths = re.findall(r'<path transform="([^"]*)" d="([^"]*)"/>', master)
+# The whole shape with the inside filled (used behind the mark on dark surfaces).
+sil_paths = re.findall(r'<path transform="([^"]*)" d="([^"]*)"/>',
+                       (B / "source" / "vimora-silhouette.svg").read_text())
 # Tight box of the emblem in the master's coordinates.
 EX0, EY0, EX1, EY1 = 356, 171, 2152, 2348
 EW, EH = EX1 - EX0, EY1 - EY0
@@ -28,9 +31,32 @@ WORD_D = (B / "tools" / "wordmark-vimora-daysone.d").read_text().strip()
 WORD_ADV, WORD_CAP = [float(x) for x in (B / "tools" / "wordmark-vimora-daysone.txt").read_text().split()]
 
 
-def emblem(fill):
+def emblem(fill, stroke=0):
+    """The mark in one colour. `stroke` thickens it a little (tiny tray sizes)."""
     inner = "\n".join(f'    <path transform="{t}" d="{d}"/>' for t, d in paths)
-    return f'  <g fill="{fill}" fill-rule="evenodd">\n{inner}\n  </g>\n'
+    extra = f' stroke="{fill}" stroke-width="{stroke}" stroke-linejoin="round"' if stroke else ""
+    return f'  <g fill="{fill}" fill-rule="evenodd"{extra}>\n{inner}\n  </g>\n'
+
+
+def solid(green=GREEN, white=WHITE):
+    """The mark as on white paper: green shapes, the face and the hat band filled white.
+    This is the one drawn inside the programs, so it reads on dark surfaces too."""
+    back = "\n".join(f'    <path transform="{t}" d="{d}"/>' for t, d in sil_paths)
+    return f'  <g fill="{white}">\n{back}\n  </g>\n' + emblem(green)
+
+
+def tile(radius=0.225):
+    """App icon: a rounded green square (like a desktop app's tile) with the white mark."""
+    side = max(EW, EH) / 0.68
+    cx, cy = EX0 + EW / 2, EY0 + EH / 2
+    x, y = cx - side / 2, cy - side / 2
+    r = side * radius
+    grad = ('  <defs>\n    <linearGradient id="t" x1="0" y1="0" x2="0" y2="1">\n'
+            '      <stop offset="0" stop-color="#93CF3F"/>\n'
+            '      <stop offset="1" stop-color="#5E9A18"/>\n    </linearGradient>\n  </defs>\n')
+    body = (grad + f'  <rect x="{x:g}" y="{y:g}" width="{side:g}" height="{side:g}" '
+            f'rx="{r:g}" fill="url(#t)"/>\n' + emblem(WHITE))
+    return (x, y, side, side), body
 
 
 def svg(vb, body, title="Vimora"):
@@ -110,6 +136,10 @@ def main():
         write(p, svg(vb, emblem(fill)))
         png(p, p.with_suffix(".png"), 1024)
 
+    p = B / "logo" / "primary" / "vimora-solid.svg"
+    write(p, svg(square_box(0.12), solid()))
+    png(p, p.with_suffix(".png"), 1024)
+
     # --- lockups -------------------------------------------------------------------------
     for kind, fn in [("horizontal", horizontal), ("vertical", vertical)]:
         for name, e, t in [
@@ -123,9 +153,9 @@ def main():
             png(p, p.with_suffix(".png"), 2048 if kind == "horizontal" else 1024)
 
     # --- app icon: the emblem on a transparent square, optically centred ----------------
-    icon_box = square_box(0.16)
+    icon_box, icon_body = tile()
     app_svg = B / "app-icons" / "vimora-app-icon.svg"
-    write(app_svg, svg(icon_box, emblem(GREEN)))
+    write(app_svg, svg(icon_box, icon_body))
     sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256, 512, 1024]
     for s in sizes:
         png(app_svg, B / "app-icons" / "png" / f"vimora-{s}.png", s)
@@ -139,7 +169,7 @@ def main():
     tray_box = square_box(0.04)
     for folder, fill in [("light", BLACK), ("dark", WHITE)]:
         p = B / "system-tray" / folder / f"vimora-tray-{folder}.svg"
-        write(p, svg(tray_box, emblem(fill)))
+        write(p, svg(tray_box, emblem(fill, stroke=22)))
         for s in [16, 20, 24, 32, 48, 64]:
             png(p, B / "system-tray" / folder / f"vimora-tray-{folder}-{s}.png", s)
 
@@ -152,12 +182,12 @@ def main():
     for s in [16, 24, 32, 48, 64, 128, 256, 512]:
         shutil.copy(B / "app-icons" / "png" / f"vimora-{s}.png", dst / f"vimora-{s}.png")
     # The two tray icons (64 px; the program picks one by the system theme).
-    shutil.copy(B / "system-tray" / "light" / "vimora-tray-light-64.png", dst / "tray-black-64.png")
-    shutil.copy(B / "system-tray" / "dark" / "vimora-tray-dark-64.png", dst / "tray-white-64.png")
+    shutil.copy(B / "system-tray" / "light" / "vimora-tray-light-32.png", dst / "tray-black-32.png")
+    shutil.copy(B / "system-tray" / "dark" / "vimora-tray-dark-32.png", dst / "tray-white-32.png")
     # The emblem the programs draw inside their windows (one size, scaled by the GPU).
-    shutil.copy(B / "logo" / "primary" / "vimora.png", dst / "logo-1024.png")
-    img = Image.open(B / "logo" / "primary" / "vimora.png")
-    img.resize((512, 512), Image.LANCZOS).save(dst / "logo-512.png")
+    solid_svg = B / "logo" / "primary" / "vimora-solid.svg"
+    for s_ in [32, 48, 64, 128, 256, 512]:
+        png(solid_svg, dst / f"logo-{s_}.png", s_)
     print("done")
 
 
