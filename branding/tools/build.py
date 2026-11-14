@@ -46,16 +46,16 @@ def solid(green=GREEN, white=WHITE):
 
 
 def tile(radius=0.225):
-    """App icon: a rounded green square (like a desktop app's tile) with the white mark."""
+    """App icon: a rounded dark square (like a desktop app's tile) with the green mark."""
     side = max(EW, EH) / 0.68
     cx, cy = EX0 + EW / 2, EY0 + EH / 2
     x, y = cx - side / 2, cy - side / 2
     r = side * radius
     grad = ('  <defs>\n    <linearGradient id="t" x1="0" y1="0" x2="0" y2="1">\n'
-            '      <stop offset="0" stop-color="#93CF3F"/>\n'
-            '      <stop offset="1" stop-color="#5E9A18"/>\n    </linearGradient>\n  </defs>\n')
+            '      <stop offset="0" stop-color="#2B2E27"/>\n'
+            '      <stop offset="1" stop-color="#12140F"/>\n    </linearGradient>\n  </defs>\n')
     body = (grad + f'  <rect x="{x:g}" y="{y:g}" width="{side:g}" height="{side:g}" '
-            f'rx="{r:g}" fill="url(#t)"/>\n' + emblem(WHITE))
+            f'rx="{r:g}" fill="url(#t)"/>\n' + emblem(GREEN))
     return (x, y, side, side), body
 
 
@@ -84,7 +84,7 @@ def wordmark(fill, scale, x, baseline):
 def horizontal(emblem_fill, text_fill):
     cap = 0.34 * EH
     s = cap / WORD_CAP
-    gap = 0.22 * EH
+    gap = 0.09 * EH
     tx = EX1 + gap
     base = EY0 + EH / 2 + cap / 2
     w = EW + gap + WORD_ADV * s
@@ -95,7 +95,7 @@ def horizontal(emblem_fill, text_fill):
 def vertical(emblem_fill, text_fill):
     s = (EW * 1.25) / WORD_ADV
     cap = WORD_CAP * s
-    gap = 0.12 * EH
+    gap = 0.07 * EH
     tw = WORD_ADV * s
     tx = EX0 + EW / 2 - tw / 2
     base = EY1 + gap + cap

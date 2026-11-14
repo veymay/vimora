@@ -918,6 +918,13 @@ impl TeacherApp {
                     }
                 }
                 self.send_priv(&ids, PrivCommand::UpdateVimora, tr("Vimora yangilanishi"));
+                // Not done in a minute and a half (no internet there, or it failed): the file
+                // goes over the classroom network.
+                crate::lanupdate::push_after(
+                    self.hub.clone(),
+                    ids.clone(),
+                    std::time::Duration::from_secs(90),
+                );
             }
             UpdateRequest::Check(ids) => self.send_priv(
                 &ids,

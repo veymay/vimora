@@ -127,10 +127,18 @@ impl AppLock {
     /// Draws the lock screen over the whole window and checks the code: a calm gradient with a
     /// soft glow, the logo, and the code cells; it fades in, the cells pop as digits come, shake
     /// on a wrong code, and the whole screen fades out when the code is right.
-    pub fn show(&mut self, ctx: &egui::Context, p: &Palette, c: &crate::config::TeacherConfig) {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        _theme: &Palette,
+        c: &crate::config::TeacherConfig,
+    ) {
         if !self.locked {
             return;
         }
+        // The same look as the students' lock screen (always dark): the gradient, the glow,
+        // the corner brackets — here only the logo and the code.
+        let p = &ui_kit::DARK;
         let n = (c.app_pin_len as usize).clamp(4, 8);
         // Digits are not taken while the screen is leaving.
         if self.unlocking.is_some() {
@@ -158,7 +166,10 @@ impl AppLock {
                 let (rect, _) = ui.allocate_exact_size(screen.size(), Sense::click_and_drag());
                 let painter = ui.painter();
                 // Background: a vertical gradient (the theme's two surfaces).
-                let (top, bottom) = (p.panel, p.bg);
+                let (top, bottom) = (
+                    egui::Color32::from_rgb(0x1d, 0x1f, 0x1b),
+                    egui::Color32::from_rgb(0x0e, 0x0f, 0x0d),
+                );
                 let mut mesh = egui::epaint::Mesh::default();
                 for (pt, col) in [
                     (rect.left_top(), top),
@@ -173,14 +184,27 @@ impl AppLock {
                 painter.add(egui::Shape::mesh(mesh));
 
                 let cx = rect.center().x;
-                let top_y = rect.center().y - 95.0;
+                let top_y = rect.center().y - 120.0;
                 let centre = pos2(cx, top_y);
                 // A steady glow behind the logo.
-                for (radius, alpha) in [(360.0, 0.10), (220.0, 0.16), (120.0, 0.20)] {
+                for (radius, alpha) in [(575.0, 0.13), (307.0, 0.20), (150.0, 0.20)] {
                     glow(painter, centre, radius, p.accent, alpha * fade);
                 }
+                // Fine corner brackets: a quiet "locked" frame around the window.
+                let line = Stroke::new(2.0_f32, p.accent.gamma_multiply(0.55 * fade));
+                let (m, len) = (28.0, 46.0);
+                for (corner, dx, dy) in [
+                    (rect.left_top(), 1.0, 1.0),
+                    (rect.right_top(), -1.0, 1.0),
+                    (rect.left_bottom(), 1.0, -1.0),
+                    (rect.right_bottom(), -1.0, -1.0),
+                ] {
+                    let o = corner + vec2(dx * m, dy * m);
+                    painter.line_segment([o, o + vec2(dx * len, 0.0)], line);
+                    painter.line_segment([o, o + vec2(0.0, dy * len)], line);
+                }
                 // The logo grows into place as it fades in.
-                let size = 64.0 * (0.88 + 0.12 * fade_in);
+                let size = 120.0 * (0.88 + 0.12 * fade_in);
                 if fade > 0.02 {
                     let lr = Rect::from_center_size(centre, vec2(size, size));
                     ui_kit::logo(painter, lr);
@@ -190,7 +214,7 @@ impl AppLock {
                     }
                 }
                 painter.text(
-                    pos2(cx, top_y + 58.0),
+                    pos2(cx, top_y + 94.0),
                     Align2::CENTER_CENTER,
                     tr("Kodni kiriting"),
                     FontId::new(16.0, ui_kit::bold()),
@@ -214,7 +238,7 @@ impl AppLock {
                 let (cell, gap) = (46.0, 12.0);
                 let total = n as f32 * cell + (n as f32 - 1.0) * gap;
                 let x0 = cx - total / 2.0 + shake;
-                let row_y = top_y + 98.0;
+                let row_y = top_y + 134.0;
                 let ok = self.unlocking.is_some();
                 for i in 0..n {
                     let on = i < self.entered.len() || ok;

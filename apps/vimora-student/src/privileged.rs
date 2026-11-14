@@ -264,10 +264,17 @@ impl Engine {
         };
         let pkg =
             vimora_update::download_target(&rel, Target::StudentBinary, &update_dir(), &progress)?;
+        self.swap_in(&pkg.path, &rel.version)
+    }
+
+    /// The program file at `file` (already checked against the signed list) replaces the
+    /// running one. Both ways to get the file (downloaded here, or sent by the teacher) end here.
+    #[cfg(windows)]
+    fn swap_in(self: &Arc<Self>, file: &std::path::Path, version: &str) -> Result<String> {
         let exe = std::env::current_exe()?;
         let dir = exe.parent().context("dastur papkasi yo'q")?.to_path_buf();
         let new = dir.join("vimora-student.new");
-        std::fs::copy(&pkg.path, &new).context("yangi fayl nusxalanmadi")?;
+        std::fs::copy(file, &new).context("yangi fayl nusxalanmadi")?;
         // A program file is megabytes: anything small is not one.
         if std::fs::metadata(&new).map_or(0, |m| m.len()) < 1_000_000 {
             let _ = std::fs::remove_file(&new);
@@ -278,14 +285,13 @@ impl Engine {
             self.shield
                 .queue_commit(vec![dir.to_string_lossy().into_owned()]);
         }
-        self.inner.lock().unwrap().busy =
-            Some(format!("Vimora {} o'rnatilmoqda (2-usul)", rel.version));
+        self.inner.lock().unwrap().busy = Some(format!("Vimora {version} o'rnatilmoqda (2-usul)"));
         let tries = PendingUpdate::load()
-            .filter(|p| p.version == rel.version)
+            .filter(|p| p.version == version)
             .map_or(0, |p| p.tries)
             + 1;
         PendingUpdate {
-            version: rel.version.clone(),
+            version: version.to_string(),
             at: now_secs(),
             tries,
             reported: true,
@@ -470,6 +476,13 @@ impl Engine {
         // Our own copy in the service's folder (the student cannot change it after the check).
         let path = vimora_update::save(&update_dir(), &name, &data)?;
         vimora_update::verify_package(&name, &std::fs::read(&path)?, sums, sig)?;
+        // The bare program file (the second way): swapped in, no installer.
+        if name.ends_with("-win-x64.bin") {
+            #[cfg(windows)]
+            return self.swap_in(&path, &version);
+            #[cfg(not(windows))]
+            bail!("bu fayl faqat Windows uchun");
+        }
         self.start_install(&path, &version)
     }
 
