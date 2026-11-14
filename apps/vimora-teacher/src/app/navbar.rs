@@ -231,7 +231,7 @@ impl TeacherApp {
                     ui.add_space(6.0);
                     let g = ui.painter().layout_no_wrap(
                         "VIMORA".into(),
-                        FontId::new(16.0, ui_kit::bold()),
+                        FontId::new(18.0, ui_kit::brand()),
                         p.strong,
                     );
                     let (br, _) = ui.allocate_exact_size(vec2(g.size().x, H), Sense::hover());

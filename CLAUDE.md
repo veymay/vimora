@@ -13,6 +13,10 @@ Only two programs exist: **teacher** and **student** (never "console", "client",
 - `apps/vimora-student` – the student program (agent + privileged service, setup window
   `wizard.rs`, tray window `about.rs`, small-window frame `smallwin.rs`, folders `layout.rs`). `crates/vimora-core` (protocol), `crates/vimora-ui`
   (design system: palette, fonts, icons, arrow popups), `crates/vimora-update` (self-update).
+- Brand: master `branding/source/vimora-master.svg`; `python3 branding/tools/build.py` makes every
+  variant (needs `resvg`, Pillow) and refreshes `assets/brand/` (what builds read). Name next to the
+  logo: Days One, always capitals (`VIMORA`); UI text: Mona Sans (+ Geist Mono labels). Tray icon:
+  white on dark panels, black on light, follows the system (`vimora-tray`).
 - UI rules: no border radius anywhere, accent #7dba28, uppercase button/tab labels, constant font
   weight in every state, tooltips without delay (`.tip()` with an arrow).
 

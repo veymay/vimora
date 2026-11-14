@@ -510,7 +510,7 @@ pub struct LockLook {
     pub no_logo: bool,
     /// The name next to the logo (empty = "VIMORA").
     pub brand: String,
-    /// Typeface of the texts: 0 Geist, 1 Geist Mono.
+    /// Typeface of the texts: 0 Mona Sans, 1 Geist Mono.
     pub font: u8,
     /// Accent colour (RGB); all zero = the default green.
     pub accent: [u8; 3],

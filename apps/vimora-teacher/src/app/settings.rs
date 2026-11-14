@@ -606,7 +606,7 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
             } else {
                 c.lock_brand.trim().to_uppercase()
             },
-            FontId::new(8.0, ui_kit::mono_bold()),
+            FontId::new(10.0, ui_kit::brand()),
             d.muted,
         );
     }

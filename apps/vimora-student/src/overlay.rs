@@ -551,7 +551,7 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
             } else {
                 v.look.brand.trim().to_uppercase()
             },
-            FontId::new(15.0, vimora_ui::mono_bold()),
+            FontId::new(19.0, vimora_ui::brand()),
             p.muted.gamma_multiply(fade),
         );
     }

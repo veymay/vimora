@@ -105,7 +105,7 @@ pub struct TeacherConfig {
     /// Minutes without a touch until the program locks itself again (0 = only at start).
     pub app_lock_min: u32,
     /// Lock screen look (sent with the lock): clock 0 normal / 1 small / 2 large / 3 off,
-    /// no logo, brand name, typeface 0 Geist / 1 Mono, accent RGB (zero = default).
+    /// no logo, brand name, typeface 0 Mona Sans / 1 Mono, accent RGB (zero = default).
     pub lock_clock: u8,
     pub lock_no_logo: bool,
     pub lock_brand: String,

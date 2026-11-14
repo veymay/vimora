@@ -1,0 +1,28 @@
+use ttf_parser::{Face, OutlineBuilder};
+struct P { d: String, x: f32, s: f32, ox: f32 }
+impl OutlineBuilder for P {
+    fn move_to(&mut self, x: f32, y: f32) { self.d += &format!("M{:.1} {:.1}", self.ox + x*self.s, -y*self.s); }
+    fn line_to(&mut self, x: f32, y: f32) { self.d += &format!("L{:.1} {:.1}", self.ox + x*self.s, -y*self.s); }
+    fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) { self.d += &format!("Q{:.1} {:.1} {:.1} {:.1}", self.ox + x1*self.s, -y1*self.s, self.ox + x*self.s, -y*self.s); }
+    fn curve_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) { self.d += &format!("C{:.1} {:.1} {:.1} {:.1} {:.1} {:.1}", self.ox + x1*self.s, -y1*self.s, self.ox + x2*self.s, -y2*self.s, self.ox + x*self.s, -y*self.s); }
+    fn close(&mut self) { self.d += "Z"; }
+}
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let data = std::fs::read(&args[1]).unwrap();
+    let face = Face::parse(&data, 0).unwrap();
+    let text = &args[2];
+    let size: f32 = args[3].parse().unwrap();
+    let s = size / face.units_per_em() as f32;
+    let mut p = P { d: String::new(), x: 0.0, s, ox: 0.0 };
+    let mut ox = 0.0f32;
+    for ch in text.chars() {
+        let g = face.glyph_index(ch).unwrap();
+        p.ox = ox;
+        face.outline_glyph(g, &mut p);
+        ox += face.glyph_hor_advance(g).unwrap() as f32 * s;
+    }
+    let cap = face.capital_height().unwrap_or(700) as f32 * s;
+    let xh = face.x_height().unwrap_or(500) as f32 * s;
+    println!("{}\n{} {} {}", p.d, ox, cap, xh);
+}

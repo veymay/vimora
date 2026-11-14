@@ -1,7 +1,7 @@
 //! Vimora design system for egui.
 //!
 //! Visual language: Claude-style warm neutrals (dark `#262624`, light `#faf9f5`) with the clay
-//! accent, soft rounded corners, hairline borders, Geist text with Geist Mono upper-case labels
+//! accent, soft rounded corners, hairline borders, Mona Sans text with Geist Mono upper-case labels
 //! (ArtCraft-inspired) and Lucide outline icons.
 
 pub mod i18n;
@@ -16,19 +16,21 @@ use egui::{
 };
 use std::sync::Arc;
 
+const DAYS_ONE: &[u8] = include_bytes!("../assets/DaysOne-Regular.ttf");
 const LUCIDE_TTF: &[u8] = include_bytes!("../assets/lucide.ttf");
-const GEIST: &[u8] = include_bytes!("../assets/Geist-Regular.ttf");
-const GEIST_MEDIUM: &[u8] = include_bytes!("../assets/Geist-Medium.ttf");
-const GEIST_BOLD: &[u8] = include_bytes!("../assets/Geist-Bold.ttf");
+const TEXT: &[u8] = include_bytes!("../assets/MonaSans-Regular.ttf");
+const TEXT_MEDIUM: &[u8] = include_bytes!("../assets/MonaSans-Medium.ttf");
+const TEXT_BOLD: &[u8] = include_bytes!("../assets/MonaSans-Bold.ttf");
 const GEIST_MONO_MEDIUM: &[u8] = include_bytes!("../assets/GeistMono-Medium.ttf");
 const GEIST_MONO_BOLD: &[u8] = include_bytes!("../assets/GeistMono-Bold.ttf");
 
 /// Font files, for code that draws without egui (the Windows lock screen uses GDI).
 pub mod font_files {
     pub const ICONS: &[u8] = super::LUCIDE_TTF;
-    pub const REGULAR: &[u8] = super::GEIST;
-    pub const BOLD: &[u8] = super::GEIST_BOLD;
+    pub const REGULAR: &[u8] = super::TEXT;
+    pub const BOLD: &[u8] = super::TEXT_BOLD;
     pub const MONO_BOLD: &[u8] = super::GEIST_MONO_BOLD;
+    pub const BRAND: &[u8] = super::DAYS_ONE;
 }
 
 /// Height of buttons, inputs and filter cells.
@@ -173,6 +175,10 @@ pub fn palette(ctx: &egui::Context) -> Palette {
 pub fn medium() -> FontFamily {
     FontFamily::Name("medium".into())
 }
+/// The brand's own typeface (Days One), for the name next to the logo only.
+pub fn brand() -> FontFamily {
+    FontFamily::Name("brand".into())
+}
 pub fn bold() -> FontFamily {
     FontFamily::Name("bold".into())
 }
@@ -183,7 +189,7 @@ pub fn mono_bold() -> FontFamily {
     FontFamily::Name("mono-bold".into())
 }
 
-/// Geist + Geist Mono, with Lucide icons and egui's default fonts as fallbacks.
+/// Mona Sans (text) + Geist Mono (upper-case labels), with Lucide icons and egui's default fonts as fallbacks.
 pub fn install_fonts(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
     let fallback: Vec<String> = fonts
@@ -194,10 +200,11 @@ pub fn install_fonts(ctx: &egui::Context) {
     fonts
         .font_data
         .insert("lucide".into(), FontData::from_static(LUCIDE_TTF));
-    let faces: [(&str, &'static [u8], FontFamily); 5] = [
-        ("Geist", GEIST, FontFamily::Proportional),
-        ("Geist-Medium", GEIST_MEDIUM, medium()),
-        ("Geist-Bold", GEIST_BOLD, bold()),
+    let faces: [(&str, &'static [u8], FontFamily); 6] = [
+        ("DaysOne", DAYS_ONE, brand()),
+        ("MonaSans", TEXT, FontFamily::Proportional),
+        ("MonaSans-Medium", TEXT_MEDIUM, medium()),
+        ("MonaSans-Bold", TEXT_BOLD, bold()),
         ("GeistMono-Medium", GEIST_MONO_MEDIUM, mono()),
         ("GeistMono-Bold", GEIST_MONO_BOLD, mono_bold()),
     ];
@@ -849,53 +856,43 @@ pub fn input_frame(p: &Palette) -> Frame {
 
 /// Paints the Vimora mark (clay tile, two-tone V, square dot) into `rect`.
 /// Same geometry as `assets/brand/vimora.svg` (256 grid).
-/// The logo's geometry in a 256 × 256 box: the gradient of its square (top, bottom) and its
-/// shapes (points, colour). The one place that says what the logo looks like: the egui
-/// painter below and the Windows lock screen (GDI) both draw from it.
-pub const LOGO_GRADIENT: (Color32, Color32) = (
-    Color32::from_rgb(0x93, 0xcf, 0x3f),
-    Color32::from_rgb(0x69, 0xa3, 0x1c),
-);
+/// The brand mark: one picture (`assets/brand/logo-512.png`, made from the vector master in
+/// `branding/`). Everything that draws the logo goes through here, so a new logo is one file.
+const LOGO_PNG: &[u8] = include_bytes!("../../../assets/brand/logo-512.png");
 
-pub fn logo_shapes() -> [(&'static [(f32, f32)], Color32); 3] {
-    [
-        (
-            &[(160.0, 70.0), (206.0, 70.0), (147.0, 196.0), (109.0, 196.0)],
-            Color32::from_rgb(0xe6, 0xf4, 0xcc),
-        ),
-        (
-            &[(50.0, 70.0), (96.0, 70.0), (147.0, 196.0), (109.0, 196.0)],
-            Color32::WHITE,
-        ),
-        (
-            &[(110.0, 32.0), (146.0, 32.0), (146.0, 68.0), (110.0, 68.0)],
-            Color32::WHITE,
-        ),
-    ]
+/// The logo scaled to `size` × `size` pixels, RGBA (not premultiplied).
+pub fn logo_rgba(size: u32) -> (u32, u32, Vec<u8>) {
+    let img = image::load_from_memory_with_format(LOGO_PNG, image::ImageFormat::Png)
+        .map(|i| i.to_rgba8())
+        .unwrap_or_else(|_| image::RgbaImage::new(1, 1));
+    let size = size.max(1);
+    let img = image::imageops::resize(&img, size, size, image::imageops::FilterType::Lanczos3);
+    (img.width(), img.height(), img.into_raw())
 }
 
-/// The logo's vertical offset inside its box (in 256ths).
-pub const LOGO_SHIFT: f32 = 6.0;
-
-/// The brand mark, drawn inside `rect` (a square).
+/// The brand mark, drawn inside `rect` (a square): a texture, made once per window.
 pub fn logo(painter: &egui::Painter, rect: Rect) {
-    use egui::{epaint::PathShape, pos2, Pos2};
-    let (top, bottom) = LOGO_GRADIENT;
-    let mut mesh = egui::Mesh::default();
-    mesh.colored_vertex(rect.left_top(), top);
-    mesh.colored_vertex(rect.right_top(), top);
-    mesh.colored_vertex(rect.right_bottom(), bottom);
-    mesh.colored_vertex(rect.left_bottom(), bottom);
-    mesh.add_triangle(0, 1, 2);
-    mesh.add_triangle(0, 2, 3);
-    painter.add(mesh);
-    let k = rect.width() / 256.0;
-    let at =
-        |x: f32, y: f32| -> Pos2 { pos2(rect.left() + x * k, rect.top() + (y + LOGO_SHIFT) * k) };
-    for (pts, color) in logo_shapes() {
-        let pts = pts.iter().map(|&(x, y)| at(x, y)).collect();
-        painter.add(PathShape::convex_polygon(pts, color, Stroke::NONE));
-    }
+    let ctx = painter.ctx();
+    let id = egui::Id::new("vimora-logo-texture");
+    let tex: egui::TextureHandle = match ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
+        Some(t) => t,
+        None => {
+            let (w, h, px) = logo_rgba(512);
+            let t = ctx.load_texture(
+                "vimora-logo",
+                egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &px),
+                egui::TextureOptions::LINEAR,
+            );
+            ctx.data_mut(|d| d.insert_temp(id, t.clone()));
+            t
+        }
+    };
+    painter.image(
+        tex.id(),
+        rect,
+        Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+        Color32::WHITE,
+    );
 }
 
 /// Small "?" that explains a setting; the tooltip appears at once, with an arrow.

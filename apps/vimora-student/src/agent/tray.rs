@@ -40,11 +40,9 @@ pub(super) fn start(state: Shared) {
     let _ = std::thread::Builder::new()
         .name("student-tray".into())
         .spawn(move || {
-            let png = include_bytes!("../../../../assets/brand/vimora-64.png");
-            let Some(img) = image::load_from_memory(png).ok().map(|i| i.to_rgba8()) else {
+            let Some(icons) = vimora_tray::brand_icons() else {
                 return;
             };
-            let icon = vimora_tray::rgba(img.width(), img.height(), img.into_raw());
             let version = format!("Vimora {}", env!("CARGO_PKG_VERSION"));
             let st = state.clone();
             let Some(tray) = Tray::spawn(
@@ -52,7 +50,7 @@ pub(super) fn start(state: Shared) {
                     id: "vimora-student",
                     title: "Vimora".into(),
                     tooltip: version.clone(),
-                    icon,
+                    icons,
                     items: vec![],
                 },
                 move |ev| {

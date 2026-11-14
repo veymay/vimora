@@ -13,7 +13,7 @@ use std::ptr::{null, null_mut};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use vimora_ui::icons;
-use windows_sys::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows_sys::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::*;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -140,40 +140,64 @@ unsafe fn circle(hdc: HDC, x: i32, y: i32, r: i32, c: egui::Color32) {
     DeleteObject(b as HGDIOBJ);
 }
 
-/// The brand mark (from `vimora_ui::logo_shapes`) in the square starting at (x, y).
+/// The brand mark (`vimora_ui::logo_rgba`) in the square starting at (x, y), blended with its
+/// own transparency. The scaled picture is kept for the next paint.
 unsafe fn logo(hdc: HDC, x: i32, y: i32, size: i32) {
-    let (top, bottom) = vimora_ui::LOGO_GRADIENT;
-    // The gradient square, row by row.
-    for row in 0..size {
-        let t = row as f32 / size.max(1) as f32;
-        fill(
-            hdc,
-            RECT {
-                left: x,
-                top: y + row,
-                right: x + size,
-                bottom: y + row + 1,
-            },
-            mix(top, bottom, t),
-        );
+    use std::sync::Mutex;
+    static CACHE: Mutex<Option<(u32, Vec<u8>)>> = Mutex::new(None);
+    let size = size.max(1) as u32;
+    let mut cache = CACHE.lock().unwrap();
+    if cache.as_ref().map(|c| c.0) != Some(size) {
+        let (_, _, rgba) = vimora_ui::logo_rgba(size);
+        // GDI wants premultiplied BGRA.
+        let mut bgra = Vec::with_capacity(rgba.len());
+        for px in rgba.chunks_exact(4) {
+            let a = px[3] as u32;
+            let m = |c: u8| ((c as u32 * a + 127) / 255) as u8;
+            bgra.extend_from_slice(&[m(px[2]), m(px[1]), m(px[0]), px[3]]);
+        }
+        *cache = Some((size, bgra));
     }
-    let k = size as f32 / 256.0;
-    for (pts, color) in vimora_ui::logo_shapes() {
-        let points: Vec<POINT> = pts
-            .iter()
-            .map(|&(px, py)| POINT {
-                x: x + (px * k).round() as i32,
-                y: y + ((py + vimora_ui::LOGO_SHIFT) * k).round() as i32,
-            })
-            .collect();
-        let b = CreateSolidBrush(rgb(color));
-        let ob = SelectObject(hdc, b as HGDIOBJ);
-        let op = SelectObject(hdc, GetStockObject(NULL_PEN));
-        Polygon(hdc, points.as_ptr(), points.len() as i32);
-        SelectObject(hdc, ob);
-        SelectObject(hdc, op);
-        DeleteObject(b as HGDIOBJ);
+    let Some((_, bgra)) = cache.as_ref() else {
+        return;
+    };
+    let mut bi: BITMAPINFO = std::mem::zeroed();
+    bi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+    bi.bmiHeader.biWidth = size as i32;
+    bi.bmiHeader.biHeight = -(size as i32); // top-down
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+    let mut bits: *mut std::ffi::c_void = null_mut();
+    let bmp = CreateDIBSection(hdc, &bi, DIB_RGB_COLORS, &mut bits, null_mut(), 0);
+    if bmp.is_null() || bits.is_null() {
+        return;
     }
+    std::ptr::copy_nonoverlapping(bgra.as_ptr(), bits as *mut u8, bgra.len());
+    let mem = CreateCompatibleDC(hdc);
+    let old = SelectObject(mem, bmp as HGDIOBJ);
+    let blend = BLENDFUNCTION {
+        BlendOp: AC_SRC_OVER as u8,
+        BlendFlags: 0,
+        SourceConstantAlpha: 255,
+        AlphaFormat: AC_SRC_ALPHA as u8,
+    };
+    AlphaBlend(
+        hdc,
+        x,
+        y,
+        size as i32,
+        size as i32,
+        mem,
+        0,
+        0,
+        size as i32,
+        size as i32,
+        blend,
+    );
+    SelectObject(mem, old);
+    DeleteDC(mem);
+    DeleteObject(bmp as HGDIOBJ);
 }
 
 /// Gradient, soft glow behind the icon and the corner brackets, drawn once per size.
@@ -326,7 +350,7 @@ unsafe fn paint(hwnd: HWND, st: &mut State) {
                     SRCCOPY,
                 );
             } else {
-                let f = font(26.0 * s, false, "Geist");
+                let f = font(26.0 * s, false, "Mona Sans");
                 text(
                     dc,
                     "O'qituvchi ekrani yuklanmoqda…",
@@ -347,7 +371,7 @@ unsafe fn paint(hwnd: HWND, st: &mut State) {
             let face = if look.font == 1 {
                 "Geist Mono"
             } else {
-                "Geist"
+                "Mona Sans"
             };
             if st.background.map(|b| (b.0, b.1)) != Some((w, h)) || st.bg_accent != look.accent {
                 if let Some((_, _, bdc, bb)) = st.background.take() {
@@ -378,7 +402,7 @@ unsafe fn paint(hwnd: HWND, st: &mut State) {
             let cy = h / 2 - (70.0 * s) as i32;
 
             // Brand and clock.
-            let small = font(15.0 * s, true, "Geist Mono");
+            let small = font(18.0 * s, false, "Days One");
             let brand = if look.brand.trim().is_empty() {
                 "VIMORA".to_string()
             } else {
@@ -581,10 +605,10 @@ unsafe fn paint(hwnd: HWND, st: &mut State) {
                 DeleteObject(f as HGDIOBJ);
             }
 
-            let f = font(15.0 * s, false, "Geist");
+            let f = font(15.0 * s, false, "Days One");
             text(
                 dc,
-                "Vimora",
+                "VIMORA",
                 f,
                 p.faint,
                 RECT {
@@ -739,12 +763,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
     }
 }
 
-/// Loads the fonts the screen uses (Geist, Geist Mono, the icon font) for this process only.
+/// Loads the fonts the screen uses (Mona Sans, Geist Mono, the icon font) for this process only.
 unsafe fn load_fonts() {
     for data in [
         vimora_ui::font_files::REGULAR,
         vimora_ui::font_files::BOLD,
         vimora_ui::font_files::MONO_BOLD,
+        vimora_ui::font_files::BRAND,
         vimora_ui::font_files::ICONS,
     ] {
         let n = 0u32;

@@ -176,8 +176,8 @@ impl eframe::App for About {
                 ui.painter().text(
                     pos2(full.left(), logo.bottom() + 18.0),
                     Align2::LEFT_CENTER,
-                    "Vimora",
-                    FontId::new(20.0, vimora_ui::bold()),
+                    "VIMORA",
+                    FontId::new(21.0, vimora_ui::brand()),
                     p.strong,
                 );
                 ui.painter().text(

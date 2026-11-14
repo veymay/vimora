@@ -53,31 +53,98 @@ pub enum Event {
     Click(i32, i32),
 }
 
+/// One icon per panel brightness.
+#[derive(Clone)]
+pub struct Icons {
+    pub on_dark: Rgba,
+    pub on_light: Rgba,
+}
+
+impl Icons {
+    fn pick(&self, dark: bool) -> &Rgba {
+        if dark {
+            &self.on_dark
+        } else {
+            &self.on_light
+        }
+    }
+}
+
+/// The brand's two monochrome tray icons (white for dark panels, black for light ones).
+pub fn brand_icons() -> Option<Icons> {
+    let load = |png: &[u8]| -> Option<Rgba> {
+        let img = image::load_from_memory(png).ok()?.to_rgba8();
+        Some(rgba(img.width(), img.height(), img.into_raw()))
+    };
+    Some(Icons {
+        on_dark: load(include_bytes!("../../../assets/brand/tray-white-64.png"))?,
+        on_light: load(include_bytes!("../../../assets/brand/tray-black-64.png"))?,
+    })
+}
+
+/// Is the panel the tray lives in dark? Windows: the taskbar's own setting
+/// (`SystemUsesLightTheme`); GNOME / Unity / Ubuntu: the top bar is always dark; KDE and
+/// others: the colour scheme. Dark when unknown.
+pub fn panel_is_dark() -> bool {
+    imp::panel_is_dark()
+}
+
 pub struct Spec {
     /// Stable id ("vimora-teacher", "vimora-agent").
     pub id: &'static str,
     pub title: String,
     pub tooltip: String,
-    pub icon: Rgba,
+    /// The icon for a dark panel / taskbar (white) and for a light one (black); the one that
+    /// fits is shown and swapped when the system theme changes.
+    pub icons: Icons,
     pub items: Vec<Item>,
 }
 
 type Callback = Arc<dyn Fn(Event) + Send + Sync>;
 
-pub struct Tray(imp::Handle);
+pub struct Tray {
+    handle: Arc<imp::Handle>,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Drop for Tray {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
 
 impl Tray {
     /// Shows the icon. `None` if this desktop has no tray (logged, not an error).
     pub fn spawn(spec: Spec, on_event: impl Fn(Event) + Send + Sync + 'static) -> Option<Tray> {
-        imp::spawn(spec, Arc::new(on_event)).map(Tray)
+        let icons = spec.icons.clone();
+        let handle = Arc::new(imp::spawn(spec, Arc::new(on_event))?);
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // Follows the system theme without a restart: look every 3 seconds.
+        {
+            let (h, stop) = (handle.clone(), stop.clone());
+            let _ = std::thread::Builder::new()
+                .name("tray-theme".into())
+                .spawn(move || {
+                    let mut shown = panel_is_dark();
+                    while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                        std::thread::sleep(std::time::Duration::from_secs(3));
+                        let now = panel_is_dark();
+                        if now != shown {
+                            shown = now;
+                            h.set_icon(icons.pick(now).clone());
+                        }
+                    }
+                });
+        }
+        Some(Tray { handle, stop })
     }
 
     pub fn set_tooltip(&self, text: String) {
-        self.0.set_tooltip(text);
+        self.handle.set_tooltip(text);
     }
 
     pub fn set_items(&self, items: Vec<Item>) {
-        self.0.set_items(items);
+        self.handle.set_items(items);
     }
 }
 
@@ -90,6 +157,8 @@ mod imp {
 
     struct Sni {
         spec: Spec,
+        /// The icon shown now (picked by the panel's brightness).
+        icon: Rgba,
         cb: Callback,
     }
 
@@ -101,7 +170,7 @@ mod imp {
             self.spec.title.clone()
         }
         fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-            let i = &self.spec.icon;
+            let i = &self.icon;
             // RGBA → ARGB (network byte order).
             let mut data = Vec::with_capacity(i.data.len());
             for px in i.data.as_chunks::<4>().0 {
@@ -154,11 +223,61 @@ mod imp {
         pub fn set_items(&self, items: Vec<Item>) {
             self.0.update(|t| t.spec.items = items);
         }
+        pub fn set_icon(&self, icon: Rgba) {
+            self.0.update(|t| t.icon = icon);
+        }
+    }
+
+    pub fn panel_is_dark() -> bool {
+        let out = |cmd: &str, args: &[&str]| -> Option<String> {
+            let o = std::process::Command::new(cmd).args(args).output().ok()?;
+            o.status
+                .success()
+                .then(|| String::from_utf8_lossy(&o.stdout).to_lowercase())
+        };
+        let desktop = std::env::var("XDG_CURRENT_DESKTOP")
+            .unwrap_or_default()
+            .to_lowercase();
+        // GNOME, Unity and Ubuntu's panel is dark whatever the theme says.
+        if ["gnome", "unity", "ubuntu"]
+            .iter()
+            .any(|d| desktop.contains(d))
+        {
+            return true;
+        }
+        if desktop.contains("kde") {
+            for tool in ["kreadconfig6", "kreadconfig5"] {
+                if let Some(s) = out(tool, &["--group", "General", "--key", "ColorScheme"]) {
+                    if !s.trim().is_empty() {
+                        return s.contains("dark");
+                    }
+                }
+            }
+        }
+        if let Some(s) = out(
+            "gsettings",
+            &["get", "org.gnome.desktop.interface", "color-scheme"],
+        ) {
+            if s.contains("dark") {
+                return true;
+            }
+            if s.contains("light") {
+                return false;
+            }
+        }
+        if let Some(s) = out(
+            "gsettings",
+            &["get", "org.gnome.desktop.interface", "gtk-theme"],
+        ) {
+            return s.contains("dark") || !s.trim().is_empty() && !s.contains("light");
+        }
+        true
     }
 
     pub fn spawn(spec: Spec, cb: Callback) -> Option<Handle> {
         // At login the panel may come up after us: keep waiting for it instead of giving up.
-        let sni = Sni { spec, cb };
+        let icon = spec.icons.pick(panel_is_dark()).clone();
+        let sni = Sni { spec, icon, cb };
         match sni.assume_sni_available(true).spawn() {
             Ok(h) => Some(Handle(h)),
             Err(e) => {
@@ -183,9 +302,32 @@ mod imp {
     enum Update {
         Tooltip(String),
         Items(Vec<Item>),
+        Icon(Rgba),
     }
 
     pub struct Handle(mpsc::Sender<Update>);
+
+    /// The taskbar's own brightness setting (not the apps' one).
+    pub fn panel_is_dark() -> bool {
+        use std::os::windows::process::CommandExt;
+        let out = std::process::Command::new("reg")
+            .args([
+                "query",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                "/v",
+                "SystemUsesLightTheme",
+            ])
+            .creation_flags(0x0800_0000)
+            .output();
+        match out {
+            Ok(o) if o.status.success() => {
+                let s = String::from_utf8_lossy(&o.stdout);
+                // "SystemUsesLightTheme    REG_DWORD    0x1": 1 = light taskbar.
+                !s.trim().ends_with("0x1")
+            }
+            _ => true,
+        }
+    }
 
     impl Handle {
         pub fn set_tooltip(&self, text: String) {
@@ -193,6 +335,9 @@ mod imp {
         }
         pub fn set_items(&self, items: Vec<Item>) {
             let _ = self.0.send(Update::Items(items));
+        }
+        pub fn set_icon(&self, icon: Rgba) {
+            let _ = self.0.send(Update::Icon(icon));
         }
     }
 
@@ -209,14 +354,13 @@ mod imp {
         std::thread::Builder::new()
             .name("tray".into())
             .spawn(move || {
-                let icon = match tray_icon::Icon::from_rgba(
-                    spec.icon.data.clone(),
-                    spec.icon.width,
-                    spec.icon.height,
-                ) {
-                    Ok(i) => i,
-                    Err(e) => return tracing::warn!("tray icon: {e}"),
-                };
+                let first = spec.icons.pick(panel_is_dark());
+                let icon =
+                    match tray_icon::Icon::from_rgba(first.data.clone(), first.width, first.height)
+                    {
+                        Ok(i) => i,
+                        Err(e) => return tracing::warn!("tray icon: {e}"),
+                    };
                 let mut items = spec.items.clone();
                 // No items: no menu — every click (left or right) is reported with its position.
                 let clicks_only = items.is_empty();
@@ -267,6 +411,12 @@ mod imp {
                             Ok(Update::Tooltip(t)) => {
                                 let _ = tray.set_tooltip(Some(&t));
                             }
+                            Ok(Update::Icon(i)) => {
+                                if let Ok(i) = tray_icon::Icon::from_rgba(i.data, i.width, i.height)
+                                {
+                                    let _ = tray.set_icon(Some(i));
+                                }
+                            }
                             Ok(Update::Items(new)) => {
                                 if !clicks_only {
                                     tray.set_menu(Some(Box::new(menu(&new))));
@@ -292,6 +442,10 @@ mod imp {
     impl Handle {
         pub fn set_tooltip(&self, _: String) {}
         pub fn set_items(&self, _: Vec<Item>) {}
+        pub fn set_icon(&self, _: Rgba) {}
+    }
+    pub fn panel_is_dark() -> bool {
+        true
     }
     pub fn spawn(_: Spec, _: Callback) -> Option<Handle> {
         None

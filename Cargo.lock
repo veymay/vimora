@@ -4841,6 +4841,7 @@ dependencies = [
 name = "vimora-tray"
 version = "0.3.39"
 dependencies = [
+ "image",
  "ksni",
  "tracing",
  "tray-icon",
@@ -4852,6 +4853,7 @@ name = "vimora-ui"
 version = "0.3.39"
 dependencies = [
  "egui",
+ "image",
  "serde",
 ]
 

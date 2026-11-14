@@ -1631,16 +1631,14 @@ fn teacher_tray(
     quit: Arc<std::sync::atomic::AtomicBool>,
 ) -> Option<vimora_tray::Tray> {
     use vimora_tray::{Event, Item, Spec, Tray};
-    let png = include_bytes!("../../../../assets/brand/vimora-64.png");
-    let img = image::load_from_memory(png).ok()?.to_rgba8();
-    let icon = vimora_tray::rgba(img.width(), img.height(), img.into_raw());
+    let icons = vimora_tray::brand_icons()?;
     let ctx = ctx.clone();
     Tray::spawn(
         Spec {
             id: "vimora-teacher",
             title: "Vimora".into(),
             tooltip: vimora_ui::tr("Vimora — O'qituvchi").into(),
-            icon,
+            icons,
             items: vec![
                 Item::new("open", vimora_ui::tr("O'qituvchini ochish")),
                 Item::new("quit", vimora_ui::tr("Chiqish")),
