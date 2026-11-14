@@ -332,8 +332,7 @@ impl Engine {
             std::process::exit(0);
         });
         Ok(format!(
-            "Vimora {} o'rnatildi — qayta ishga tushmoqda",
-            rel.version
+            "Vimora {version} o'rnatildi — qayta ishga tushmoqda"
         ))
     }
 

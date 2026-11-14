@@ -69,10 +69,10 @@ pub fn push_after(hub: SharedHub, ids: Vec<u64>, delay: Duration) {
                 let Some(target) = target_for(&os, &version, true) else {
                     continue;
                 };
-                if !packages.contains_key(&target) {
+                if let std::collections::hash_map::Entry::Vacant(e) = packages.entry(target) {
                     match vimora_update::download_target(&rel, target, &cache_dir(), &|_, _| {}) {
                         Ok(p) => {
-                            packages.insert(target, p);
+                            e.insert(p);
                         }
                         Err(e) => {
                             tracing::warn!("push update: {target:?}: {e:#}");
