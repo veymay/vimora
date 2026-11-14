@@ -705,14 +705,16 @@ pub fn tab_strip(ui: &mut Ui, items: &[TabItem<'_>], selected: usize) -> Option<
         .rect(row, Rounding::ZERO, p.sunken, Stroke::new(1.0_f32, p.line));
     let inner = row.shrink(PAD);
     let gaps = PAD * (n - 1.0);
-    let spare = ((inner.width() - gaps - content) / n).max(4.0);
+    let _ = content;
+    // Every cell the same width (the label is centred in it).
+    let cell = ((inner.width() - gaps) / n).max(4.0);
     let mut clicked = None;
     let mut x = inner.left();
     for (i, t) in parts.iter().enumerate() {
         let w = if i + 1 == parts.len() {
             inner.right() - x
         } else {
-            t.content_w(with_icon) + spare
+            cell
         };
         let rect = Rect::from_min_size(egui::pos2(x, inner.top()), vec2(w, inner.height()));
         let resp = ui.interact(rect, base.with(("tab-strip", i)), Sense::click());

@@ -203,8 +203,13 @@ pub fn service_control(name: &str, start: bool) -> anyhow::Result<String> {
 
 /// Service: runs the teacher's command as administrator; returns its output (shortened).
 pub fn run_script(code: &str) -> anyhow::Result<String> {
-    let (ok, out) = crate::sh::script(code)?;
-    let mut text: String = out.trim().chars().take(8000).collect();
+    let (ok, out) = crate::sh::console(code)?;
+    // As a console would print it (only the empty ends are cut); a very long output is
+    // shortened with a note.
+    let mut text: String = out.trim().chars().take(20_000).collect();
+    if out.trim().chars().count() > 20_000 {
+        text.push_str("\n… (davomi qirqildi)");
+    }
     if text.is_empty() {
         text = if ok {
             "(bajarildi, natija bo'sh)".into()

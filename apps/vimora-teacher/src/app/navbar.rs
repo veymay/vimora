@@ -31,7 +31,7 @@ const STATUS_BTN_H: f32 = 26.0;
 const BTN_GAP: f32 = 4.0;
 /// Space between icon and label, and the side padding of a labelled button.
 const ICON_GAP: f32 = 6.0;
-const SIDE_PAD: f32 = 14.0;
+const SIDE_PAD: f32 = 16.0;
 const ICON_W: f32 = 16.0;
 
 /// UPPERCASE button / tab label (tight tracking, same font in every state).

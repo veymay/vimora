@@ -39,8 +39,29 @@ pub fn open_url(url: &str) -> Result<()> {
     }
     #[cfg(windows)]
     {
-        // Several ways, one after another: the first that starts wins.
+        // The system's own "open" (what a double click does) first, then helpers: the first
+        // that starts wins.
         use std::os::windows::process::CommandExt;
+        {
+            use windows_sys::Win32::UI::Shell::ShellExecuteW;
+            let verb: Vec<u16> = "open\0".encode_utf16().collect();
+            let target: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
+            // SW_SHOWNORMAL = 1; a result above 32 means it worked.
+            let r = unsafe {
+                ShellExecuteW(
+                    std::ptr::null_mut(),
+                    verb.as_ptr(),
+                    target.as_ptr(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    1,
+                )
+            };
+            if r as usize > 32 {
+                return Ok(());
+            }
+            tracing::warn!("ShellExecute failed ({}); trying helpers", r as usize);
+        }
         const NO_WINDOW: u32 = 0x0800_0000;
         let tries: [(&str, Vec<&str>); 3] = [
             ("rundll32", vec!["url.dll,FileProtocolHandler", &url]),

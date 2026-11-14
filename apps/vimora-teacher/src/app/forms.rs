@@ -482,20 +482,37 @@ fn terminal_tab(
             })
             .collect()
     };
+    // As in a console on that computer: the prompt with the command, then what it printed.
+    let prompt = match *shell {
+        0 => "PS C:\\> ",
+        1 => "C:\\> ",
+        _ => "$ ",
+    };
     for (name, (ok, text)) in answers {
         ui.add_space(10.0);
         ui_kit::hud(ui, &name, if ok { p.muted } else { p.danger });
         ui.add_space(4.0);
         Frame::none()
-            .fill(p.sunken)
-            .stroke(Stroke::new(1.0_f32, p.line))
-            .inner_margin(Margin::same(10.0))
+            .fill(if p.dark {
+                Color32::from_rgb(0x0c, 0x0d, 0x0b)
+            } else {
+                p.sunken
+            })
+            .stroke(Stroke::new(1.0_f32, p.line_strong))
+            .inner_margin(Margin::same(12.0))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.label(
+                    RichText::new(format!("{prompt}{}", code.trim()))
+                        .family(ui_kit::mono_bold())
+                        .size(13.0)
+                        .color(p.accent),
+                );
+                ui.add_space(4.0);
+                ui.label(
                     RichText::new(text)
                         .family(ui_kit::mono())
-                        .size(12.0)
+                        .size(13.0)
                         .color(if ok { p.text } else { p.danger }),
                 );
             });
@@ -829,6 +846,17 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
     } else {
         cx.all.iter().filter(|v| f.chosen.contains(&v.id)).collect()
     };
+    // No computer here can use this filter (not installed, or not supported): everything below
+    // is shown, greyed out and untouchable.
+    let usable = views.iter().any(|v| {
+        v.online
+            && v.status.service
+            && v.status.freeze != vimora_core::FreezeState::Unsupported
+            && mine(v)
+    });
+    if !usable {
+        ui.disable();
+    }
     if views.is_empty() {
         ui.label(
             RichText::new(tr("Kompyuter yo'q."))
@@ -1287,47 +1315,47 @@ pub(super) fn updates_form(
         .map(|v| v.id)
         .collect();
 
-    // Actions for every computer of the tab.
+    // One row: what this is about on the left, the one action for every computer on the right.
     ui.horizontal(|ui| {
-        ui.add_enabled_ui(!ids.is_empty(), |ui| match *tab {
-            UpdateTab::Apps => {
-                if ui_kit::button(ui, Some(icons::REFRESH_CW), tr("Tekshirish"), Kind::Outline)
-                    .clicked()
-                {
-                    *request = Some(UpdateRequest::ListApps(ids.clone()));
-                }
-            }
-            UpdateTab::System => {
-                if ui_kit::button(ui, Some(icons::REFRESH_CW), tr("Tekshirish"), Kind::Outline)
-                    .clicked()
-                {
-                    *request = Some(UpdateRequest::Check(ids.clone()));
-                }
-            }
-            UpdateTab::Vimora => {
-                ui.add_enabled_ui(!behind.is_empty(), |ui| {
-                    if ui_kit::button(
-                        ui,
-                        Some(icons::CLOUD_DOWNLOAD),
-                        &tf!("Vimora'ni yangilash ({n})", n = behind.len()),
-                        Kind::Primary,
-                    )
-                    .clicked()
+        let line = match *tab {
+            UpdateTab::Vimora => tf!("Eng so'nggi: {v}", v = cx.latest),
+            _ => tf!("{n} ta kompyuter", n = ids.len()),
+        };
+        ui.label(RichText::new(line).size(13.5).color(p.muted));
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.add_enabled_ui(!ids.is_empty(), |ui| match *tab {
+                UpdateTab::Apps => {
+                    if ui_kit::icon_cell(ui, icons::REFRESH_CW, ui_kit::CONTROL_H, false)
+                        .tip(tr("Tekshirish"))
+                        .clicked()
                     {
-                        *request = Some(UpdateRequest::Vimora(behind.clone()));
+                        *request = Some(UpdateRequest::ListApps(ids.clone()));
                     }
-                });
-            }
-        });
-        if *tab == UpdateTab::Vimora {
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(
-                    RichText::new(tf!("Eng so'nggi: {v}", v = cx.latest))
-                        .size(12.5)
-                        .color(p.muted),
-                );
+                }
+                UpdateTab::System => {
+                    if ui_kit::icon_cell(ui, icons::REFRESH_CW, ui_kit::CONTROL_H, false)
+                        .tip(tr("Tekshirish"))
+                        .clicked()
+                    {
+                        *request = Some(UpdateRequest::Check(ids.clone()));
+                    }
+                }
+                UpdateTab::Vimora => {
+                    ui.add_enabled_ui(!behind.is_empty(), |ui| {
+                        if ui_kit::button(
+                            ui,
+                            Some(icons::CLOUD_DOWNLOAD),
+                            &tf!("Vimora'ni yangilash ({n})", n = behind.len()),
+                            Kind::Primary,
+                        )
+                        .clicked()
+                        {
+                            *request = Some(UpdateRequest::Vimora(behind.clone()));
+                        }
+                    });
+                }
             });
-        }
+        });
     });
     ui.add_space(12.0);
     if views.is_empty() {
@@ -2077,7 +2105,7 @@ fn block_list(
     import: &mut bool,
     hint: &str,
     help: &str,
-    sets: &[(&str, &[&str])],
+    catalog: &[crate::blockcat::Def],
     extra: impl FnOnce(&mut egui::Ui),
 ) {
     // Right to left: the buttons keep their size, the text box takes what is left (nothing
@@ -2103,50 +2131,64 @@ fn block_list(
             );
             let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
             if (add.clicked() || enter) && !entry.trim().is_empty() {
+                // Already in a ready-made category? Say so: switching it on is enough.
+                let note = entry.lines().find_map(|l| {
+                    let l = l.trim().trim_start_matches("www.").to_lowercase();
+                    catalog.iter().find_map(|d| {
+                        d.items
+                            .iter()
+                            .any(|i| l == *i || l.ends_with(&format!(".{i}")))
+                            .then(|| {
+                                tf!(
+                                    "{x}: «{c}» toifasida bor — toifani yoqish yetarli",
+                                    x = l.clone(),
+                                    c = tr(d.name)
+                                )
+                            })
+                    })
+                });
+                if let Some(n) = note {
+                    let at = ui.input(|i| i.time);
+                    ui.data_mut(|d| d.insert_temp(egui::Id::new("block-note"), (n, at)));
+                }
                 add_lines(list, entry);
                 entry.clear();
                 r.request_focus();
             }
         },
     );
-    ui.add_space(8.0);
-    if !sets.is_empty() {
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-            for (name, items) in sets {
-                if ui_kit::button(ui, Some(icons::PLUS), name, Kind::Ghost).clicked() {
-                    add_lines(list, &items.join("\n"));
-                }
-            }
-        });
-        ui.add_space(8.0);
+    // The note about a site that a category already has (a few seconds).
+    let note: Option<(String, f64)> = ui.data(|d| d.get_temp(egui::Id::new("block-note")));
+    if let Some((text, at)) = note {
+        if ui.input(|i| i.time) - at < 8.0 {
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(with_icon(icons::INFO, &text))
+                    .size(13.0)
+                    .color(p.warning),
+            );
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(500));
+        } else {
+            ui.data_mut(|d| d.remove::<(String, f64)>(egui::Id::new("block-note")));
+        }
     }
+    ui.add_space(8.0);
     extra(ui);
 
     let mut items = list_items(list);
     if items.is_empty() {
-        if !sets.is_empty() {
-            ui.label(
-                RichText::new(tr("Ro'yxat bo'sh."))
-                    .size(12.5)
-                    .color(p.faint),
-            );
-        }
         return;
     }
     let on_count = items.iter().filter(|(on, _)| *on).count();
     ui.horizontal(|ui| {
         ui_kit::hud(
             ui,
-            &if sets.is_empty() {
-                tf!(
-                    "Qo'lda qo'shilgan: {a} / {b}",
-                    a = on_count,
-                    b = items.len()
-                )
-            } else {
-                tf!("{a} / {b} yoqilgan", a = on_count, b = items.len())
-            },
+            &tf!(
+                "Qo'lda qo'shilgan: {a} / {b}",
+                a = on_count,
+                b = items.len()
+            ),
             p.muted,
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -2189,7 +2231,7 @@ fn block_list(
                 let g = ui_kit::truncated(
                     &child,
                     text,
-                    FontId::new(13.0, ui_kit::mono()),
+                    FontId::new(14.0, ui_kit::mono()),
                     if *on { p.text } else { p.faint },
                     w - 130.0,
                 );
@@ -2354,7 +2396,7 @@ fn categories(
                                             let g = ui_kit::truncated(
                                                 &c,
                                                 item,
-                                                FontId::new(13.0, ui_kit::mono()),
+                                                FontId::new(14.0, ui_kit::mono()),
                                                 if on { p.text } else { p.faint },
                                                 col_w - 56.0,
                                             );
@@ -2467,7 +2509,7 @@ pub(super) fn net_form(
                     } else {
                         tr("Yoqilgan saytlar ochilmaydi.")
                     },
-                    &[],
+                    crate::blockcat::SITES,
                     |ui| categories(ui, p, site_cats, crate::blockcat::SITES, open_cat, allow),
                 );
             }
@@ -2480,7 +2522,7 @@ pub(super) fn net_form(
             import,
             tr("so'z: kazino"),
             tr("Shu so'z bilan qidirilsa, sahifa yopiladi, o'quvchiga ogohlantirish chiqadi va sizga xabar keladi."),
-            &[],
+            crate::blockcat::WORDS,
             |ui| categories(ui, p, word_cats, crate::blockcat::WORDS, open_cat, false),
         ),
         NetTab::Apps => {
@@ -2498,7 +2540,7 @@ pub(super) fn net_form(
                 } else {
                     tr("Yoqilgan dasturlar ochilishi bilan yopiladi.")
                 },
-                &[],
+                crate::blockcat::APPS,
                 |ui| categories(ui, p, app_cats, crate::blockcat::APPS, open_cat, allow),
             );
         }
@@ -2864,7 +2906,7 @@ fn mode_switches(ui: &mut egui::Ui, p: &Palette, mode: &mut u8, with_none: bool)
                 ui,
                 p,
                 false,
-                tr("Internet yo'q"),
+                tr("Internetni o'chirib qo'yish"),
                 Some(tr("Internet butunlay o'chiq. Sinf tarmog'i (o'qituvchi bilan aloqa) ishlayveradi.")),
                 |ui| {
                     ui_kit::toggle(ui, &mut none);

@@ -6,6 +6,8 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Internetni o'chirib qo'yish", "Turn the internet off", "Отключить интернет"),
+    ("{x}: «{c}» toifasida bor — toifani yoqish yetarli", "{x} is in the «{c}» category — turning the category on is enough", "{x} есть в категории «{c}» — достаточно включить категорию"),
     ("Kiritishni bloklash", "Block input", "Заблокировать ввод"),
     ("Kiritishni ochish", "Unblock input", "Разблокировать ввод"),
     ("Holati", "Status", "Состояние"),

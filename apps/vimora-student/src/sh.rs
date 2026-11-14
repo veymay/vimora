@@ -88,6 +88,22 @@ pub fn script(code: &str) -> Result<(bool, String)> {
     }
 }
 
+/// The teacher's terminal: the command runs as it would in a console on this computer, and its
+/// output comes back unchanged (UTF-8 on Windows, so Cyrillic and other text is not garbled).
+pub fn console(code: &str) -> Result<(bool, String)> {
+    #[cfg(windows)]
+    {
+        let wrapped = format!(
+            "[Console]::OutputEncoding=[Text.Encoding]::UTF8;$OutputEncoding=[Text.Encoding]::UTF8;{code}"
+        );
+        script(&wrapped)
+    }
+    #[cfg(not(windows))]
+    {
+        script(code)
+    }
+}
+
 pub fn tail(text: &str, n: usize) -> String {
     let lines: Vec<&str> = text
         .lines()
