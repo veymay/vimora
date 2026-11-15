@@ -4,6 +4,7 @@
 //! accent, soft rounded corners, hairline borders, Mona Sans text with Geist Mono upper-case labels
 //! (ArtCraft-inspired) and Lucide outline icons.
 
+pub mod author;
 pub mod i18n;
 pub mod icons;
 

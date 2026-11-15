@@ -14,7 +14,16 @@ use eframe::egui::{self, pos2, vec2, Align2, FontId, Rect, Sense, Stroke};
 use std::sync::{Arc, Mutex};
 use vimora_ui::{icons, Kind, Progress};
 
-const SIZE: [f32; 2] = [520.0, 212.0];
+const SIZE: [f32; 2] = [780.0, 520.0];
+const NAV_W: f32 = 190.0;
+
+/// The pages of the window (like the teacher's settings): the menu on the left.
+#[derive(Clone, Copy, PartialEq)]
+enum Page {
+    Home,
+    About,
+    Author,
+}
 
 fn t(lang: &str, key: &str) -> &'static str {
     match (key, lang) {
@@ -48,6 +57,21 @@ fn t(lang: &str, key: &str) -> &'static str {
         ("noservice", "ru") => "Служба Vimora не отвечает",
         ("noservice", "en") => "The Vimora service does not answer",
         ("noservice", _) => "Vimora xizmati javob bermayapti",
+        ("home", "ru") => "Главное",
+        ("home", "en") => "Home",
+        ("home", _) => "Asosiy",
+        ("about", "ru") => "О программе",
+        ("about", "en") => "About",
+        ("about", _) => "Dastur haqida",
+        ("author", "ru") => "Автор",
+        ("author", "en") => "Author",
+        ("author", _) => "Muallif",
+        ("tagline", "ru") => "Открытое управление классом · MIT",
+        ("tagline", "en") => "Open-source classroom management · MIT",
+        ("tagline", _) => "Ochiq manbali sinf boshqaruvi · MIT",
+        ("source", "ru") => "Исходный код",
+        ("source", "en") => "Source code",
+        ("source", _) => "Manba kodi",
         _ => "",
     }
 }
@@ -66,6 +90,7 @@ struct Shared {
 }
 
 struct About {
+    page: Page,
     lang: &'static str,
     teacher: Option<String>,
     connected: bool,
@@ -85,7 +110,14 @@ pub fn run() -> anyhow::Result<()> {
             smallwin::style(&cc.egui_ctx);
             let shared: Arc<Mutex<Shared>> = Arc::default();
             watch(shared.clone(), cc.egui_ctx.clone());
+            // Dev aid: VIMORA_ABOUT_PAGE=about|author (for screenshots).
+            let page = match std::env::var("VIMORA_ABOUT_PAGE").as_deref() {
+                Ok("about") => Page::About,
+                Ok("author") => Page::Author,
+                _ => Page::Home,
+            };
             Ok(Box::new(About {
+                page,
                 lang,
                 teacher,
                 connected,
@@ -160,129 +192,245 @@ impl eframe::App for About {
         }
         let p = vimora_ui::palette(ctx);
         let l = self.lang;
-        let state = self.shared.lock().unwrap().clone();
+
+        // Left: the menu.
+        egui::SidePanel::left("nav")
+            .exact_width(NAV_W)
+            .resizable(false)
+            .frame(egui::Frame::none().fill(p.panel))
+            .show(ctx, |ui| {
+                let r = ui.max_rect();
+                ui.painter()
+                    .vline(r.right() - 0.5, r.y_range(), Stroke::new(1.0_f32, p.line));
+                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                for (page, icon, key) in [
+                    (Page::Home, icons::SLIDERS_HORIZONTAL, "home"),
+                    (Page::About, icons::BADGE_INFO, "about"),
+                    (Page::Author, icons::USER, "author"),
+                ] {
+                    let on = self.page == page;
+                    let (rr, resp) =
+                        ui.allocate_exact_size(vec2(NAV_W - 1.0, 46.0), Sense::click());
+                    if on || resp.hovered() {
+                        ui.painter()
+                            .rect_filled(rr, 0.0, if on { p.card } else { p.hover });
+                    }
+                    if on {
+                        ui.painter().rect_filled(
+                            Rect::from_min_size(rr.min, vec2(3.0, rr.height())),
+                            0.0,
+                            p.accent,
+                        );
+                    }
+                    ui.painter().text(
+                        pos2(rr.left() + 28.0, rr.center().y),
+                        Align2::CENTER_CENTER,
+                        icon,
+                        FontId::proportional(17.0),
+                        if on { p.accent_ink } else { p.muted },
+                    );
+                    ui.painter().text(
+                        pos2(rr.left() + 54.0, rr.center().y),
+                        Align2::LEFT_CENTER,
+                        t(l, key),
+                        FontId::new(13.5, vimora_ui::medium()),
+                        if on { p.strong } else { p.text },
+                    );
+                    ui.painter().text(
+                        pos2(rr.right() - 20.0, rr.center().y),
+                        Align2::CENTER_CENTER,
+                        icons::CHEVRON_RIGHT,
+                        FontId::proportional(15.0),
+                        if on { p.accent_ink } else { p.faint },
+                    );
+                    if resp.hovered() {
+                        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+                    if resp.clicked() {
+                        self.page = page;
+                    }
+                }
+            });
+
+        // Right: the page.
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::none()
                     .fill(p.bg)
-                    .inner_margin(egui::Margin::same(20.0)),
+                    .inner_margin(egui::Margin::symmetric(26.0, 20.0)),
             )
-            .show(ctx, |ui| {
-                let full = ui.max_rect();
-                // Left: the logo and the name, in the middle of the column.
-                let mid = full.center().y - 6.0;
-                let logo =
-                    Rect::from_center_size(pos2(full.left() + 62.0, mid - 14.0), vec2(72.0, 72.0));
-                vimora_ui::logo(ui.painter(), logo);
-                ui.painter().text(
-                    pos2(full.left() + 62.0, logo.bottom() + 24.0),
-                    Align2::CENTER_CENTER,
-                    "VIMORA",
-                    FontId::new(21.0, vimora_ui::brand()),
-                    p.strong,
-                );
-                let split = full.left() + 150.0;
-                ui.painter()
-                    .vline(split, full.y_range(), Stroke::new(1.0_f32, p.line));
-
-                // Right, three plain rows: the teacher, the update state, the button.
-                let right = Rect::from_min_max(pos2(split + 22.0, full.top()), full.max);
-                let mut ui = ui.new_child(
-                    egui::UiBuilder::new()
-                        .max_rect(right)
-                        .layout(egui::Layout::top_down(egui::Align::Min)),
-                );
-                let ui = &mut ui;
-                let (r, _) = ui.allocate_exact_size(vec2(right.width(), 40.0), Sense::hover());
-                ui.painter().text(
-                    pos2(r.left() + 10.0, r.center().y),
-                    Align2::CENTER_CENTER,
-                    icons::GRADUATION_CAP,
-                    FontId::proportional(18.0),
-                    if self.connected { p.accent } else { p.faint },
-                );
-                let name = self
-                    .teacher
-                    .clone()
-                    .unwrap_or_else(|| t(l, "none").to_string());
-                let ink = if self.teacher.is_some() {
-                    p.strong
-                } else {
-                    p.muted
-                };
-                let g = vimora_ui::truncated(
-                    ui,
-                    &name,
-                    FontId::new(14.0, vimora_ui::bold()),
-                    ink,
-                    r.width() - 130.0,
-                );
-                ui.painter().galley(
-                    pos2(r.left() + 30.0, r.center().y - g.size().y / 2.0),
-                    g,
-                    ink,
-                );
-                if self.teacher.is_some() {
-                    let (dot, word) = if self.connected {
-                        (p.success, t(l, "connected"))
-                    } else {
-                        (p.faint, t(l, "waiting"))
-                    };
-                    ui.painter()
-                        .circle_filled(pos2(r.right() - 5.0, r.center().y), 4.0, dot);
-                    ui.painter().text(
-                        pos2(r.right() - 16.0, r.center().y),
-                        Align2::RIGHT_CENTER,
-                        word,
-                        FontId::proportional(11.5),
-                        p.muted,
-                    );
+            .show(ctx, |ui| match self.page {
+                Page::Home => self.home(ui, ctx),
+                Page::About => self.about(ui),
+                Page::Author => {
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| vimora_ui::author::page(ui, self.lang));
                 }
-                ui.painter()
-                    .hline(r.x_range(), r.bottom() + 4.0, Stroke::new(1.0_f32, p.line));
-                ui.add_space(14.0);
-
-                // The update, as the whole system sees it.
-                let (row, _) = ui.allocate_exact_size(vec2(right.width(), 24.0), Sense::hover());
-                let installed;
-                let version_line = format!("{} {}", t(l, "version"), env!("CARGO_PKG_VERSION"));
-                let busy = state.busy.as_deref();
-                let progress = if let Some(v) = &state.installed {
-                    installed = format!("{}: {v}", t(l, "installed"));
-                    Progress::Done(&installed)
-                } else if let Some(b) = busy {
-                    match percent_of(b) {
-                        Some(pct) => Progress::Percent(pct),
-                        None if b.contains("o'rnatilmoqda") => {
-                            Progress::Waiting(t(l, "installing"))
-                        }
-                        None => Progress::Waiting(t(l, "checking")),
-                    }
-                } else if state.no_service {
-                    Progress::Failed(t(l, "noservice"))
-                } else {
-                    match &state.last {
-                        // "Installing" with nothing running any more: the outcome is not
-                        // known yet (the new version reports itself above when it arrives).
-                        Some((true, m)) if m.contains("o'rnatilmoqda") => {
-                            Progress::Idle(&version_line, p.muted)
-                        }
-                        Some((true, _)) => Progress::Done(t(l, "latest")),
-                        Some((false, m)) => Progress::Failed(m),
-                        None => Progress::Idle(&version_line, p.muted),
-                    }
-                };
-                let running = matches!(progress, Progress::Waiting(_) | Progress::Percent(_));
-                vimora_ui::progress(ui, row, progress);
-                ui.add_space(10.0);
-                ui.add_enabled_ui(!running, |ui| {
-                    if vimora_ui::button(ui, Some(icons::REFRESH_CW), t(l, "check"), Kind::Outline)
-                        .clicked()
-                    {
-                        self.start_check(ctx);
-                    }
-                });
             });
+    }
+}
+
+impl About {
+    /// "Asosiy": the teacher this computer is connected to and the Vimora update.
+    fn home(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let p = vimora_ui::palette(ui.ctx());
+        let l = self.lang;
+        let state = self.shared.lock().unwrap().clone();
+        let width = ui.available_width();
+        // The teacher.
+        let (r, _) = ui.allocate_exact_size(vec2(width, 52.0), Sense::hover());
+        ui.painter()
+            .rect(r, 0.0, p.sunken, Stroke::new(1.0_f32, p.line));
+        ui.painter().text(
+            pos2(r.left() + 26.0, r.center().y),
+            Align2::CENTER_CENTER,
+            icons::GRADUATION_CAP,
+            FontId::proportional(20.0),
+            if self.connected { p.accent } else { p.faint },
+        );
+        let name = self
+            .teacher
+            .clone()
+            .unwrap_or_else(|| t(l, "none").to_string());
+        let ink = if self.teacher.is_some() {
+            p.strong
+        } else {
+            p.muted
+        };
+        let g = vimora_ui::truncated(
+            ui,
+            &name,
+            FontId::new(15.0, vimora_ui::bold()),
+            ink,
+            r.width() - 170.0,
+        );
+        ui.painter().galley(
+            pos2(r.left() + 52.0, r.center().y - g.size().y / 2.0),
+            g,
+            ink,
+        );
+        if self.teacher.is_some() {
+            let (dot, word) = if self.connected {
+                (p.success, t(l, "connected"))
+            } else {
+                (p.faint, t(l, "waiting"))
+            };
+            ui.painter()
+                .circle_filled(pos2(r.right() - 16.0, r.center().y), 4.0, dot);
+            ui.painter().text(
+                pos2(r.right() - 28.0, r.center().y),
+                Align2::RIGHT_CENTER,
+                word,
+                FontId::proportional(12.5),
+                p.muted,
+            );
+        }
+        ui.add_space(14.0);
+
+        // The update, as the whole system sees it.
+        let (row, _) = ui.allocate_exact_size(vec2(width, 24.0), Sense::hover());
+        let installed;
+        let version_line = format!("{} {}", t(l, "version"), env!("CARGO_PKG_VERSION"));
+        let busy = state.busy.as_deref();
+        let progress = if let Some(v) = &state.installed {
+            installed = format!("{}: {v}", t(l, "installed"));
+            Progress::Done(&installed)
+        } else if let Some(b) = busy {
+            match percent_of(b) {
+                Some(pct) => Progress::Percent(pct),
+                None if b.contains("o'rnatilmoqda") => Progress::Waiting(t(l, "installing")),
+                None => Progress::Waiting(t(l, "checking")),
+            }
+        } else if state.no_service {
+            Progress::Failed(t(l, "noservice"))
+        } else {
+            match &state.last {
+                // "Installing" with nothing running any more: the outcome is not known yet
+                // (the new version reports itself above when it arrives).
+                Some((true, m)) if m.contains("o'rnatilmoqda") => {
+                    Progress::Idle(&version_line, p.muted)
+                }
+                Some((true, _)) => Progress::Done(t(l, "latest")),
+                Some((false, m)) => Progress::Failed(m),
+                None => Progress::Idle(&version_line, p.muted),
+            }
+        };
+        let running = matches!(progress, Progress::Waiting(_) | Progress::Percent(_));
+        vimora_ui::progress(ui, row, progress);
+        ui.add_space(12.0);
+        ui.add_enabled_ui(!running, |ui| {
+            if vimora_ui::button(ui, Some(icons::REFRESH_CW), t(l, "check"), Kind::Outline)
+                .clicked()
+            {
+                self.start_check(ctx);
+            }
+        });
+    }
+
+    /// "Dastur haqida": the mark, the name, the version and where the source is.
+    fn about(&mut self, ui: &mut egui::Ui) {
+        let p = vimora_ui::palette(ui.ctx());
+        let l = self.lang;
+        let w = ui.available_width();
+        let (r, _) = ui.allocate_exact_size(vec2(w, 96.0), Sense::hover());
+        let logo = Rect::from_min_size(r.min, vec2(96.0, 96.0));
+        vimora_ui::logo(ui.painter(), logo);
+        ui.painter().text(
+            pos2(logo.right() + 20.0, r.top() + 26.0),
+            Align2::LEFT_CENTER,
+            "VIMORA",
+            FontId::new(30.0, vimora_ui::brand()),
+            p.strong,
+        );
+        ui.painter().text(
+            pos2(logo.right() + 20.0, r.top() + 60.0),
+            Align2::LEFT_CENTER,
+            format!("{} {}", t(l, "version"), env!("CARGO_PKG_VERSION")),
+            FontId::new(13.0, vimora_ui::mono()),
+            p.accent_ink,
+        );
+        ui.painter().text(
+            pos2(logo.right() + 20.0, r.top() + 82.0),
+            Align2::LEFT_CENTER,
+            t(l, "tagline"),
+            FontId::proportional(12.5),
+            p.muted,
+        );
+        ui.add_space(20.0);
+        // The source: one row, a click opens it.
+        let (row, resp) = ui.allocate_exact_size(vec2(w, 42.0), Sense::click());
+        ui.painter()
+            .rect(row, 0.0, p.sunken, Stroke::new(1.0_f32, p.line));
+        if resp.hovered() {
+            ui.painter().rect_filled(row, 0.0, p.hover);
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        ui.painter().text(
+            pos2(row.left() + 22.0, row.center().y),
+            Align2::CENTER_CENTER,
+            icons::GITHUB,
+            FontId::proportional(16.0),
+            p.accent_ink,
+        );
+        ui.painter().text(
+            pos2(row.left() + 46.0, row.center().y),
+            Align2::LEFT_CENTER,
+            t(l, "source"),
+            FontId::new(13.5, vimora_ui::medium()),
+            p.text,
+        );
+        ui.painter().text(
+            pos2(row.right() - 16.0, row.center().y),
+            Align2::RIGHT_CENTER,
+            "github.com/veymay/vimora",
+            FontId::new(12.5, vimora_ui::mono()),
+            p.muted,
+        );
+        if resp.clicked() {
+            ui.ctx()
+                .open_url(egui::OpenUrl::new_tab("https://github.com/veymay/vimora"));
+        }
     }
 }
 

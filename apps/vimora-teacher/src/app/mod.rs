@@ -299,6 +299,7 @@ impl TeacherApp {
                     "reports" => SettingsTab::Reports,
                     "access" => SettingsTab::Access,
                     "updates" | "about" => SettingsTab::Updates,
+                    "author" => SettingsTab::Author,
                     _ => SettingsTab::General,
                 };
                 app.dev_open = Some(Dialog::Settings(tab));
@@ -648,12 +649,13 @@ impl TeacherApp {
     }
 
     fn snapshot(&self) -> Vec<View> {
-        let (assignments, aliases, sort, known, known_pcs) = {
+        let (assignments, aliases, sort, desc, known, known_pcs) = {
             let c = self.cfg.read().unwrap();
             (
                 c.assignments.clone(),
                 c.aliases.clone(),
                 c.sort,
+                c.sort_desc,
                 c.known.clone(),
                 c.known_pcs.clone(),
             )
@@ -670,6 +672,9 @@ impl TeacherApp {
         match sort {
             config::SortBy::Name => list.sort_by_key(|(_, s)| natural_key(&label(s))),
             config::SortBy::Ip => list.sort_by_key(|(_, s)| (s.addr.ip(), natural_key(&label(s)))),
+        }
+        if desc {
+            list.reverse();
         }
         let connected: std::collections::HashSet<String> =
             list.iter().map(|(_, s)| s.info.key()).collect();

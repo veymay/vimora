@@ -339,14 +339,42 @@ impl TeacherApp {
             if resp.as_ref().is_some_and(|r| r.hovered()) {
                 ui.painter().rect_filled(cell, Rounding::ZERO, p.hover);
             }
-            let ink = if active { p.accent_ink } else { p.faint };
+            // The column the list is ordered by shows an arrow.
+            let ordered_by = {
+                let c = self.cfg.read().unwrap();
+                match (col, c.sort) {
+                    (Col::Name, crate::config::SortBy::Name)
+                    | (Col::Ip, crate::config::SortBy::Ip) => Some(c.sort_desc),
+                    _ => None,
+                }
+            };
+            let ink = if active || ordered_by.is_some() {
+                p.accent_ink
+            } else {
+                p.faint
+            };
             let g = ui_kit::caps(ui, col.title(), 9.5, ui_kit::mono(), ink);
             let gw = g.size().x;
             ui.painter()
                 .galley(pos2(x0 + 8.0, head.center().y - g.size().y / 2.0), g, ink);
             let Some(resp) = resp else { continue };
+            let mut icon_x = x0 + 8.0 + gw + 6.0;
+            if let Some(desc) = ordered_by {
+                ui.painter().text(
+                    pos2(icon_x, head.center().y),
+                    Align2::LEFT_CENTER,
+                    if desc {
+                        icons::ARROW_DOWN
+                    } else {
+                        icons::ARROW_UP
+                    },
+                    FontId::proportional(12.0),
+                    p.accent_ink,
+                );
+                icon_x += 15.0;
+            }
             ui.painter().text(
-                pos2(x0 + 8.0 + gw + 6.0, head.center().y),
+                pos2(icon_x, head.center().y),
                 Align2::LEFT_CENTER,
                 icons::FILTER,
                 FontId::proportional(11.0),
@@ -368,6 +396,40 @@ impl TeacherApp {
                 egui::PopupCloseBehavior::CloseOnClickOutside,
                 |ui| {
                     ui.set_min_width(190.0);
+                    // Order: the two columns that can lead the list.
+                    if matches!(col, Col::Name | Col::Ip) {
+                        let by = if *col == Col::Name {
+                            crate::config::SortBy::Name
+                        } else {
+                            crate::config::SortBy::Ip
+                        };
+                        let (cur, desc) = {
+                            let c = self.cfg.read().unwrap();
+                            (c.sort, c.sort_desc)
+                        };
+                        for (is_desc, label) in [(false, tr("A → Z")), (true, tr("Z → A"))] {
+                            let on = cur == by && desc == is_desc;
+                            if ui
+                                .selectable_label(
+                                    on,
+                                    with_icon(
+                                        if is_desc {
+                                            icons::ARROW_DOWN
+                                        } else {
+                                            icons::ARROW_UP
+                                        },
+                                        label,
+                                    ),
+                                )
+                                .clicked()
+                            {
+                                let mut c = self.cfg.write().unwrap();
+                                c.sort = by;
+                                c.sort_desc = is_desc;
+                            }
+                        }
+                        ui.separator();
+                    }
                     match col {
                         Col::Name | Col::User | Col::Ip => {
                             let text = match col {

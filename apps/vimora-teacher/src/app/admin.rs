@@ -402,130 +402,172 @@ pub(super) fn access_page(
     out: &mut SettingsOut,
 ) {
     ui.add_space(4.0);
-    // The code that opens the program, and when it locks again.
-    {
-        let id = egui::Id::new("app-new-pin");
-        let mut pin: String = ui.data(|d| d.get_temp(id)).unwrap_or_default();
+    // Two protections, each one row: its state and one button. The button opens the field
+    // under the row (type, save).
+    let pin_set = !c.app_pin_hash.is_empty();
+    match secret_row(
+        ui,
+        p,
+        "pin",
+        icons::LOCK,
+        tr("Dastur kodi"),
+        Some(tr(
+            "Dastur ochilganda va bir necha daqiqa tegilmasa shu kod so'raladi. 4–8 raqam.",
+        )),
+        pin_set,
+        true,
+        vimora_core::pin::valid,
+    ) {
+        Secret::Save(v) => super::applock::set_pin(c, &v),
+        Secret::Remove => super::applock::set_pin(c, ""),
+        Secret::None => {}
+    }
+    if pin_set {
         super::settings::row(
             ui,
             p,
-            tr("Dastur kodi"),
-            Some(tr(
-                "Dastur ochilganda va bir necha daqiqa tegilmasa shu kod so'raladi. 4–8 raqam.",
-            )),
+            tr("Avto-qulf"),
+            Some(tr("Shuncha daqiqa tegilmasa dastur o'zi qulflanadi.")),
             |ui| {
-                if !c.app_pin_hash.is_empty()
-                    && ui_kit::icon_cell(ui, icons::TRASH_2, ui_kit::CONTROL_H, false)
-                        .tip(tr("Kodni olib tashlash"))
-                        .clicked()
-                {
-                    super::applock::set_pin(c, "");
-                }
-                ui.add_enabled_ui(vimora_core::pin::valid(&pin), |ui| {
-                    if ui_kit::icon_cell(ui, icons::CHECK, ui_kit::CONTROL_H, false)
-                        .tip(tr("Saqlash"))
-                        .clicked()
-                    {
-                        super::applock::set_pin(c, &pin);
-                        pin.clear();
-                    }
-                });
-                let r = ui.add(
-                    ui_kit::password_field(&mut pin)
-                        .hint_text(if c.app_pin_hash.is_empty() {
-                            tr("Yangi kod")
-                        } else {
-                            tr("Yangi kod (almashtirish)")
-                        })
-                        .desired_width(150.0),
+                super::settings::dropdown(
+                    ui,
+                    p,
+                    "app-lock-min",
+                    &mut c.app_lock_min,
+                    &[
+                        (0, tr("Faqat ochilganda")),
+                        (1, tr("1 daqiqa")),
+                        (2, tr("2 daqiqa")),
+                        (5, tr("5 daqiqa")),
+                        (10, tr("10 daqiqa")),
+                        (15, tr("15 daqiqa")),
+                        (30, tr("30 daqiqa")),
+                    ],
                 );
-                if r.changed() {
-                    pin.retain(|ch| ch.is_ascii_digit());
-                    pin.truncate(8);
-                }
             },
         );
-        ui.data_mut(|d| d.insert_temp(id, pin));
-        if !c.app_pin_hash.is_empty() {
-            super::settings::row(
-                ui,
-                p,
-                tr("Avto-qulf"),
-                Some(tr("Shuncha daqiqa tegilmasa dastur o'zi qulflanadi.")),
-                |ui| {
-                    super::settings::dropdown(
-                        ui,
-                        p,
-                        "app-lock-min",
-                        &mut c.app_lock_min,
-                        &[
-                            (0, tr("Faqat ochilganda")),
-                            (1, tr("1 daqiqa")),
-                            (2, tr("2 daqiqa")),
-                            (5, tr("5 daqiqa")),
-                            (10, tr("10 daqiqa")),
-                            (15, tr("15 daqiqa")),
-                            (30, tr("30 daqiqa")),
-                        ],
-                    );
-                },
-            );
-        }
     }
-    ui.add_space(10.0);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
-        ui.label(RichText::new(tr("Administrator paroli")).size(13.5).color(p.text));
-        ui_kit::info(ui, tr("Parol qo'yilsa, Muzlatish, Yangilanish, Quvvat, Sozlamalar va IT bo'limlari parol so'raydi. Pastdagi qulf belgisi orqali kirasiz yoki chiqasiz."));
-    });
-    ui.add_space(12.0);
-    let id = egui::Id::new("admin-new-pw");
-    let mut pw: String = ui.data(|d| d.get_temp(id)).unwrap_or_default();
-    ui.horizontal(|ui| {
-        let r = ui.add(
-            ui_kit::password_field(&mut pw)
-                .hint_text(if c.admin_hash.is_empty() {
-                    tr("Yangi parol")
-                } else {
-                    tr("Yangi parol (almashtirish)")
-                })
-                .desired_width(240.0),
-        );
-        if r.changed() {
-            ui.data_mut(|d| d.insert_temp(id, pw.clone()));
+    let admin_set = !c.admin_hash.is_empty();
+    match secret_row(
+        ui,
+        p,
+        "admin",
+        icons::SHIELD,
+        tr("Administrator paroli"),
+        Some(tr("Parol qo'yilsa, Muzlatish, Yangilanish, Quvvat, Sozlamalar va IT bo'limlari parol so'raydi. Pastdagi qulf belgisi orqali kirasiz yoki chiqasiz.")),
+        admin_set,
+        false,
+        |s| s.chars().count() >= 4,
+    ) {
+        Secret::Save(v) => {
+            set_password(c, &v);
+            out.password_set = true;
         }
-        ui.add_enabled_ui(pw.len() >= 4, |ui| {
-            if ui_kit::button(ui, Some(icons::CHECK), tr("Saqlash"), Kind::Primary).clicked() {
-                set_password(c, &pw);
-                ui.data_mut(|d| d.remove::<String>(id));
-                out.password_set = true;
-            }
-        });
-    });
-    if !pw.is_empty() && pw.len() < 4 {
-        ui.label(
-            RichText::new(tr("Kamida 4 ta belgi"))
-                .size(12.0)
-                .color(p.warning),
-        );
+        Secret::Remove => set_password(c, ""),
+        Secret::None => {}
     }
-    ui.add_space(10.0);
-    if !c.admin_hash.is_empty() {
+}
+
+enum Secret {
+    None,
+    Save(String),
+    Remove,
+}
+
+/// One protection as a row: icon, name, "?", its state (on / off) and one button; the button
+/// opens a field below the row with save and cancel (and remove when it is on).
+#[allow(clippy::too_many_arguments)]
+fn secret_row(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    key: &str,
+    icon: &str,
+    title: &str,
+    help: Option<&str>,
+    is_set: bool,
+    digits_only: bool,
+    valid: impl Fn(&str) -> bool,
+) -> Secret {
+    let open_id = egui::Id::new(("secret-open", key));
+    let text_id = egui::Id::new(("secret-text", key));
+    let mut open: bool = ui.data(|d| d.get_temp(open_id)).unwrap_or(false);
+    let mut text: String = ui.data(|d| d.get_temp(text_id)).unwrap_or_default();
+    let mut result = Secret::None;
+    super::settings::row(ui, p, title, help, |ui| {
+        // From the right: the button, then the state.
+        let label = if is_set {
+            tr("O'zgartirish")
+        } else {
+            tr("O'rnatish")
+        };
+        if ui_kit::button(ui, Some(icon), label, Kind::Outline).clicked() {
+            open = !open;
+            text.clear();
+        }
+        ui.add_space(10.0);
         ui.label(
-            RichText::new(with_icon(icons::CIRCLE_CHECK, tr("Parol o'rnatilgan")))
+            RichText::new(if is_set { tr("Yoqilgan") } else { tr("O'chiq") })
                 .size(13.0)
-                .color(p.success),
+                .color(if is_set { p.success } else { p.faint }),
         );
-        ui.add_space(6.0);
-        if ui_kit::button(
-            ui,
-            Some(icons::TRASH_2),
-            tr("Parolni olib tashlash"),
-            Kind::Ghost,
-        )
-        .clicked()
-        {
-            set_password(c, "");
-        }
+    });
+    if open {
+        Frame::none()
+            .fill(p.sunken)
+            .stroke(Stroke::new(1.0_f32, p.line))
+            .inner_margin(egui::Margin::same(12.0))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    let r = ui.add(
+                        ui_kit::password_field(&mut text)
+                            .hint_text(if digits_only {
+                                tr("4–8 raqam")
+                            } else {
+                                tr("Kamida 4 ta belgi")
+                            })
+                            .desired_width(ui.available_width() - 230.0),
+                    );
+                    if r.changed() && digits_only {
+                        text.retain(|ch| ch.is_ascii_digit());
+                        text.truncate(8);
+                    }
+                    if !r.has_focus() && text.is_empty() {
+                        r.request_focus();
+                    }
+                    let ok = valid(&text);
+                    let enter = (r.has_focus() || r.lost_focus())
+                        && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    ui.add_enabled_ui(ok, |ui| {
+                        if ui_kit::button(ui, Some(icons::CHECK), tr("Saqlash"), Kind::Primary)
+                            .clicked()
+                            || (enter && ok)
+                        {
+                            result = Secret::Save(std::mem::take(&mut text));
+                            open = false;
+                        }
+                    });
+                    if is_set
+                        && ui_kit::icon_cell(ui, icons::TRASH_2, ui_kit::CONTROL_H, false)
+                            .tip(tr("Olib tashlash"))
+                            .clicked()
+                    {
+                        result = Secret::Remove;
+                        open = false;
+                    }
+                    if ui_kit::icon_cell(ui, icons::X, ui_kit::CONTROL_H, false)
+                        .tip(tr("Bekor qilish"))
+                        .clicked()
+                    {
+                        open = false;
+                    }
+                });
+            });
     }
+    ui.data_mut(|d| {
+        d.insert_temp(open_id, open);
+        d.insert_temp(text_id, text);
+    });
+    result
 }

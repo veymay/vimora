@@ -6,6 +6,15 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Dastur ochilganda va bir necha daqiqa tegilmasa shu kod so'raladi. 4–8 raqam.", "The program asks for this code when it opens and after a few minutes without a touch. 4–8 digits.", "Эта программа спрашивает код при запуске и после нескольких минут без касаний. 4–8 цифр."),
+    ("O'zgartirish", "Change", "Изменить"),
+    ("Yoqilgan", "On", "Включено"),
+    ("4–8 raqam", "4–8 digits", "4–8 цифр"),
+    ("A → Z", "A → Z", "А → Я"),
+    ("Z → A", "Z → A", "Я → А"),
+    ("Muallif", "Author", "Автор"),
+    ("Ochiq manbali sinf boshqaruvi · MIT", "Open-source classroom management · MIT", "Открытое управление классом · MIT"),
+    ("Versiya {v}", "Version {v}", "Версия {v}"),
     ("Internetni o'chirib qo'yish", "Turn the internet off", "Отключить интернет"),
     ("{x}: «{c}» toifasida bor — toifani yoqish yetarli", "{x} is in the «{c}» category — turning the category on is enough", "{x} есть в категории «{c}» — достаточно включить категорию"),
     ("Kiritishni bloklash", "Block input", "Заблокировать ввод"),

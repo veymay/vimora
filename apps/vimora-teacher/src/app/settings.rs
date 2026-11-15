@@ -2,7 +2,6 @@
 //! at once and saved automatically — there is no "Save" button.
 
 use super::*;
-use crate::config::SortBy;
 use crate::update::Phase;
 use vimora_ui::{tf, tr, Lang};
 
@@ -15,16 +14,19 @@ pub(super) enum SettingsTab {
     Schedule,
     Reports,
     Access,
+    /// "Muallif": who made Vimora (from veymay.uz).
+    Author,
 }
 
 impl SettingsTab {
-    const ALL: [SettingsTab; 6] = [
+    const ALL: [SettingsTab; 7] = [
         SettingsTab::General,
         SettingsTab::LockScreen,
         SettingsTab::Schedule,
         SettingsTab::Reports,
         SettingsTab::Access,
         SettingsTab::Updates,
+        SettingsTab::Author,
     ];
 
     pub(super) fn label(self) -> &'static str {
@@ -35,6 +37,7 @@ impl SettingsTab {
             SettingsTab::Schedule => tr("Jadval"),
             SettingsTab::Reports => tr("Hisobotlar"),
             SettingsTab::Access => tr("Kirish"),
+            SettingsTab::Author => tr("Muallif"),
         }
     }
 
@@ -46,6 +49,7 @@ impl SettingsTab {
             SettingsTab::Schedule => icons::TIMER,
             SettingsTab::Reports => icons::FILE_TEXT,
             SettingsTab::Access => icons::SHIELD,
+            SettingsTab::Author => icons::USER,
         }
     }
 }
@@ -200,6 +204,9 @@ pub(super) fn settings_page(
                                     SettingsTab::Schedule => super::admin::schedule_page(ui, p, c),
                                     SettingsTab::Reports => super::admin::reports_page(ui, p, out),
                                     SettingsTab::Access => super::admin::access_page(ui, p, c, out),
+                                    SettingsTab::Author => {
+                                        ui_kit::author::page(ui, c.language.code())
+                                    }
                                     SettingsTab::Updates => {
                                         about(ui, p);
                                         updates(ui, p, c, cx, out);
@@ -494,26 +501,6 @@ fn appearance(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
         },
     );
     heading(ui, p, tr("Kompyuterlar"));
-    row(ui, p, tr("Ko'rinishi"), None, |ui| {
-        choice(
-            ui,
-            p,
-            &mut c.view,
-            &[
-                (ViewMode::Grid, tr("Katakchalar")),
-                (ViewMode::List, tr("Ro'yxat")),
-            ],
-        );
-    });
-    row(
-        ui,
-        p,
-        tr("Tartiblash"),
-        Some(tr("IP bo'yicha tartib ko'p xonalarda kompyuterlarning stol ustidagi joylashuviga mos keladi.")),
-        |ui| {
-            choice(ui, p, &mut c.sort, &[(SortBy::Name, tr("Nomi bo'yicha")), (SortBy::Ip, tr("IP bo'yicha"))]);
-        },
-    );
     let mut ms = c.thumb_interval_ms;
     let sec: Vec<String> = [1, 2, 5, 10].iter().map(|n| tf!("{n} s", n = n)).collect();
     row(
@@ -938,30 +925,34 @@ fn updates(
 }
 
 fn about(ui: &mut egui::Ui, p: &Palette) {
+    ui.add_space(6.0);
+    // The mark and the name, the version under it, the source on the right.
+    let w = ui.available_width();
+    let (r, _) = ui.allocate_exact_size(vec2(w, 84.0), Sense::hover());
+    let logo = Rect::from_min_size(r.min, vec2(84.0, 84.0));
+    ui_kit::logo(ui.painter(), logo);
+    ui.painter().text(
+        pos2(logo.right() + 18.0, r.top() + 22.0),
+        Align2::LEFT_CENTER,
+        "VIMORA",
+        FontId::new(28.0, ui_kit::brand()),
+        p.strong,
+    );
+    ui.painter().text(
+        pos2(logo.right() + 18.0, r.top() + 52.0),
+        Align2::LEFT_CENTER,
+        tf!("Versiya {v}", v = vimora_update::current()),
+        FontId::new(13.0, ui_kit::mono()),
+        p.accent_ink,
+    );
+    ui.painter().text(
+        pos2(logo.right() + 18.0, r.top() + 72.0),
+        Align2::LEFT_CENTER,
+        tr("Ochiq manbali sinf boshqaruvi · MIT"),
+        FontId::proportional(12.5),
+        p.muted,
+    );
     ui.add_space(14.0);
-    ui.horizontal(|ui| {
-        let (r, _) = ui.allocate_exact_size(vec2(64.0, 64.0), Sense::hover());
-        ui_kit::logo(ui.painter(), r);
-        ui.add_space(16.0);
-        ui.vertical(|ui| {
-            ui.add_space(6.0);
-            ui.label(
-                RichText::new("Vimora")
-                    .family(ui_kit::bold())
-                    .size(22.0)
-                    .color(p.strong),
-            );
-            ui.add_space(4.0);
-            ui.label(
-                RichText::new(tf!(
-                    "Versiya {v} · MIT litsenziyasi",
-                    v = vimora_update::current()
-                ))
-                .size(12.5)
-                .color(p.muted),
-            );
-        });
-    });
 }
 
 fn about_rows(ui: &mut egui::Ui, p: &Palette, cx: &SettingsCtx<'_>) {

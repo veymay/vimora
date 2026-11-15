@@ -29,6 +29,15 @@ pub enum Lang {
 impl Lang {
     pub const ALL: [Lang; 3] = [Lang::Uz, Lang::En, Lang::Ru];
 
+    /// "uz" / "en" / "ru".
+    pub fn code(self) -> &'static str {
+        match self {
+            Lang::Uz => "uz",
+            Lang::En => "en",
+            Lang::Ru => "ru",
+        }
+    }
+
     /// The language's own name (shown in the picker regardless of the current language).
     pub fn native_name(self) -> &'static str {
         match self {

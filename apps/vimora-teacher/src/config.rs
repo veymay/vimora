@@ -37,6 +37,8 @@ pub struct TeacherConfig {
     pub sounds: bool,
     /// Order of the computers in the grid and list.
     pub sort: SortBy,
+    /// The order is reversed (Z → A, high IP first).
+    pub sort_desc: bool,
     /// Look for a new teacher version on GitHub at start-up (and every few hours).
     pub check_updates: bool,
     pub thumb_interval_ms: u32,
@@ -171,6 +173,7 @@ impl Default for TeacherConfig {
             theme_system: true,
             sounds: true,
             sort: SortBy::Name,
+            sort_desc: false,
             check_updates: true,
             thumb_interval_ms: 2000,
             grid_columns: 6,
