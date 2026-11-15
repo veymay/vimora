@@ -213,12 +213,7 @@ impl TeacherApp {
 
 /// "Jadval": rows of time · days · action · on.
 pub(super) fn schedule_page(ui: &mut egui::Ui, p: &Palette, c: &mut crate::config::TeacherConfig) {
-    // The page's name is in the drawer's title: only the "?" is left, at the right.
     ui.add_space(4.0);
-    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        ui_kit::info(ui, tr("O'qituvchi ochiq bo'lsa, belgilangan vaqtda o'zi bajaradi: masalan, har kuni 08:00 da kompyuterlarni yoqish."));
-    });
-    ui.add_space(6.0);
     let mut remove = None;
     let w = ui.available_width();
     // One framed list; an entry is one compact row, opened to edit (like every accordion).
@@ -377,13 +372,6 @@ fn days_summary(days: &[bool; 7]) -> String {
 /// "Hisobotlar": exports.
 pub(super) fn reports_page(ui: &mut egui::Ui, p: &Palette, out: &mut SettingsOut) {
     ui.add_space(4.0);
-    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        ui_kit::info(
-            ui,
-            tr("CSV fayl Excel'da ochiladi. Hujjatlar/Vimora papkasiga saqlanadi."),
-        );
-    });
-    ui.add_space(6.0);
     for (label, help, which) in [
         (
             tr("Kompyuterlar ro'yxati"),
@@ -443,8 +431,7 @@ pub(super) fn access_page(
                     }
                 });
                 let r = ui.add(
-                    ui_kit::text_field(&mut pin)
-                        .password(true)
+                    ui_kit::password_field(&mut pin)
                         .hint_text(if c.app_pin_hash.is_empty() {
                             tr("Yangi kod")
                         } else {
@@ -488,7 +475,7 @@ pub(super) fn access_page(
     ui.add_space(10.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
-        ui_kit::hud(ui, tr("Administrator paroli"), p.muted);
+        ui.label(RichText::new(tr("Administrator paroli")).size(13.5).color(p.text));
         ui_kit::info(ui, tr("Parol qo'yilsa, Muzlatish, Yangilanish, Quvvat, Sozlamalar va IT bo'limlari parol so'raydi. Pastdagi qulf belgisi orqali kirasiz yoki chiqasiz."));
     });
     ui.add_space(12.0);
@@ -496,8 +483,7 @@ pub(super) fn access_page(
     let mut pw: String = ui.data(|d| d.get_temp(id)).unwrap_or_default();
     ui.horizontal(|ui| {
         let r = ui.add(
-            ui_kit::text_field(&mut pw)
-                .password(true)
+            ui_kit::password_field(&mut pw)
                 .hint_text(if c.admin_hash.is_empty() {
                     tr("Yangi parol")
                 } else {

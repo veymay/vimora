@@ -1019,21 +1019,8 @@ impl TeacherApp {
         // The offline unlock code goes first, so the lock screen already knows it.
         let (salt, hash, digits) = self.unlock_code();
         self.send(ids, Command::UnlockCode { salt, hash, digits }, "");
-        let (icon, look) = {
-            let c = self.cfg.read().unwrap();
-            (
-                c.lock_icon.clone(),
-                vimora_core::LockLook {
-                    clock: c.lock_clock,
-                    no_logo: c.lock_no_logo,
-                    brand: c.lock_brand.clone(),
-                    font: c.lock_font,
-                    accent: c.lock_accent,
-                },
-            )
-        };
+        let icon = self.cfg.read().unwrap().lock_icon.clone();
         self.send(ids, Command::LockStyle { icon }, "");
-        self.send(ids, Command::LockLook(look), "");
         self.send(ids, Command::Lock { title, message }, tr("Qulflash"));
     }
 
@@ -1564,6 +1551,43 @@ impl eframe::App for TeacherApp {
         self.toasts(ctx, &p);
         self.autosave();
         self.dev_screenshot(ctx);
+        // Dev aid: VIMORA_LAUNCH_URL=youtube.com sends "open this site" to every computer once,
+        // 12 s after start (the same path as the Command window's "Ochish").
+        if !self.dev_priv_sent {
+            if let Ok(url) = std::env::var("VIMORA_LAUNCH_URL") {
+                static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+                let started = *START.get_or_init(Instant::now);
+                ctx.request_repaint_after(Duration::from_secs(1));
+                if started.elapsed() < Duration::from_secs(12) {
+                    return;
+                }
+                if !all.is_empty() {
+                    self.dev_priv_sent = true;
+                    let ids: Vec<u64> = all.iter().filter(|v| v.online).map(|v| v.id).collect();
+                    eprintln!(
+                        "VIMORA_LAUNCH_URL: {} computers, {} online",
+                        all.len(),
+                        ids.len()
+                    );
+                    self.run_dialog(
+                        Dialog::Launch {
+                            web: true,
+                            terminal: false,
+                            shell: 0,
+                            code: String::new(),
+                            run: false,
+                            url,
+                            program: String::new(),
+                            args: String::new(),
+                            bookmarks: vec![],
+                            recent: vec![],
+                        },
+                        &ids,
+                        false,
+                    );
+                }
+            }
+        }
         // Dev aid: VIMORA_DEV_PRIV=check sends a signed CheckUpdates to everyone once, 4 s after start.
         // Dev aid: VIMORA_DEV_PRIV=chat sends one chat message 4 s after start.
         if std::env::var("VIMORA_DEV_PRIV").as_deref() == Ok("chat")

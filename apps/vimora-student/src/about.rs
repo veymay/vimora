@@ -169,23 +169,17 @@ impl eframe::App for About {
             )
             .show(ctx, |ui| {
                 let full = ui.max_rect();
-                // Left: logo, name, version.
+                // Left: the logo and the name, in the middle of the column.
+                let mid = full.center().y - 6.0;
                 let logo =
-                    Rect::from_min_size(pos2(full.left(), full.top() + 2.0), vec2(52.0, 52.0));
+                    Rect::from_center_size(pos2(full.left() + 62.0, mid - 14.0), vec2(72.0, 72.0));
                 vimora_ui::logo(ui.painter(), logo);
                 ui.painter().text(
-                    pos2(full.left(), logo.bottom() + 18.0),
-                    Align2::LEFT_CENTER,
+                    pos2(full.left() + 62.0, logo.bottom() + 24.0),
+                    Align2::CENTER_CENTER,
                     "VIMORA",
                     FontId::new(21.0, vimora_ui::brand()),
                     p.strong,
-                );
-                ui.painter().text(
-                    pos2(full.left(), logo.bottom() + 40.0),
-                    Align2::LEFT_CENTER,
-                    format!("{} {}", t(l, "version"), env!("CARGO_PKG_VERSION")),
-                    FontId::new(12.5, vimora_ui::mono()),
-                    p.muted,
                 );
                 let split = full.left() + 150.0;
                 ui.painter()
@@ -251,6 +245,7 @@ impl eframe::App for About {
                 // The update, as the whole system sees it.
                 let (row, _) = ui.allocate_exact_size(vec2(right.width(), 24.0), Sense::hover());
                 let installed;
+                let version_line = format!("{} {}", t(l, "version"), env!("CARGO_PKG_VERSION"));
                 let busy = state.busy.as_deref();
                 let progress = if let Some(v) = &state.installed {
                     installed = format!("{}: {v}", t(l, "installed"));
@@ -270,11 +265,11 @@ impl eframe::App for About {
                         // "Installing" with nothing running any more: the outcome is not
                         // known yet (the new version reports itself above when it arrives).
                         Some((true, m)) if m.contains("o'rnatilmoqda") => {
-                            Progress::Idle("", p.faint)
+                            Progress::Idle(&version_line, p.muted)
                         }
                         Some((true, _)) => Progress::Done(t(l, "latest")),
                         Some((false, m)) => Progress::Failed(m),
-                        None => Progress::Idle("", p.faint),
+                        None => Progress::Idle(&version_line, p.muted),
                     }
                 };
                 let running = matches!(progress, Progress::Waiting(_) | Progress::Percent(_));

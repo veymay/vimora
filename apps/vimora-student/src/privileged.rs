@@ -207,10 +207,12 @@ impl Engine {
         {
             return Ok(m);
         }
-        // The installer failed for this version before: the other way, not the same again.
+        // Windows: the program file itself first (no installer, so nothing that can hang or
+        // ask for permission); the installer only when that is not possible.
         #[cfg(windows)]
-        if PendingUpdate::load().is_some_and(|p| p.version == rel.version && p.tries >= 1) {
-            return self.update_by_swap();
+        match self.update_by_swap() {
+            Ok(m) => return Ok(m),
+            Err(e) => tracing::warn!("update by swapping the file failed ({e:#}); the installer"),
         }
         let _lock = UpdateLock::take()?;
         // Progress goes to the teacher through the status ("busy"), e.g.
@@ -298,6 +300,15 @@ impl Engine {
         }
         .save();
         let _ = std::fs::remove_file(update_dir().join("install-result.txt"));
+        // Files left by earlier swaps (the ones still in use stay).
+        if let Ok(rd) = std::fs::read_dir(&dir) {
+            for e in rd.flatten() {
+                let n = e.file_name().to_string_lossy().to_lowercase();
+                if n.starts_with("vimora-student.old-") && n.ends_with(".exe") {
+                    let _ = std::fs::remove_file(e.path());
+                }
+            }
+        }
         let ticks = now_secs();
         let old = dir.join(format!("vimora-student.old-{ticks}.exe"));
         std::fs::rename(&exe, &old).context("eski faylni chetga surib bo'lmadi")?;

@@ -52,6 +52,8 @@ enum Mode {
 struct Shared {
     /// Icon the teacher chose for the lock screen.
     icon: Option<String>,
+    /// Sent by older teachers (they could change the clock, logo and colours): kept, not used.
+    #[allow(dead_code)]
     look: vimora_core::LockLook,
     code: Option<(Vec<u8>, Vec<u8>, u8)>,
     mode: Mode,
@@ -399,7 +401,6 @@ impl eframe::App for OverlayApp {
                 let now = Instant::now();
                 let view = LockView {
                     icon: self.shared.lock().unwrap().icon.clone(),
-                    look: self.shared.lock().unwrap().look.clone(),
                     digits: self.shared.lock().unwrap().code.as_ref().map(|c| c.2),
                     filled: self.entered.len(),
                     wrong_age: self
@@ -468,7 +469,6 @@ impl eframe::App for OverlayApp {
 struct LockView {
     /// The teacher's icon (None = the lock).
     icon: Option<String>,
-    look: vimora_core::LockLook,
     /// Length of the unlock code (None = no code set, nothing to type).
     digits: Option<u8>,
     filled: usize,
@@ -488,95 +488,44 @@ struct LockView {
 #[cfg_attr(windows, allow(dead_code))]
 fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
     use egui::{pos2, vec2, Align2, Color32, FontId, Rect, Rounding, Stroke};
-    let mut p = vimora_ui::DARK;
-    if v.look.accent != [0, 0, 0] {
-        let [r, g, b] = v.look.accent;
-        p.accent = Color32::from_rgb(r, g, b);
-    }
-    let text_font = |size: f32| {
-        if v.look.font == 1 {
-            FontId::new(size, vimora_ui::mono())
-        } else {
-            FontId::proportional(size)
-        }
-    };
+    let p = vimora_ui::DARK;
+    let text_font = FontId::proportional;
     let rect = ui.max_rect();
     let painter = ui.painter();
     // Ease-out fade in over 0.25 s, ease-in fade out while leaving.
     let t_in = (v.time / 0.25).clamp(0.0, 1.0);
     let fade = (1.0 - (1.0 - t_in).powi(3)) * (1.0 - v.leave * v.leave);
 
-    // Background: a calm vertical gradient with a soft green glow behind the lock tile.
+    // Background: the same as the teacher's code screen (see `vimora_ui::lock_background`).
     let c = pos2(rect.center().x, rect.center().y - 70.0);
-    let top = Color32::from_rgb(0x1d, 0x1f, 0x1b);
-    let bottom = Color32::from_rgb(0x0e, 0x0f, 0x0d);
-    {
-        let mut mesh = egui::epaint::Mesh::default();
-        mesh.colored_vertex(rect.left_top(), top);
-        mesh.colored_vertex(rect.right_top(), top);
-        mesh.colored_vertex(rect.right_bottom(), bottom);
-        mesh.colored_vertex(rect.left_bottom(), bottom);
-        mesh.add_triangle(0, 1, 2);
-        mesh.add_triangle(0, 2, 3);
-        painter.add(egui::Shape::mesh(mesh));
-    }
-    // A steady glow (it used to "breathe", which only made it jump between repaints).
-    glow(painter, c, 575.0, p.accent, 0.13 * fade);
-    glow(painter, c, 307.0, p.accent, 0.20 * fade);
-    glow(painter, c, 150.0, p.accent, 0.20 * fade);
-    // Fine corner brackets: a quiet "locked" frame around the screen.
-    let m = 28.0;
-    let len = 46.0;
-    let line = Stroke::new(2.0_f32, p.accent.gamma_multiply(0.55 * fade));
-    for (corner, dx, dy) in [
-        (rect.left_top(), 1.0, 1.0),
-        (rect.right_top(), -1.0, 1.0),
-        (rect.left_bottom(), 1.0, -1.0),
-        (rect.right_bottom(), -1.0, -1.0),
-    ] {
-        let o = corner + vec2(dx * m, dy * m);
-        painter.line_segment([o, o + vec2(dx * len, 0.0)], line);
-        painter.line_segment([o, o + vec2(0.0, dy * len)], line);
-    }
+    vimora_ui::lock_background(painter, rect, c, p.accent, fade);
 
-    // Brand (top left) and clock (top right).
-    let logo = Rect::from_min_size(rect.left_top() + vec2(48.0, 44.0), vec2(30.0, 30.0));
-    if !v.look.no_logo {
-        vimora_ui::logo(painter, logo);
-        painter.text(
-            pos2(logo.right() + 12.0, logo.center().y),
-            Align2::LEFT_CENTER,
-            if v.look.brand.trim().is_empty() {
-                "VIMORA".to_string()
-            } else {
-                v.look.brand.trim().to_uppercase()
-            },
-            FontId::new(19.0, vimora_ui::brand()),
-            p.muted.gamma_multiply(fade),
-        );
-    }
+    // Brand (top left) and clock (top right): always there, the logo and the clock the same
+    // height.
+    let logo = Rect::from_min_size(rect.left_top() + vec2(48.0, 40.0), vec2(40.0, 40.0));
+    vimora_ui::logo(painter, logo);
+    painter.text(
+        pos2(logo.right() + 14.0, logo.center().y),
+        Align2::LEFT_CENTER,
+        "VIMORA",
+        FontId::new(22.0, vimora_ui::brand()),
+        p.muted.gamma_multiply(fade),
+    );
     let now = chrono::Local::now();
-    let k = match v.look.clock {
-        1 => 0.7,
-        2 => 1.5,
-        _ => 1.0,
-    };
-    if v.look.clock != 3 {
-        painter.text(
-            pos2(rect.right() - 48.0, logo.center().y - 6.0 * k),
-            Align2::RIGHT_CENTER,
-            now.format("%H:%M").to_string(),
-            FontId::new(30.0 * k, vimora_ui::mono_bold()),
-            p.text.gamma_multiply(fade),
-        );
-        painter.text(
-            pos2(rect.right() - 48.0, logo.center().y + 18.0 * k),
-            Align2::RIGHT_CENTER,
-            now.format("%d.%m.%Y").to_string(),
-            FontId::new(12.0 * k, vimora_ui::mono()),
-            p.faint.gamma_multiply(fade),
-        );
-    }
+    painter.text(
+        pos2(rect.right() - 48.0, logo.center().y),
+        Align2::RIGHT_CENTER,
+        now.format("%H:%M").to_string(),
+        FontId::new(36.0, vimora_ui::mono_bold()),
+        p.text.gamma_multiply(fade),
+    );
+    painter.text(
+        pos2(rect.right() - 48.0, logo.bottom() + 12.0),
+        Align2::RIGHT_CENTER,
+        now.format("%d.%m.%Y").to_string(),
+        FontId::new(13.0, vimora_ui::mono()),
+        p.faint.gamma_multiply(fade),
+    );
 
     // The lock itself: a large icon on the soft glow, no box around it.
     painter.text(
@@ -733,31 +682,6 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
             Color32::from_black_alpha(((1.0 - fade) * 255.0) as u8),
         );
     }
-}
-
-/// A soft round glow: a triangle fan fading from `color` at the centre to nothing at `radius`.
-#[cfg_attr(windows, allow(dead_code))]
-fn glow(
-    painter: &egui::Painter,
-    centre: egui::Pos2,
-    radius: f32,
-    color: egui::Color32,
-    alpha: f32,
-) {
-    let mut mesh = egui::epaint::Mesh::default();
-    mesh.colored_vertex(centre, color.gamma_multiply(alpha));
-    const N: usize = 72;
-    for i in 0..N {
-        let a = i as f32 / N as f32 * std::f32::consts::TAU;
-        mesh.colored_vertex(
-            centre + egui::vec2(a.cos(), a.sin()) * radius,
-            egui::Color32::TRANSPARENT,
-        );
-    }
-    for i in 0..N {
-        mesh.add_triangle(0, 1 + i as u32, 1 + ((i + 1) % N) as u32);
-    }
-    painter.add(egui::Shape::mesh(mesh));
 }
 
 #[cfg_attr(windows, allow(dead_code))]

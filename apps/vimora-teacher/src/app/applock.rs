@@ -165,44 +165,10 @@ impl AppLock {
                 // Eats every click so nothing below can be touched.
                 let (rect, _) = ui.allocate_exact_size(screen.size(), Sense::click_and_drag());
                 let painter = ui.painter();
-                // Background: a vertical gradient (the theme's two surfaces).
-                let (top, bottom) = (
-                    egui::Color32::from_rgb(0x1d, 0x1f, 0x1b),
-                    egui::Color32::from_rgb(0x0e, 0x0f, 0x0d),
-                );
-                let mut mesh = egui::epaint::Mesh::default();
-                for (pt, col) in [
-                    (rect.left_top(), top),
-                    (rect.right_top(), top),
-                    (rect.right_bottom(), bottom),
-                    (rect.left_bottom(), bottom),
-                ] {
-                    mesh.colored_vertex(pt, col.gamma_multiply(fade.max(0.001)));
-                }
-                mesh.add_triangle(0, 1, 2);
-                mesh.add_triangle(0, 2, 3);
-                painter.add(egui::Shape::mesh(mesh));
-
                 let cx = rect.center().x;
                 let top_y = rect.center().y - 120.0;
                 let centre = pos2(cx, top_y);
-                // A steady glow behind the logo.
-                for (radius, alpha) in [(575.0, 0.13), (307.0, 0.20), (150.0, 0.20)] {
-                    glow(painter, centre, radius, p.accent, alpha * fade);
-                }
-                // Fine corner brackets: a quiet "locked" frame around the window.
-                let line = Stroke::new(2.0_f32, p.accent.gamma_multiply(0.55 * fade));
-                let (m, len) = (28.0, 46.0);
-                for (corner, dx, dy) in [
-                    (rect.left_top(), 1.0, 1.0),
-                    (rect.right_top(), -1.0, 1.0),
-                    (rect.left_bottom(), 1.0, -1.0),
-                    (rect.right_bottom(), -1.0, -1.0),
-                ] {
-                    let o = corner + vec2(dx * m, dy * m);
-                    painter.line_segment([o, o + vec2(dx * len, 0.0)], line);
-                    painter.line_segment([o, o + vec2(0.0, dy * len)], line);
-                }
+                ui_kit::lock_background(painter, rect, centre, p.accent, fade);
                 // The logo grows into place as it fades in.
                 let size = 120.0 * (0.88 + 0.12 * fade_in);
                 if fade > 0.02 {
@@ -328,30 +294,6 @@ impl AppLock {
         }
         ctx.request_repaint();
     }
-}
-
-/// A soft round glow (colour fading to nothing at the edge).
-fn glow(
-    painter: &egui::Painter,
-    centre: egui::Pos2,
-    radius: f32,
-    color: egui::Color32,
-    alpha: f32,
-) {
-    let mut mesh = egui::epaint::Mesh::default();
-    mesh.colored_vertex(centre, color.gamma_multiply(alpha));
-    const N: usize = 72;
-    for i in 0..N {
-        let a = i as f32 / N as f32 * std::f32::consts::TAU;
-        mesh.colored_vertex(
-            centre + vec2(a.cos(), a.sin()) * radius,
-            egui::Color32::TRANSPARENT,
-        );
-    }
-    for i in 0..N {
-        mesh.add_triangle(0, 1 + i as u32, 1 + ((i + 1) % N) as u32);
-    }
-    painter.add(egui::Shape::mesh(mesh));
 }
 
 /// Dev aid: `VIMORA_PIN=1234` runs the program with that code (for screenshots).

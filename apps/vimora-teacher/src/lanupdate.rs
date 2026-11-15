@@ -27,15 +27,41 @@ const RESEND_AFTER: Duration = Duration::from_secs(3 * 3600);
 /// usable during a lesson.
 const PER_ROUND: usize = 3;
 
-/// What to send to a computer: the installer, or (a Windows computer that can take it, and
-/// the installer was sent before) the program file itself.
-fn target_for(os: &str, version: &str, again: bool) -> Option<Target> {
+/// What to send to a computer: the program file itself when a Windows computer can take it
+/// (no installer to hang), else the installer. (`again`: the first copy did not do it.)
+fn target_for(os: &str, version: &str, _again: bool) -> Option<Target> {
     let t = Target::student_for(os)?;
-    if t == Target::Windows && again && !vimora_update::is_newer(SECOND_WAY_FROM, version) {
+    if t == Target::Windows && !vimora_update::is_newer(SECOND_WAY_FROM, version) {
         Some(Target::StudentBinary)
     } else {
         Some(t)
     }
+}
+
+/// Makes sure the file for `target` is downloaded (the installer when the release has no bare
+/// program file); returns the target that is ready.
+fn ensure_package(
+    rel: &Release,
+    target: Target,
+    packages: &mut HashMap<Target, Package>,
+) -> Option<Target> {
+    let mut candidates = vec![target];
+    if target == Target::StudentBinary {
+        candidates.push(Target::Windows);
+    }
+    for t in candidates {
+        if packages.contains_key(&t) {
+            return Some(t);
+        }
+        match vimora_update::download_target(rel, t, &cache_dir(), &|_, _| {}) {
+            Ok(p) => {
+                packages.insert(t, p);
+                return Some(t);
+            }
+            Err(e) => tracing::warn!("update file {t:?}: {e:#}"),
+        }
+    }
+    None
 }
 
 /// "Yangilash" in the teacher: the computer tries by itself first (it downloads); after
@@ -69,17 +95,9 @@ pub fn push_after(hub: SharedHub, ids: Vec<u64>, delay: Duration) {
                 let Some(target) = target_for(&os, &version, true) else {
                     continue;
                 };
-                if let std::collections::hash_map::Entry::Vacant(e) = packages.entry(target) {
-                    match vimora_update::download_target(&rel, target, &cache_dir(), &|_, _| {}) {
-                        Ok(p) => {
-                            e.insert(p);
-                        }
-                        Err(e) => {
-                            tracing::warn!("push update: {target:?}: {e:#}");
-                            continue;
-                        }
-                    }
-                }
+                let Some(target) = ensure_package(&rel, target, &mut packages) else {
+                    continue;
+                };
                 let p = &packages[&target];
                 let Ok(data) = std::fs::read(&p.path) else {
                     continue;
@@ -215,18 +233,10 @@ fn round(
         let Some(target) = target_for(&os, &version, again) else {
             continue;
         };
-        let p = match packages.entry(target) {
-            std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
-            std::collections::hash_map::Entry::Vacant(e) => {
-                match vimora_update::download_target(rel, target, &cache_dir(), &|_, _| {}) {
-                    Ok(p) => e.insert(p),
-                    Err(err) => {
-                        tracing::warn!("lan update: {target:?}: {err:#}");
-                        continue;
-                    }
-                }
-            }
+        let Some(target) = ensure_package(rel, target, packages) else {
+            continue;
         };
+        let p = &packages[&target];
         let Ok(data) = std::fs::read(&p.path) else {
             packages.remove(&target);
             continue;

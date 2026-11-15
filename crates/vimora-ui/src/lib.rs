@@ -834,6 +834,14 @@ pub fn text_field(text: &mut dyn egui::TextBuffer) -> egui::TextEdit<'_> {
         .vertical_align(egui::Align::Center)
 }
 
+/// A password box: the dots come from the monospace face, where they sit in the middle of the
+/// line (in the text face they ride high).
+pub fn password_field(text: &mut dyn egui::TextBuffer) -> egui::TextEdit<'_> {
+    text_field(text)
+        .password(true)
+        .font(FontId::new(16.0, mono()))
+}
+
 /// Multi-line text input with the same padding as [`text_field`].
 pub fn text_area(text: &mut dyn egui::TextBuffer) -> egui::TextEdit<'_> {
     egui::TextEdit::multiline(text).margin(INPUT_MARGIN)
@@ -923,6 +931,64 @@ pub fn logo(painter: &egui::Painter, rect: Rect) {
         Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
         Color32::WHITE,
     );
+}
+
+/// The lock screens' background (the students' lock screen and the teacher's code screen): the
+/// gradient from top to bottom, and the soft glows around the centre.
+pub const LOCK_TOP: Color32 = Color32::from_rgb(0x1a, 0x1c, 0x18);
+pub const LOCK_BOTTOM: Color32 = Color32::from_rgb(0x0b, 0x0c, 0x0a);
+/// (radius, strength) of the glow layers, as they are for a 1× screen.
+pub const LOCK_GLOWS: [(f32, f32); 3] = [(575.0, 0.13), (307.0, 0.20), (150.0, 0.20)];
+
+/// Paints the lock background in `rect`; `centre` is where the glow sits, `fade` 0 … 1.
+pub fn lock_background(
+    painter: &egui::Painter,
+    rect: Rect,
+    centre: egui::Pos2,
+    accent: Color32,
+    fade: f32,
+) {
+    let mut mesh = egui::Mesh::default();
+    for (pt, col) in [
+        (rect.left_top(), LOCK_TOP),
+        (rect.right_top(), LOCK_TOP),
+        (rect.right_bottom(), LOCK_BOTTOM),
+        (rect.left_bottom(), LOCK_BOTTOM),
+    ] {
+        mesh.colored_vertex(pt, col.gamma_multiply(fade.max(0.001)));
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    painter.add(mesh);
+    for (radius, alpha) in LOCK_GLOWS {
+        let mut mesh = egui::Mesh::default();
+        mesh.colored_vertex(centre, accent.gamma_multiply(alpha * fade));
+        const N: u32 = 96;
+        for i in 0..N {
+            let a = i as f32 / N as f32 * std::f32::consts::TAU;
+            mesh.colored_vertex(
+                centre + vec2(a.cos(), a.sin()) * radius,
+                Color32::TRANSPARENT,
+            );
+        }
+        for i in 0..N {
+            mesh.add_triangle(0, 1 + i, 1 + (i + 1) % N);
+        }
+        painter.add(mesh);
+    }
+    // Fine corner brackets: a quiet "locked" frame around the screen.
+    let line = Stroke::new(2.0_f32, accent.gamma_multiply(0.55 * fade));
+    let (m, len) = (28.0, 46.0);
+    for (corner, dx, dy) in [
+        (rect.left_top(), 1.0, 1.0),
+        (rect.right_top(), -1.0, 1.0),
+        (rect.left_bottom(), 1.0, -1.0),
+        (rect.right_bottom(), -1.0, -1.0),
+    ] {
+        let o = corner + vec2(dx * m, dy * m);
+        painter.line_segment([o, o + vec2(dx * len, 0.0)], line);
+        painter.line_segment([o, o + vec2(0.0, dy * len)], line);
+    }
 }
 
 /// Small "?" that explains a setting; the tooltip appears at once, with an arrow.

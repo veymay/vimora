@@ -54,8 +54,6 @@ struct State {
     drawn: String,
     /// Background for this size (gradient, glow, corners).
     background: Option<(i32, i32, HDC, HBITMAP)>,
-    /// The accent the cached background was drawn with.
-    bg_accent: [u8; 3],
     /// Presentation frame as BGRA, with its size.
     frame: Option<(Vec<u8>, i32, i32)>,
     scale: f32,
@@ -201,16 +199,12 @@ unsafe fn logo(hdc: HDC, x: i32, y: i32, size: i32) {
 }
 
 /// Gradient, soft glow behind the icon and the corner brackets, drawn once per size.
-unsafe fn make_background(screen: HDC, w: i32, h: i32, s: f32, accent: [u8; 3]) -> (HDC, HBITMAP) {
-    let mut p = vimora_ui::DARK;
-    if accent != [0, 0, 0] {
-        p.accent = egui::Color32::from_rgb(accent[0], accent[1], accent[2]);
-    }
+unsafe fn make_background(screen: HDC, w: i32, h: i32, s: f32) -> (HDC, HBITMAP) {
+    let p = vimora_ui::DARK;
     let dc = CreateCompatibleDC(screen);
     let bmp = CreateCompatibleBitmap(screen, w, h);
     SelectObject(dc, bmp as HGDIOBJ);
-    let top = egui::Color32::from_rgb(0x1d, 0x1f, 0x1b);
-    let bottom = egui::Color32::from_rgb(0x0e, 0x0f, 0x0d);
+    let (top, bottom) = (vimora_ui::LOCK_TOP, vimora_ui::LOCK_BOTTOM);
     let step = 4;
     let mut y = 0;
     while y < h {
@@ -227,15 +221,26 @@ unsafe fn make_background(screen: HDC, w: i32, h: i32, s: f32, accent: [u8; 3]) 
         );
         y += step;
     }
-    // Glow: rings from wide and faint to small and brighter.
+    // Glow: the same layers as the other lock screens (`vimora_ui::LOCK_GLOWS`), drawn as many
+    // thin rings from the widest to the smallest so no step shows.
     let (cx, cy) = (w / 2, h / 2 - (70.0 * s) as i32);
     let base = mix(top, bottom, cy as f32 / h.max(1) as f32);
-    let rings = 48;
+    let widest = vimora_ui::LOCK_GLOWS[0].0 * s;
+    let rings = 300;
     for i in 0..rings {
-        let t = i as f32 / rings as f32;
-        let r = (520.0 * s * (1.0 - t)).max(1.0) as i32;
-        let strength = 0.30 * t.powf(1.6);
-        circle(dc, cx, cy, r, mix(base, p.accent, strength));
+        let d = widest * (1.0 - i as f32 / rings as f32);
+        // Each layer fades linearly from its centre to its edge; they add up.
+        let strength: f32 = vimora_ui::LOCK_GLOWS
+            .iter()
+            .map(|(r, a)| a * (1.0 - d / (r * s)).max(0.0))
+            .sum();
+        circle(
+            dc,
+            cx,
+            cy,
+            d.max(1.0) as i32,
+            mix(base, p.accent, strength.min(1.0)),
+        );
     }
     // Corner brackets.
     let m = (28.0 * s) as i32;
@@ -373,14 +378,13 @@ unsafe fn paint(hwnd: HWND, st: &mut State) {
             } else {
                 "Mona Sans"
             };
-            if st.background.map(|b| (b.0, b.1)) != Some((w, h)) || st.bg_accent != look.accent {
+            if st.background.map(|b| (b.0, b.1)) != Some((w, h)) {
                 if let Some((_, _, bdc, bb)) = st.background.take() {
                     DeleteDC(bdc);
                     DeleteObject(bb as HGDIOBJ);
                 }
-                let (bdc, bb) = make_background(screen, w, h, s, look.accent);
+                let (bdc, bb) = make_background(screen, w, h, s);
                 st.background = Some((w, h, bdc, bb));
-                st.bg_accent = look.accent;
             }
             if let Some((_, _, bdc, _)) = st.background {
                 BitBlt(dc, 0, 0, w, h, bdc, 0, 0, SRCCOPY);
@@ -401,70 +405,53 @@ unsafe fn paint(hwnd: HWND, st: &mut State) {
             let cx = w / 2;
             let cy = h / 2 - (70.0 * s) as i32;
 
-            // Brand and clock.
-            let small = font(18.0 * s, false, "Days One");
-            let brand = if look.brand.trim().is_empty() {
-                "VIMORA".to_string()
-            } else {
-                look.brand.trim().to_uppercase()
-            };
-            if !look.no_logo {
-                // The same mark as the egui screens (see `vimora_ui::logo_shapes`).
-                logo(dc, (48.0 * s) as i32, (44.0 * s) as i32, (30.0 * s) as i32);
-                text(
-                    dc,
-                    &brand,
-                    small,
-                    p.muted,
-                    RECT {
-                        left: (48.0 * s) as i32 + (42.0 * s) as i32,
-                        top: (44.0 * s) as i32,
-                        right: w / 2,
-                        bottom: (74.0 * s) as i32,
-                    },
-                    DT_LEFT | DT_VCENTER | DT_SINGLELINE,
-                );
-            }
+            // Brand and clock: always there, the logo and the clock the same height.
+            let small = font(22.0 * s, false, "Days One");
+            logo(dc, (48.0 * s) as i32, (40.0 * s) as i32, (40.0 * s) as i32);
+            text(
+                dc,
+                "VIMORA",
+                small,
+                p.muted,
+                RECT {
+                    left: (48.0 * s) as i32 + (54.0 * s) as i32,
+                    top: (40.0 * s) as i32,
+                    right: w / 2,
+                    bottom: (80.0 * s) as i32,
+                },
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+            );
             DeleteObject(small as HGDIOBJ);
-            let k = match look.clock {
-                1 => 0.7,
-                2 => 1.5,
-                _ => 1.0,
-            };
-            let clock = font(30.0 * s * k, true, "Geist Mono");
+            let clock = font(36.0 * s, true, "Geist Mono");
             let nowc = chrono::Local::now();
-            if look.clock != 3 {
-                text(
-                    dc,
-                    &nowc.format("%H:%M").to_string(),
-                    clock,
-                    p.text,
-                    RECT {
-                        left: w / 2,
-                        top: (34.0 * s) as i32,
-                        right: w - (48.0 * s) as i32,
-                        bottom: (72.0 * s) as i32 + (30.0 * s * (k - 1.0)).max(0.0) as i32,
-                    },
-                    DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
-                );
-            }
+            text(
+                dc,
+                &nowc.format("%H:%M").to_string(),
+                clock,
+                p.text,
+                RECT {
+                    left: w / 2,
+                    top: (40.0 * s) as i32,
+                    right: w - (48.0 * s) as i32,
+                    bottom: (80.0 * s) as i32,
+                },
+                DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
+            );
             DeleteObject(clock as HGDIOBJ);
-            let date = font(13.0 * s * k, false, "Geist Mono");
-            if look.clock != 3 {
-                text(
-                    dc,
-                    &nowc.format("%d.%m.%Y").to_string(),
-                    date,
-                    p.faint,
-                    RECT {
-                        left: w / 2,
-                        top: (72.0 * s) as i32 + (30.0 * s * (k - 1.0)).max(0.0) as i32,
-                        right: w - (48.0 * s) as i32,
-                        bottom: (92.0 * s) as i32 + (40.0 * s * (k - 1.0)).max(0.0) as i32,
-                    },
-                    DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
-                );
-            }
+            let date = font(13.0 * s, false, "Geist Mono");
+            text(
+                dc,
+                &nowc.format("%d.%m.%Y").to_string(),
+                date,
+                p.faint,
+                RECT {
+                    left: w / 2,
+                    top: (84.0 * s) as i32,
+                    right: w - (48.0 * s) as i32,
+                    bottom: (104.0 * s) as i32,
+                },
+                DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
+            );
             DeleteObject(date as HGDIOBJ);
 
             // The icon.
@@ -825,7 +812,6 @@ pub(super) fn run(shared: Arc<Mutex<Shared>>) -> anyhow::Result<()> {
                 alpha: 0,
                 drawn: String::new(),
                 background: None,
-                bg_accent: [0; 3],
                 frame: None,
                 scale: dpi as f32 / 96.0,
             })

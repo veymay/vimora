@@ -43,7 +43,19 @@ pub fn open_url(url: &str) -> Result<()> {
         // that starts wins.
         use std::os::windows::process::CommandExt;
         {
+            use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+                keybd_event, KEYEVENTF_KEYUP, VK_MENU,
+            };
             use windows_sys::Win32::UI::Shell::ShellExecuteW;
+            use windows_sys::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
+            // A background program may not bring a window to the front: the browser would
+            // open behind the others (or only blink in the taskbar). A tap of Alt and the
+            // foreground permission let the new page come up in front.
+            unsafe {
+                AllowSetForegroundWindow(ASFW_ANY);
+                keybd_event(VK_MENU as u8, 0, 0, 0);
+                keybd_event(VK_MENU as u8, 0, KEYEVENTF_KEYUP, 0);
+            }
             let verb: Vec<u16> = "open\0".encode_utf16().collect();
             let target: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
             // SW_SHOWNORMAL = 1; a result above 32 means it worked.

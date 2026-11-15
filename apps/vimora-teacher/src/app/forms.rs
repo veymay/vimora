@@ -186,8 +186,7 @@ pub(super) fn dialog_body(
             );
             ui.add_space(8.0);
             let r = ui.add(
-                ui_kit::text_field(password)
-                    .password(true)
+                ui_kit::password_field(password)
                     .hint_text(tr("Parol"))
                     .desired_width(f32::INFINITY),
             );
@@ -997,8 +996,7 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
         );
         ui_kit::input_frame(p).show(ui, |ui| {
             ui.add(
-                ui_kit::text_field(f.password)
-                    .password(true)
+                ui_kit::password_field(f.password)
                     .frame(false)
                     .desired_width(ui.available_width()),
             );
