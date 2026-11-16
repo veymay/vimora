@@ -75,6 +75,10 @@ enum Cmd {
     Unpair,
     /// Privileged Vimora service (runs as SYSTEM / root).
     Service,
+    /// Internal (Windows): watches the service and starts it again within a second if it is
+    /// ended; the service does the same for this watcher.
+    #[command(hide = true)]
+    Guard,
     /// Internal: fullscreen lock / presentation overlay (driven over stdin).
     #[command(hide = true)]
     Overlay,
@@ -135,13 +139,12 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
-    // The agent and its windows (lock screen, chat, …) can't be ended by the student from Task
-    // Manager; the privileged parts run as SYSTEM anyway.
+    // The agent, its windows (lock screen, chat, …) and the service can't be ended by the
+    // student from Task Manager (the service runs as SYSTEM and keeps every right).
     if !matches!(
         cli.cmd,
         Some(
-            Cmd::Service
-                | Cmd::Setup
+            Cmd::Setup
                 | Cmd::Unpair
                 | Cmd::Init
                 | Cmd::Purge
@@ -162,6 +165,7 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Banner { goal, end_unix }) => lessonui::run_banner(goal, end_unix),
         Some(Cmd::Test) => lessonui::run_test(),
         Some(Cmd::Service) => service::run(),
+        Some(Cmd::Guard) => guard::run_guard(),
         Some(Cmd::Chat) => chat::run(),
         Some(Cmd::UiProbe) => ui_probe(),
         Some(Cmd::Setup) => service::setup(cli.server, cli.name),

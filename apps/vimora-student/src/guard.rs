@@ -9,6 +9,76 @@
 //!
 //! Windows only; elsewhere both do nothing.
 
+/// The port the watcher listens on (only to show it is alive).
+fn guard_port() -> u16 {
+    crate::service::port().wrapping_add(1)
+}
+
+fn alive(port: u16) -> bool {
+    std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        std::time::Duration::from_millis(300),
+    )
+    .is_ok()
+}
+
+/// Starts `<this exe> <arg>` detached (out of the caller's job when it may).
+#[cfg(windows)]
+fn spawn_detached(arg: &str) {
+    use std::os::windows::process::CommandExt;
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    const NO_WINDOW: u32 = 0x0800_0000;
+    const BREAKAWAY: u32 = 0x0100_0000;
+    const DETACHED: u32 = 0x0000_0008;
+    for flags in [NO_WINDOW | DETACHED | BREAKAWAY, NO_WINDOW | DETACHED] {
+        if std::process::Command::new(&exe)
+            .arg(arg)
+            .creation_flags(flags)
+            .spawn()
+            .is_ok()
+        {
+            return;
+        }
+    }
+}
+
+/// `vimora-student guard`: the service's watcher (Windows). Holds a port so there is only one,
+/// and starts the service again at once when its port stops answering.
+pub fn run_guard() -> anyhow::Result<()> {
+    let Ok(_lock) = std::net::TcpListener::bind(("127.0.0.1", guard_port())) else {
+        return Ok(()); // another watcher is running
+    };
+    let mut down = 0u32;
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        if alive(crate::service::port()) {
+            down = 0;
+            continue;
+        }
+        down += 1;
+        if down >= 2 {
+            down = 0;
+            #[cfg(windows)]
+            spawn_detached("service");
+        }
+    }
+}
+
+/// Called by the service: makes sure the watcher exists (starts it when its port is silent).
+#[cfg(windows)]
+pub fn keep_guard_running() {
+    let _ = std::thread::Builder::new()
+        .name("keep-guard".into())
+        .spawn(|| loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            if !alive(guard_port()) {
+                spawn_detached("guard");
+            }
+        });
+}
+
 #[cfg(windows)]
 mod imp {
     use std::ptr::{null, null_mut};

@@ -235,6 +235,8 @@ async fn serve(pairing: Pairing) -> Result<()> {
     std::thread::spawn(crate::purge::finish_pending);
     // The agent is started again in the user's session if the student ends it somehow.
     crate::guard::keep_agent_running();
+    #[cfg(windows)]
+    crate::guard::keep_guard_running();
     std::thread::spawn(ensure_updater_tasks);
     crate::power::keep_awake();
     // A lock left over from before a crash or restart: release it; a still-locked agent
