@@ -67,8 +67,6 @@ pub(super) struct SettingsOut {
     pub(super) restart: bool,
     /// Export a report: 0 computers, 1 activity log, 2 attendance.
     pub(super) report: Option<u8>,
-    /// The administrator password was just set.
-    pub(super) password_set: bool,
     pub(super) backup_save: bool,
     pub(super) backup_load: bool,
 }
@@ -281,7 +279,7 @@ fn save_bar(ui: &mut egui::Ui, p: &Palette, dirty: bool, out: &mut SettingsOut) 
         if ui_kit::button(r, Some(icons::CHECK), tr("Saqlash"), kind).clicked() {
             out.save_now = true;
         }
-        if ui_kit::button(r, Some(icons::X), tr("Bekor qilish"), Kind::Outline).clicked() {
+        if ui_kit::button(r, Some(icons::X), tr("Bekor qilish"), Kind::Cancel).clicked() {
             out.cancel = true;
         }
     });
@@ -750,57 +748,137 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
         super::admin::Secret::Remove => c.unlock_pin.clear(),
         super::admin::Secret::None => {}
     }
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(tr("Ikonka")).size(13.5).color(p.text));
-        ui_kit::info(ui, tr("Qulflanganda o'quvchi ekranining o'rtasida chiqadigan belgi. Keyingi qulflashda ko'rinadi."));
-    });
-    ui.add_space(6.0);
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-        for (glyph, name) in LOCK_ICONS {
-            let on = current == *glyph;
-            let (r, resp) = ui.allocate_exact_size(vec2(38.0, 38.0), Sense::click());
-            let hov = resp.hovered();
-            ui.painter().rect(
-                r,
-                Rounding::ZERO,
-                if on {
-                    p.card
-                } else if hov {
-                    p.hover
-                } else {
-                    p.sunken
-                },
-                Stroke::new(
-                    1.0_f32,
-                    if on {
-                        p.accent
-                    } else if hov {
-                        p.line_strong
-                    } else {
-                        p.line
-                    },
-                ),
-            );
-            ui.painter().text(
-                r.center(),
-                Align2::CENTER_CENTER,
-                *glyph,
-                FontId::proportional(19.0),
-                if on { p.accent_ink } else { p.muted },
-            );
-            if hov {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    row(
+        ui,
+        p,
+        tr("Ikonka"),
+        Some(tr("Qulflanganda o'quvchi ekranining o'rtasida chiqadigan belgi. Keyingi qulflashda ko'rinadi.")),
+        |ui| {
+            icon_picker(ui, p, c, &current);
+        },
+    );
+}
+
+/// A field showing the chosen icon; a click opens the gallery (like a colour picker).
+fn icon_picker(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig, current: &str) {
+    const W: f32 = 220.0;
+    let popup_id = egui::Id::new("lock-icon-picker");
+    let open = ui.memory(|m| m.is_popup_open(popup_id));
+    let (r, resp) = ui.allocate_exact_size(vec2(W, ui_kit::CONTROL_H), Sense::click());
+    ui.painter().rect(
+        r,
+        Rounding::ZERO,
+        if resp.hovered() || open {
+            p.hover
+        } else {
+            p.sunken
+        },
+        Stroke::new(1.0_f32, if open { p.accent } else { p.line_strong }),
+    );
+    let name = LOCK_ICONS
+        .iter()
+        .find(|(g, _)| *g == current)
+        .map_or("", |(_, n)| *n);
+    ui.painter().text(
+        pos2(r.left() + 20.0, r.center().y),
+        Align2::CENTER_CENTER,
+        current,
+        FontId::proportional(18.0),
+        p.accent_ink,
+    );
+    ui.painter().text(
+        pos2(r.left() + 40.0, r.center().y),
+        Align2::LEFT_CENTER,
+        tr(name),
+        FontId::new(13.5, ui_kit::medium()),
+        p.strong,
+    );
+    ui.painter().text(
+        pos2(r.right() - 18.0, r.center().y),
+        Align2::CENTER_CENTER,
+        if open {
+            icons::CHEVRON_UP
+        } else {
+            icons::CHEVRON_DOWN
+        },
+        FontId::proportional(15.0),
+        if open { p.accent_ink } else { p.muted },
+    );
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    if resp.clicked() {
+        ui.memory_mut(|m| m.toggle_popup(popup_id));
+    }
+    if !open {
+        return;
+    }
+    let rect = ui_kit::arrow_popup(
+        ui.ctx(),
+        egui::Id::new("lock-icon-gallery"),
+        resp.rect,
+        resp.rect.center().x,
+        true,
+        |ui| {
+            ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
+            for row in LOCK_ICONS.chunks(5) {
+                ui.horizontal(|ui| {
+                    for (glyph, name) in row {
+                        let on = current == *glyph;
+                        let (ir, iresp) = ui.allocate_exact_size(vec2(42.0, 42.0), Sense::click());
+                        ui.painter().rect(
+                            ir,
+                            Rounding::ZERO,
+                            if on {
+                                p.card
+                            } else if iresp.hovered() {
+                                p.hover
+                            } else {
+                                p.sunken
+                            },
+                            Stroke::new(
+                                1.0_f32,
+                                if on {
+                                    p.accent
+                                } else if iresp.hovered() {
+                                    p.line_strong
+                                } else {
+                                    p.line
+                                },
+                            ),
+                        );
+                        ui.painter().text(
+                            ir.center(),
+                            Align2::CENTER_CENTER,
+                            *glyph,
+                            FontId::proportional(20.0),
+                            if on { p.accent_ink } else { p.muted },
+                        );
+                        if iresp.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        if iresp.tip(tr(name)).clicked() {
+                            c.lock_icon = if *glyph == LOCK_ICONS[0].0 {
+                                String::new()
+                            } else {
+                                glyph.to_string()
+                            };
+                            ui.memory_mut(|m| m.close_popup());
+                        }
+                    }
+                });
             }
-            if resp.tip(tr(name)).clicked() {
-                c.lock_icon = if *glyph == LOCK_ICONS[0].0 {
-                    String::new()
-                } else {
-                    glyph.to_string()
-                };
-            }
-        }
+        },
+    );
+    let out = ui.input(|i| {
+        i.pointer.any_pressed()
+            && i.pointer
+                .interact_pos()
+                .is_some_and(|pos| !rect.contains(pos) && !resp.rect.contains(pos))
     });
+    if out || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        ui.memory_mut(|m| m.close_popup());
+    }
 }
 
 fn updates(

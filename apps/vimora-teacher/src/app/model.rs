@@ -149,12 +149,6 @@ pub(super) enum Dialog {
         /// "Qayta skanerlash" pressed.
         rescan: bool,
     },
-    /// Administrator password window; `then` opens after a successful login.
-    AdminLogin {
-        password: String,
-        error: bool,
-        then: Option<Menu>,
-    },
     /// "Dars": files, attendance, polls, tests, timer.
     Lesson(Box<Lesson>),
     /// "Kompyuter holati": one computer's load, battery, disks and processes.
@@ -361,7 +355,7 @@ pub(super) fn natural_key(s: &str) -> Vec<(String, u64)> {
 pub(super) fn card_height(w: f32) -> f32 {
     // thumbnail + name line + badge line; every card gets exactly this height
     let tw = w - CARD_PAD * 2.0;
-    CARD_PAD + (tw * 9.0 / 16.0).round() + 6.0 + 18.0 + 4.0 + 18.0 + CARD_PAD
+    CARD_PAD + (tw * 9.0 / 16.0).round() + 6.0 + 18.0 + CARD_PAD
 }
 
 /// 6 per row = 100%, 3 per row = 200%.

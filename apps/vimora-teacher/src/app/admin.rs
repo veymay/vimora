@@ -1,9 +1,4 @@
-//! Administration: the schedule ("Jadval"), reports (CSV) and the administrator password
-//! that separates the teacher's everyday teacher from the set-up tools.
-//!
-//! With an administrator password set, the teacher starts in teacher mode: Muzlatish,
-//! Yangilanish, Quvvat, Sozlamalar, removing computers and the IT tabs of "Kompyuter holati"
-//! ask for the password first.
+//! Administration: the schedule ("Jadval"), reports (CSV) and the program code page.
 
 use super::*;
 use crate::config::Schedule;
@@ -25,35 +20,7 @@ pub(super) fn actions() -> [(&'static str, &'static str); 7] {
 
 pub(super) const DAYS: [&str; 7] = ["Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya"];
 
-/// Menus that need the administrator (when a password is set).
-pub(super) fn restricted(m: Menu) -> bool {
-    matches!(
-        m,
-        Menu::Freeze | Menu::Updates | Menu::Power | Menu::Settings
-    )
-}
-
-fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
-}
-
-pub(super) fn check_password(c: &crate::config::TeacherConfig, pw: &str) -> bool {
-    let salt: Vec<u8> = (0..c.admin_salt.len() / 2)
-        .filter_map(|i| u8::from_str_radix(&c.admin_salt[i * 2..i * 2 + 2], 16).ok())
-        .collect();
-    !c.admin_hash.is_empty() && hex(&vimora_core::pin::hash(&salt, pw)) == c.admin_hash
-}
-
 impl TeacherApp {
-    /// Opens the password window; `then` runs after a successful login.
-    pub(super) fn ask_admin(&mut self, then: Option<Menu>) {
-        self.open_dialog(Dialog::AdminLogin {
-            password: String::new(),
-            error: false,
-            then,
-        });
-    }
-
     /// Runs due schedules (checked once a minute).
     pub(super) fn run_schedules(&mut self, all: &[View]) {
         use chrono::{Datelike, Timelike};
@@ -205,8 +172,13 @@ pub(super) fn schedule_page(ui: &mut egui::Ui, p: &Palette, c: &mut crate::confi
     let mut remove = None;
     let w = ui.available_width();
     // One framed list; an entry is one compact row, opened to edit (like every accordion).
+    // With no entries nothing is drawn (no empty frame above the button).
     Frame::none()
-        .stroke(Stroke::new(1.0_f32, p.line))
+        .stroke(if c.schedules.is_empty() {
+            Stroke::NONE
+        } else {
+            Stroke::new(1.0_f32, p.line)
+        })
         .show(ui, |ui| {
             ui.set_width(w);
             ui.spacing_mut().item_spacing.y = 0.0;
@@ -328,7 +300,9 @@ pub(super) fn schedule_page(ui: &mut egui::Ui, p: &Palette, c: &mut crate::confi
                 });
             }
         });
-    ui.add_space(7.0);
+    if !c.schedules.is_empty() {
+        ui.add_space(7.0);
+    }
     if let Some(i) = remove {
         c.schedules.remove(i);
     }

@@ -1,8 +1,9 @@
 //! The student can't switch Vimora off.
 //!
 //! * [`protect_self`]: the agent and its windows give ordinary users no right to end, suspend
-//!   or change them — Task Manager's "End task" and `taskkill` get "Access denied". SYSTEM and
-//!   (elevated) administrators keep every right: installers and updates still work.
+//!   or change them — Task Manager's "End task" and `taskkill` get "Access denied", also for
+//!   administrators. Only SYSTEM keeps every right: updates and the teacher's "remove" go
+//!   through the service.
 //! * [`keep_agent_running`]: the service (SYSTEM) starts the agent again in the signed-in
 //!   user's session within seconds if it is gone anyway (an administrator ended it, a crash).
 //!
@@ -39,9 +40,11 @@ mod imp {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
-    /// SYSTEM and Administrators: everything. Everyone else: only look at the process (query
-    /// limited information, synchronize, read its permissions) — no terminate, no suspend.
-    const SDDL: &str = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x121000;;;WD)";
+    /// SYSTEM (the service, which updates and removes Vimora): everything. Everyone else,
+    /// administrators too: only look at the process (query limited information, synchronize,
+    /// read its permissions) — no terminate, no suspend. The owner (the signed-in user) gets
+    /// read-only rights as well, so the permissions cannot be rewritten by hand.
+    const SDDL: &str = "D:P(A;;GA;;;SY)(A;;0x121000;;;WD)(A;;0x20000;;;OW)";
 
     pub fn protect_self() {
         unsafe {

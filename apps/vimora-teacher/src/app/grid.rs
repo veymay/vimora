@@ -123,43 +123,6 @@ fn shadow_badge(ui: &egui::Ui, p: &Palette, s: &StudentStatus) -> Option<StatusB
     status_badges(ui, p, s).into_iter().nth(1)
 }
 
-/// Attention icons (alert, help, internet rules, blocked apps, presentation, updates), drawn
-/// right-to-left ending at `right`. Returns the x where the next element may end.
-fn paint_flags(painter: &egui::Painter, p: &Palette, v: &View, right: f32, y: f32) -> f32 {
-    let mut x = right;
-    let mut flag = |icon: &str, col: Color32| {
-        painter.text(
-            pos2(x, y),
-            Align2::RIGHT_CENTER,
-            icon,
-            FontId::proportional(14.0),
-            col,
-        );
-        x -= 22.0;
-    };
-    if v.alert.is_some() {
-        flag(icons::TRIANGLE_ALERT, p.danger);
-    }
-    if v.help.is_some() {
-        flag(icons::HAND, p.warning);
-    }
-    if v.status.web_blocklist + v.status.keywords > 0 || v.status.safe_search {
-        flag(icons::GLOBE_LOCK, p.accent_ink);
-    }
-    if v.status.app_blocklist > 0 {
-        flag(icons::BAN, p.danger);
-    }
-    if v.status.showing_teacher {
-        flag(icons::CAST, p.accent_ink);
-    }
-    if v.status.busy.is_some() {
-        flag(icons::DOWNLOAD, p.warning);
-    } else if v.status.os_updates.unwrap_or(0) + v.status.app_updates.unwrap_or(0) > 0 {
-        flag(icons::DOWNLOAD, p.muted);
-    }
-    x
-}
-
 /// List view: what is active on the computer, as short coloured words (no puzzling icons).
 fn flag_words(
     ui: &egui::Ui,
@@ -929,10 +892,23 @@ impl TeacherApp {
             );
         }
 
-        // Flags (top-right of thumbnail, over the image)
-        let flags_y = thumb.top() + 15.0;
-        let flags_x = thumb.right() - 8.0;
-        paint_flags(&painter, p, v, flags_x, flags_y);
+        // Badges: a coloured square each, stacked down the top-right corner; each explains
+        // itself in its own colour.
+        let mut by = thumb.top() + 4.0;
+        for (i, (icon, col, text)) in card_flags(p, v).into_iter().enumerate() {
+            let r = Rect::from_min_size(pos2(thumb.right() - 4.0 - 22.0, by), vec2(22.0, 22.0));
+            painter.rect_filled(r, Rounding::ZERO, col);
+            painter.text(
+                r.center(),
+                Align2::CENTER_CENTER,
+                icon,
+                FontId::proportional(13.0),
+                p.bg,
+            );
+            let br = ui.interact(r, egui::Id::new(("card-flag", v.id, i)), Sense::hover());
+            ui_kit::tip_colored(&br, &text, col);
+            by += 26.0;
+        }
 
         // Number tag (top-left of thumbnail): solid, readable on any screen
         let num = ui_kit::caps(
@@ -965,18 +941,6 @@ impl TeacherApp {
             if v.online { p.success } else { p.faint },
         );
 
-        // Line 2: Shadow, left aligned with room for its full text (offline: just say so).
-        if !v.online {
-            let g = ui_kit::caps(ui, tr("Oflayn"), 9.5, ui_kit::mono(), p.faint);
-            painter.galley(pos2(rect.left() + pad, info_top + 22.0), g, p.faint);
-        } else if let Some(shadow) = shadow_badge(ui, p, &v.status) {
-            let w = shadow.width.min(tw);
-            shadow.paint(
-                &painter,
-                Rect::from_min_size(pos2(rect.left() + pad, info_top + 22.0), vec2(w, 18.0)),
-            );
-        }
-
         if !v.online {
             painter.rect_filled(rect, Rounding::ZERO, p.bg.gamma_multiply(0.5));
         }
@@ -997,32 +961,131 @@ fn last_seen_text(v: &View) -> String {
     }
 }
 
-/// Tooltip text with everything the card/row doesn't show.
-fn details(v: &View) -> String {
+/// The badges of a card, top to bottom: (icon, colour, what it means).
+fn card_flags(p: &Palette, v: &View) -> Vec<(&'static str, Color32, String)> {
+    let mut out: Vec<(&'static str, Color32, String)> = vec![];
+    if let Some(a) = &v.alert {
+        out.push((icons::TRIANGLE_ALERT, p.danger, a.clone()));
+    }
+    if v.help.is_some() {
+        out.push((
+            icons::HAND,
+            p.warning,
+            tr("O'quvchi yordam so'ramoqda").to_string(),
+        ));
+    }
+    let s = &v.status;
+    match s.freeze {
+        FreezeState::Frozen => {
+            let pct = s.shield_usage.map(|u| u.percent()).unwrap_or(0);
+            let col = if pct >= 90 {
+                p.danger
+            } else if pct >= 75 {
+                p.warning
+            } else {
+                p.accent_ink
+            };
+            let text = if pct >= 75 {
+                tf!(
+                    "Muzlatilgan: o'zgarishlar kompyuter o'chganda yo'qoladi. Himoya {pct}% to'lgan",
+                    pct = pct
+                )
+            } else {
+                tr("Muzlatilgan: o'zgarishlar kompyuter o'chganda yo'qoladi").to_string()
+            };
+            out.push((icons::SNOWFLAKE, col, text));
+        }
+        FreezeState::FreezePending => out.push((
+            icons::SNOWFLAKE,
+            p.warning,
+            tr("Muzlatish yoqilmoqda: kompyuter qayta ishga tushadi").to_string(),
+        )),
+        FreezeState::ThawPending => out.push((
+            icons::SUN_SNOW,
+            p.warning,
+            tr("Muzlatish o'chirilmoqda: kompyuter qayta ishga tushadi").to_string(),
+        )),
+        FreezeState::Maintenance => out.push((
+            icons::WRENCH,
+            p.warning,
+            tr("Xizmat rejimi: o'zgarishlar saqlanadi").to_string(),
+        )),
+        _ => {}
+    }
+    if s.web_blocklist + s.keywords > 0 || s.safe_search {
+        out.push((
+            icons::GLOBE_LOCK,
+            p.accent_ink,
+            tr("Internet cheklovlari yoqilgan").to_string(),
+        ));
+    }
+    if s.app_blocklist > 0 {
+        out.push((icons::BAN, p.danger, tr("Dasturlar bloklangan").to_string()));
+    }
+    if s.showing_teacher {
+        out.push((
+            icons::CAST,
+            p.accent_ink,
+            tr("O'qituvchi ekrani namoyish qilinmoqda").to_string(),
+        ));
+    }
+    if let Some(b) = &s.busy {
+        out.push((icons::DOWNLOAD, p.warning, b.clone()));
+    } else if s.os_updates.unwrap_or(0) + s.app_updates.unwrap_or(0) > 0 {
+        out.push((
+            icons::DOWNLOAD,
+            p.muted,
+            tr("Yangilanishlar kutilmoqda").to_string(),
+        ));
+    }
+    out
+}
+
+/// Tooltip rows with everything the card doesn't show.
+fn details_rows(p: &Palette, v: &View) -> Vec<(String, String, Option<Color32>)> {
+    let row = |k: &str, v: String| (k.to_string(), v, None);
     if !v.online {
-        return format!(
-            "{}\n{}: {}\nIP: {}\n{}: {}",
-            v.label,
-            tr("Foydalanuvchi"),
-            v.user,
-            v.ip,
-            tr("Oxirgi ulanish"),
-            last_seen_text(v)
-        );
+        return vec![
+            row(tr("Foydalanuvchi"), v.user.clone()),
+            row("IP", v.ip.clone()),
+            row(tr("Oxirgi ulanish"), last_seen_text(v)),
+        ];
     }
-    let room = v.room.as_deref().unwrap_or("—");
-    let mut text = tf!("{v0}\nFoydalanuvchi: {v1}\nIP: {v2}\nTizim: {v3}\nXona: {room}\nUlangan: {v4}\nShadow: {v5}\nYangilanishlar: {v6}{v7}{v8}", v0 = v.label, v1 = v.user, v2 = v.ip, v3 = v.os, room = room, v4 = fmt_dur(v.online_secs), v5 = freeze_label(v.status.freeze), v6 = updates_label(&v.status), v7 = if v.status.service { "" } else { "\n⚠ Vimora xizmati ishlamayapti" }, v8 = v.alert.as_ref().map(|a| format!("\n⚠ {a}")).unwrap_or_default());
+    let mut rows = vec![
+        row(tr("Foydalanuvchi"), v.user.clone()),
+        row("IP", v.ip.clone()),
+        row(tr("Tizim"), v.os.clone()),
+        row(
+            tr("Xona"),
+            v.room.clone().unwrap_or_else(|| tr("UMUMIY").to_string()),
+        ),
+        row(tr("Ulangan"), fmt_dur(v.online_secs)),
+        (
+            tr("Muzlatish").to_string(),
+            freeze_label(v.status.freeze).to_string(),
+            Some(freeze_color(p, v.status.freeze)),
+        ),
+        row(tr("Yangilanishlar"), updates_label(&v.status)),
+    ];
     if !v.version.is_empty() {
-        text.push_str(&format!("\nVimora: {}", v.version));
+        rows.push(row("Vimora", v.version.clone()));
     }
-    text
+    if !v.status.service {
+        rows.push((
+            tr("Diqqat").to_string(),
+            tr("Vimora xizmati ishlamayapti").to_string(),
+            Some(p.danger),
+        ));
+    }
+    rows
 }
 
 /// Click / context menu, shared by cards and list rows.
 fn item_interactions(resp: &egui::Response, v: &View, actions: &mut Vec<Action>, tooltip: bool) {
     // Details tooltip: cards only (the list shows the same data in its columns).
     if tooltip {
-        ui_kit::tip_at_pointer(resp, &details(v));
+        let p = vimora_ui::palette(&resp.ctx);
+        ui_kit::tip_rows_at_pointer(resp, &v.label, &details_rows(&p, v));
     }
     if resp.clicked() {
         let mods = resp.ctx.input(|i| i.modifiers);
@@ -1474,7 +1537,6 @@ impl TeacherApp {
                     });
                 }
             }
-            Action::RemoveVimora(_) if !self.admin => self.ask_admin(None),
             Action::RemoveVimora(id) => {
                 let picked: Vec<&View> = self.group_of(id, all);
                 let online: Vec<&View> = picked.iter().copied().filter(|v| v.online).collect();
@@ -1500,7 +1562,6 @@ impl TeacherApp {
                     );
                 }
             }
-            Action::Forget(_) if !self.admin => self.ask_admin(None),
             Action::Forget(id) => {
                 // The whole selection when the computer is part of it, else just this one.
                 let picked: Vec<&View> = self.group_of(id, all);

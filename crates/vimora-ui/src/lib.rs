@@ -273,6 +273,9 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
         w.fg_stroke = Stroke::new(1.0_f32, fg);
         w.expansion = 0.0;
     }
+    // Placeholders (hints) are the text colour mixed half way into this colour: the input's own
+    // fill, so they sit quietly in the field instead of looking like typed text.
+    v.widgets.noninteractive.weak_bg_fill = p.sunken;
     ctx.set_visuals(v);
     ctx.style_mut(|s| {
         // Tooltips appear at once, even while the pointer is still moving.
@@ -433,6 +436,9 @@ pub fn rule(ui: &mut Ui, height: f32) {
     );
 }
 
+/// The colour of every "cancel" button.
+pub const CANCEL_RED: Color32 = Color32::from_rgb(0xc7, 0x4a, 0x4a);
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     /// Inverted: white on dark, black on light.
@@ -442,6 +448,8 @@ pub enum Kind {
     /// No frame until hovered.
     Ghost,
     Danger,
+    /// "Cancel": the same red everywhere.
+    Cancel,
 }
 
 /// Square mono-caps button, `CONTROL_H` tall.
@@ -456,6 +464,7 @@ pub fn button(ui: &mut Ui, icon: Option<&str>, label: &str, kind: Kind) -> Respo
         ),
         Kind::Ghost => (Color32::TRANSPARENT, p.text, Stroke::NONE),
         Kind::Danger => (p.danger, Color32::WHITE, Stroke::NONE),
+        Kind::Cancel => (CANCEL_RED, Color32::WHITE, Stroke::NONE),
     };
     let g = caps(ui, label, HUD, mono_bold(), ink);
     let icon_w = if icon.is_some() { 22.0 } else { 0.0 };
@@ -470,6 +479,7 @@ pub fn button(ui: &mut Ui, icon: Option<&str>, label: &str, kind: Kind) -> Respo
     let fill = match (kind, hovered) {
         (Kind::Primary, true) => p.accent_ink,
         (Kind::Danger, true) => p.danger.gamma_multiply(0.88),
+        (Kind::Cancel, true) => CANCEL_RED.gamma_multiply(0.88),
         (Kind::Outline | Kind::Ghost, true) => p.hover,
         _ => fill,
     };
@@ -480,11 +490,12 @@ pub fn button(ui: &mut Ui, icon: Option<&str>, label: &str, kind: Kind) -> Respo
     };
     // Filled buttons get a border of their own colour: stroked neighbours (inputs, outline
     // buttons) are drawn half a pixel bigger on every side, and the fill must match them.
-    let stroke = if stroke == Stroke::NONE && matches!(kind, Kind::Primary | Kind::Danger) {
-        Stroke::new(1.0_f32, fill)
-    } else {
-        stroke
-    };
+    let stroke =
+        if stroke == Stroke::NONE && matches!(kind, Kind::Primary | Kind::Danger | Kind::Cancel) {
+            Stroke::new(1.0_f32, fill)
+        } else {
+            stroke
+        };
     ui.painter().rect(rect, Rounding::ZERO, fill, stroke);
     if label.is_empty() {
         // Icon-only: centre the glyph in the square.
@@ -1330,6 +1341,68 @@ impl ResponseExt for Response {
             );
         }
         self
+    }
+}
+
+/// A tooltip in a colour (a badge explains itself in its own colour).
+pub fn tip_colored(resp: &Response, text: &str, color: Color32) {
+    if resp.hovered() && !resp.ctx.input(|i| i.pointer.any_down()) {
+        arrow_popup(
+            &resp.ctx,
+            egui::Id::new(("arrow-tip", resp.id)),
+            resp.rect,
+            resp.rect.center().x,
+            false,
+            |ui| {
+                ui.set_max_width(300.0);
+                ui.label(RichText::new(text).size(12.5).color(color));
+            },
+        );
+    }
+}
+
+/// A tooltip with a title and `label  value` rows (a value may have its own colour); the arrow
+/// follows the pointer along the widget.
+pub fn tip_rows_at_pointer(
+    resp: &Response,
+    title: &str,
+    rows: &[(String, String, Option<Color32>)],
+) {
+    if resp.hovered() && !resp.ctx.input(|i| i.pointer.any_down()) {
+        let p = palette(&resp.ctx);
+        let x = resp
+            .ctx
+            .input(|i| i.pointer.hover_pos())
+            .map(|pos| pos.x)
+            .unwrap_or(resp.rect.center().x);
+        arrow_popup(
+            &resp.ctx,
+            egui::Id::new(("arrow-tip", resp.id)),
+            resp.rect,
+            x,
+            false,
+            |ui| {
+                ui.set_max_width(340.0);
+                ui.spacing_mut().item_spacing = vec2(10.0, 3.0);
+                ui.label(
+                    RichText::new(title)
+                        .family(bold())
+                        .size(13.5)
+                        .color(p.strong),
+                );
+                ui.add_space(4.0);
+                egui::Grid::new(("tip-rows", resp.id))
+                    .spacing(vec2(12.0, 3.0))
+                    .min_row_height(16.0)
+                    .show(ui, |ui| {
+                        for (k, v, c) in rows {
+                            ui.label(RichText::new(k).size(12.0).color(p.muted));
+                            ui.label(RichText::new(v).size(12.5).color(c.unwrap_or(p.text)));
+                            ui.end_row();
+                        }
+                    });
+            },
+        );
     }
 }
 

@@ -113,8 +113,6 @@ pub(super) struct FormCtx<'a> {
     pub(super) hub: &'a SharedHub,
     pub(super) all: &'a [View],
     pub(super) targets: &'a [u64],
-    /// Administrator mode (the IT tools need it when a password is set).
-    pub(super) admin: bool,
     /// Automatic updates: per computer (key) and for everyone else.
     pub(super) policies: &'a (
         std::collections::BTreeMap<String, UpdatePolicy>,
@@ -176,34 +174,6 @@ pub(super) fn dialog_body(
             rescan,
             ..
         } => free_pcs_form(ui, p, add, started.elapsed().as_secs_f32(), rescan, cx),
-        Dialog::AdminLogin {
-            password, error, ..
-        } => {
-            ui.label(
-                RichText::new(tr("Bu bo'lim administrator uchun. Parolni kiriting."))
-                    .size(13.0)
-                    .color(p.text),
-            );
-            ui.add_space(8.0);
-            let r = ui.add(
-                ui_kit::password_field(password)
-                    .hint_text(tr("Parol"))
-                    .desired_width(f32::INFINITY),
-            );
-            if !r.has_focus() && password.is_empty() {
-                r.request_focus();
-            }
-            if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                *confirm = true;
-            }
-            if *error {
-                ui.label(
-                    RichText::new(tr("Parol noto'g'ri"))
-                        .size(12.5)
-                        .color(p.danger),
-                );
-            }
-        }
         Dialog::Machine {
             id,
             tab,
@@ -1064,6 +1034,22 @@ fn commit_section(ui: &mut egui::Ui, p: &Palette, f: &mut ShadowForm<'_>, cx: &F
         Layout::right_to_left(Align::Center),
         |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
+            // One line: the field, add, and save-now at the right end.
+            ui.add_enabled_ui(usable && !before.is_empty(), |ui| {
+                if ui_kit::button(
+                    ui,
+                    Some(icons::SHIELD_CHECK),
+                    tr("Hozir saqlash"),
+                    Kind::Primary,
+                )
+                .tip(tr(
+                    "Ro'yxatdagi fayl va papkalarning hozirgi holati darhol saqlanadi (commit)",
+                ))
+                .clicked()
+                {
+                    *f.request = Some(ShadowRequest::Commit);
+                }
+            });
             let plus = ui_kit::button(ui, Some(icons::PLUS), tr("Qo'shish"), Kind::Outline);
             let r = ui.add(
                 ui_kit::text_field(f.manual)
@@ -1149,22 +1135,6 @@ fn commit_section(ui: &mut egui::Ui, p: &Palette, f: &mut ShadowForm<'_>, cx: &F
             *f.request = Some(ShadowRequest::SaveFolders);
         }
     }
-    ui.add_space(7.0);
-    ui.add_enabled_ui(usable && !list.is_empty(), |ui| {
-        if ui_kit::button(
-            ui,
-            Some(icons::SHIELD_CHECK),
-            tr("Hozir saqlash"),
-            Kind::Primary,
-        )
-        .tip(tr(
-            "Ro'yxatdagi fayl va papkalarning hozirgi holati darhol saqlanadi (commit)",
-        ))
-        .clicked()
-        {
-            *f.request = Some(ShadowRequest::Commit);
-        }
-    });
 }
 
 pub(super) fn rename_form(

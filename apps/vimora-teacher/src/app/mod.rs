@@ -117,12 +117,8 @@ pub struct TeacherApp {
     relaying: Option<u64>,
     /// Computers whose keyboard and mouse are blocked (without the lock screen).
     input_locked: BTreeSet<u64>,
-    /// Administrator mode (always on when no administrator password is set).
-    admin: bool,
     /// The code screen that opens the program.
     applock: applock::AppLock,
-    /// What to open after the administrator logged in.
-    after_login: Option<Menu>,
     /// A report asked for in the settings (needs the computer list).
     pending_report: Option<u8>,
     /// Minute last checked by the schedule.
@@ -201,9 +197,7 @@ impl TeacherApp {
             showing: false,
             relaying: None,
             input_locked: BTreeSet::new(),
-            admin: true,
             applock: applock::AppLock::new(false),
-            after_login: None,
             pending_report: None,
             sched_minute: String::new(),
             history_at: None,
@@ -1337,10 +1331,6 @@ impl TeacherApp {
     }
 
     fn menu(&mut self, m: Menu, all: &[View]) {
-        if admin::restricted(m) && !self.admin {
-            self.ask_admin(Some(m));
-            return;
-        }
         let t = self.targets(all);
         match m {
             Menu::Settings => self.open_dialog(Dialog::Settings(SettingsTab::General)),
@@ -1506,9 +1496,6 @@ impl eframe::App for TeacherApp {
         self.screen_history();
         let all = self.snapshot();
         self.run_schedules(&all);
-        if let Some(m) = self.after_login.take() {
-            self.menu(m, &all);
-        }
         match self.pending_report.take() {
             Some(0) => self.export_computers(&all),
             Some(1) => self.export_log(),

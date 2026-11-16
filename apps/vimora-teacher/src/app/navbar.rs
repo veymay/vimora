@@ -499,11 +499,7 @@ impl TeacherApp {
                         .show(ui, p)
                         .tip(tr("Sozlamalar"));
                         if r.clicked() {
-                            if self.admin {
-                                self.open_dialog(Dialog::Settings(SettingsTab::General));
-                            } else {
-                                self.ask_admin(Some(Menu::Settings));
-                            }
+                            self.open_dialog(Dialog::Settings(SettingsTab::General));
                         }
                         // With a program code: lock the program right now.
                         if !self.cfg.read().unwrap().app_pin_hash.is_empty() {
@@ -789,7 +785,7 @@ impl TeacherApp {
             ui,
             p,
             icons::LAYOUT_GRID,
-            tr("Hammasi"),
+            tr("UMUMIY"),
             all.len(),
             self.room_tab == RoomTab::All,
             None,
@@ -870,24 +866,36 @@ impl TeacherApp {
         let (r, resp) = ui.allocate_exact_size(vec2(w, TAB_BTN_H), Sense::click());
         let hov = resp.hovered();
 
+        // Active: raised (card colour) with an accent line under it; hover: lighter with a
+        // grey line; the rest are quiet.
         if selected {
-            ui.painter()
-                .rect_filled(r, Rounding::ZERO, p.accent.gamma_multiply(0.12));
-            ui.painter().hline(
-                r.x_range(),
-                r.bottom() - 1.0,
-                Stroke::new(2.0_f32, p.accent),
+            ui.painter().rect_filled(r, Rounding::ZERO, p.card);
+            ui.painter().rect_filled(
+                Rect::from_min_size(pos2(r.left(), r.bottom() - 2.0), vec2(r.width(), 2.0)),
+                Rounding::ZERO,
+                p.accent,
             );
         } else if hov {
             ui.painter().rect_filled(r, Rounding::ZERO, p.hover);
+            ui.painter().rect_filled(
+                Rect::from_min_size(pos2(r.left(), r.bottom() - 2.0), vec2(r.width(), 2.0)),
+                Rounding::ZERO,
+                p.line_strong,
+            );
         }
-        let ink = if selected || hov { p.strong } else { p.text };
+        let ink = if selected {
+            p.strong
+        } else if hov {
+            p.text
+        } else {
+            p.muted
+        };
         ui.painter().text(
             pos2(r.left() + SIDE_PAD + ICON_W / 2.0, r.center().y),
             Align2::CENTER_CENTER,
             icon,
             FontId::proportional(16.0),
-            ink,
+            if selected { p.accent_ink } else { ink },
         );
         let g_label = label_galley(ui, label, ink);
         ui.painter().galley(

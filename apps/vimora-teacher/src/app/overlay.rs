@@ -324,7 +324,6 @@ impl TeacherApp {
             dirty: self.settings_dirty.is_some(),
         };
         let latest = scx.latest.clone();
-        let admin = self.admin;
         let policies = {
             let c = self.cfg.read().unwrap();
             (c.update_policies.clone(), c.update_policy)
@@ -368,10 +367,7 @@ impl TeacherApp {
         };
         // Drawers on the right edge for everything except the two short questions
         // (new room, power), which stay small modals.
-        let drawer = !matches!(
-            dialog,
-            Dialog::Room { .. } | Dialog::Power(_) | Dialog::AdminLogin { .. }
-        );
+        let drawer = !matches!(dialog, Dialog::Room { .. } | Dialog::Power(_));
         let (title, width) = match dialog {
             Dialog::Message { .. } => (tr("Xabarlar"), 460.0),
             Dialog::Launch { .. } => (tr("Buyruq"), 520.0),
@@ -388,7 +384,6 @@ impl TeacherApp {
             Dialog::Machine { .. } => (tr("Kompyuter holati"), 600.0),
             Dialog::Lesson(_) => (tr("Dars"), 600.0),
             Dialog::FreePcs { .. } => (tr("Yangi kompyuterlar"), 600.0),
-            Dialog::AdminLogin { .. } => (tr("Administrator"), 420.0),
         };
         // Every drawer has the same width, wide enough for its widest content (four tabs),
         // so the frame never grows past the header and ✕ always sits on the right edge.
@@ -405,7 +400,6 @@ impl TeacherApp {
                 | Dialog::Rename { .. }
                 | Dialog::Message { .. }
                 | Dialog::Machine { .. }
-                | Dialog::AdminLogin { .. }
                 | Dialog::FreePcs { .. }
         ) {
             None
@@ -432,7 +426,6 @@ impl TeacherApp {
             Dialog::Machine { .. } => icons::GAUGE,
             Dialog::Lesson(_) => icons::GRADUATION_CAP,
             Dialog::FreePcs { .. } => icons::SEARCH,
-            Dialog::AdminLogin { .. } => icons::LOCK,
         };
         // Drawers slide in from the right; modals fade in at the centre.
         // Drawers hang flush on the right edge of the window, full height; modals drop
@@ -596,7 +589,6 @@ impl TeacherApp {
                                     hub: &hub,
                                     all,
                                     targets: &targets,
-                                    admin,
                                     policies: &policies,
                                 },
                             );
@@ -635,7 +627,6 @@ impl TeacherApp {
                                 hub: &hub,
                                 all,
                                 targets: &targets,
-                                admin,
                                 policies: &policies,
                             },
                         );
@@ -699,9 +690,6 @@ impl TeacherApp {
                                         | Dialog::Activity => (icons::CHECK, tr("Saqlash")),
                                         Dialog::Freeze { .. } => (icons::CHECK, tr("Saqlash")),
                                         Dialog::Rename { .. } => (icons::CHECK, tr("Saqlash")),
-                                        Dialog::AdminLogin { .. } => {
-                                            (icons::LOCK_OPEN, tr("Kirish"))
-                                        }
                                         Dialog::Updates { .. }
                                         | Dialog::Machine { .. }
                                         | Dialog::Lesson(_)
@@ -720,7 +708,7 @@ impl TeacherApp {
                                         ui,
                                         Some(icons::X),
                                         tr("Bekor qilish"),
-                                        Kind::Outline,
+                                        Kind::Cancel,
                                     )
                                     .clicked()
                                     {
@@ -991,7 +979,7 @@ impl TeacherApp {
                                 answer = Some(true);
                             }
                             ui.add_space(6.0);
-                            if ui_kit::button(ui, Some(icons::X), &c.no, Kind::Outline).clicked() {
+                            if ui_kit::button(ui, Some(icons::X), &c.no, Kind::Cancel).clicked() {
                                 answer = Some(false);
                             }
                         });
@@ -1194,10 +1182,6 @@ impl TeacherApp {
         };
         let id = *id;
         match request.take() {
-            Some(MachineRequest::Login) => {
-                self.ask_admin(None);
-                return;
-            }
             Some(MachineRequest::RefreshSecurity) => {
                 self.send(&[id], Command::GetSecurityInfo, "");
             }
@@ -1563,21 +1547,6 @@ impl TeacherApp {
             | Dialog::Machine { .. }
             | Dialog::Lesson(_)
             | Dialog::FreePcs { .. } => return,
-            Dialog::AdminLogin { password, then, .. } => {
-                if super::admin::check_password(&self.cfg.read().unwrap(), &password) {
-                    self.admin = true;
-                    self.after_login = then;
-                } else {
-                    // Wrong: ask again.
-                    self.closing = None;
-                    self.dialog = Some(Dialog::AdminLogin {
-                        password: String::new(),
-                        error: true,
-                        then,
-                    });
-                }
-                return;
-            }
             Dialog::Rename {
                 id,
                 key,
@@ -1654,13 +1623,6 @@ impl TeacherApp {
     fn settings_actions(&mut self, ctx: &egui::Context, out: SettingsOut) {
         if out.report.is_some() {
             self.pending_report = out.report;
-        }
-        if out.password_set {
-            self.admin = true;
-            self.hub
-                .lock()
-                .unwrap()
-                .toast(true, tr("Administrator paroli saqlandi"));
         }
         if out.revert || out.cancel {
             *self.cfg.write().unwrap() = config::load();
