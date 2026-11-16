@@ -233,6 +233,7 @@ pub fn run_banner(goal: String, end_unix: u64) -> anyhow::Result<()> {
                 end_unix,
                 placed: false,
                 w: W,
+                done_at: None,
             }))
         }),
     )
@@ -244,6 +245,7 @@ struct Banner {
     end_unix: u64,
     placed: bool,
     w: f32,
+    done_at: Option<std::time::Instant>,
 }
 
 fn now_unix() -> u64 {
@@ -271,6 +273,13 @@ impl eframe::App for Banner {
         ctx.request_repaint_after(Duration::from_millis(500));
         let p = vimora_ui::DARK;
         let left = (self.end_unix > 0).then(|| self.end_unix.saturating_sub(now_unix()));
+        // The time is up: the banner shows 00:00 for a few seconds and goes away by itself.
+        if left == Some(0) {
+            let since = *self.done_at.get_or_insert_with(std::time::Instant::now);
+            if since.elapsed() > Duration::from_secs(5) {
+                std::process::exit(0);
+            }
+        }
         egui::CentralPanel::default()
             .frame(egui::Frame::none())
             .show(ctx, |ui| {

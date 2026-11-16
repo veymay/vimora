@@ -431,23 +431,26 @@ pub(super) fn secret_row(
     let mut open: bool = ui.data(|d| d.get_temp(open_id)).unwrap_or(false);
     let mut text: String = ui.data(|d| d.get_temp(text_id)).unwrap_or_default();
     let mut result = Secret::None;
+    // A switch: on shows the field under the row; off removes the protection.
     super::settings::row(ui, p, title, help, |ui| {
-        // From the right: the button, then the state.
-        let label = if is_set {
-            tr("O'zgartirish")
-        } else {
-            tr("O'rnatish")
-        };
-        if ui_kit::button(ui, Some(icon), label, Kind::Outline).clicked() {
-            open = !open;
+        let mut on = is_set || open;
+        if ui_kit::toggle(ui, &mut on).changed() {
             text.clear();
+            if on {
+                open = true;
+            } else {
+                open = false;
+                if is_set {
+                    result = Secret::Remove;
+                }
+            }
         }
-        ui.add_space(6.0);
-        ui.label(
-            RichText::new(if is_set { tr("Yoqilgan") } else { tr("O'chiq") })
-                .size(13.0)
-                .color(if is_set { p.success } else { p.faint }),
-        );
+        if is_set
+            && !open
+            && ui_kit::button(ui, Some(icon), tr("O'zgartirish"), Kind::Ghost).clicked()
+        {
+            open = true;
+        }
     });
     if open {
         // One line under the row, from the right edge: cancel, remove, save, and the field
@@ -463,14 +466,6 @@ pub(super) fn secret_row(
                     .tip(tr("Bekor qilish"))
                     .clicked()
                 {
-                    open = false;
-                }
-                if is_set
-                    && ui_kit::icon_cell(ui, icons::TRASH_2, ui_kit::CONTROL_H, false)
-                        .tip(tr("Olib tashlash"))
-                        .clicked()
-                {
-                    result = Secret::Remove;
                     open = false;
                 }
                 let ok = valid(&text);

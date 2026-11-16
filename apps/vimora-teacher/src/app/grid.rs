@@ -895,7 +895,7 @@ impl TeacherApp {
         // Badges: a coloured square each, stacked down the top-right corner; each explains
         // itself in its own colour.
         let mut by = thumb.top() + 4.0;
-        for (i, (icon, col, text)) in card_flags(p, v).into_iter().enumerate() {
+        for (icon, col, _) in card_flags(p, v) {
             let r = Rect::from_min_size(pos2(thumb.right() - 4.0 - 22.0, by), vec2(22.0, 22.0));
             painter.rect_filled(r, Rounding::ZERO, col);
             painter.text(
@@ -905,8 +905,6 @@ impl TeacherApp {
                 FontId::proportional(13.0),
                 p.bg,
             );
-            let br = ui.interact(r, egui::Id::new(("card-flag", v.id, i)), Sense::hover());
-            ui_kit::tip_colored(&br, &text, col);
             by += 26.0;
         }
 
@@ -1041,41 +1039,53 @@ fn card_flags(p: &Palette, v: &View) -> Vec<(&'static str, Color32, String)> {
     out
 }
 
-/// Tooltip rows with everything the card doesn't show.
-fn details_rows(p: &Palette, v: &View) -> Vec<(String, String, Option<Color32>)> {
-    let row = |k: &str, v: String| (k.to_string(), v, None);
-    if !v.online {
-        return vec![
-            row(tr("Foydalanuvchi"), v.user.clone()),
-            row("IP", v.ip.clone()),
-            row(tr("Oxirgi ulanish"), last_seen_text(v)),
-        ];
-    }
+/// Tooltip rows: everything the card doesn't show, then what each badge on it means (same
+/// icon, same colour).
+fn details_rows(p: &Palette, v: &View) -> Vec<ui_kit::TipRow> {
+    let row = |icon: &'static str, k: &str, val: String| ui_kit::TipRow {
+        icon,
+        label: k.to_string(),
+        value: val,
+        color: None,
+    };
     let mut rows = vec![
-        row(tr("Foydalanuvchi"), v.user.clone()),
-        row("IP", v.ip.clone()),
-        row(tr("Tizim"), v.os.clone()),
-        row(
-            tr("Xona"),
-            v.room.clone().unwrap_or_else(|| tr("UMUMIY").to_string()),
-        ),
-        row(tr("Ulangan"), fmt_dur(v.online_secs)),
-        (
-            tr("Muzlatish").to_string(),
-            freeze_label(v.status.freeze).to_string(),
-            Some(freeze_color(p, v.status.freeze)),
-        ),
-        row(tr("Yangilanishlar"), updates_label(&v.status)),
+        row(icons::USER, tr("Foydalanuvchi"), v.user.clone()),
+        row(icons::NETWORK, "IP", v.ip.clone()),
     ];
+    if !v.online {
+        rows.push(row(icons::HISTORY, tr("Oxirgi ulanish"), last_seen_text(v)));
+        return rows;
+    }
+    rows.push(row(icons::MONITOR, tr("Tizim"), v.os.clone()));
+    rows.push(row(
+        icons::LAYOUT_GRID,
+        tr("Xona"),
+        v.room.clone().unwrap_or_else(|| tr("UMUMIY").to_string()),
+    ));
+    rows.push(row(icons::TIMER, tr("Ulangan"), fmt_dur(v.online_secs)));
+    rows.push(row(
+        icons::DOWNLOAD,
+        tr("Yangilanishlar"),
+        updates_label(&v.status),
+    ));
     if !v.version.is_empty() {
-        rows.push(row("Vimora", v.version.clone()));
+        rows.push(row(icons::INFO, "Vimora", v.version.clone()));
     }
     if !v.status.service {
-        rows.push((
-            tr("Diqqat").to_string(),
-            tr("Vimora xizmati ishlamayapti").to_string(),
-            Some(p.danger),
-        ));
+        rows.push(ui_kit::TipRow {
+            icon: icons::TRIANGLE_ALERT,
+            label: String::new(),
+            value: tr("Vimora xizmati ishlamayapti").to_string(),
+            color: Some(p.danger),
+        });
+    }
+    for (icon, col, text) in card_flags(p, v) {
+        rows.push(ui_kit::TipRow {
+            icon,
+            label: String::new(),
+            value: text,
+            color: Some(col),
+        });
     }
     rows
 }

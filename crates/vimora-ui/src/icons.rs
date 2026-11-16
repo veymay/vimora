@@ -6,6 +6,7 @@ pub const MONITOR: &str = "\u{e121}";
 pub const MONITOR_OFF: &str = "\u{e1dc}";
 pub const MONITOR_PLAY: &str = "\u{e48a}";
 pub const MESSAGE_SQUARE_TEXT: &str = "\u{e57a}";
+pub const NETWORK: &str = "\u{e129}";
 pub const HEART: &str = "\u{e0f5}";
 pub const MAIL: &str = "\u{e113}";
 pub const MESSAGE_CIRCLE: &str = "\u{e11a}";

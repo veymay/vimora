@@ -376,11 +376,14 @@ pub(super) fn dropdown<T: Copy + PartialEq>(
         .find(|(v, _)| *v == *value)
         .map(|(_, l)| *l)
         .unwrap_or("");
-    ui.painter().text(
-        pos2(r.left() + 14.0, r.center().y),
-        Align2::LEFT_CENTER,
+    ui_kit::marquee(
+        ui,
+        Rect::from_min_max(
+            pos2(r.left() + 12.0, r.top()),
+            pos2(r.right() - 34.0, r.bottom()),
+        ),
         label,
-        FontId::new(13.5, ui_kit::medium()),
+        FontId::new(14.0, egui::FontFamily::Proportional),
         p.strong,
     );
     ui.painter().text(
@@ -403,28 +406,33 @@ pub(super) fn dropdown<T: Copy + PartialEq>(
     let mut changed = false;
     if open {
         let area_id = egui::Id::new(("dropdown-area", id));
-        let rect = ui_kit::arrow_popup(
+        let wide = resp.rect.width();
+        let rect = ui_kit::arrow_popup_at(
             ui.ctx(),
             area_id,
             resp.rect,
             resp.rect.center().x,
             true,
+            true,
             |ui| {
-                ui.set_min_width(W - 12.0);
+                ui.set_min_width(wide - 12.0);
                 ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
                 for (v, label) in items {
                     let (ir, iresp) =
-                        ui.allocate_exact_size(vec2(W - 12.0, ITEM_H), Sense::click());
+                        ui.allocate_exact_size(vec2(wide - 12.0, ITEM_H), Sense::click());
                     let on = *value == *v;
                     if iresp.hovered() {
                         ui.painter().rect_filled(ir, Rounding::ZERO, p.hover);
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                     }
-                    ui.painter().text(
-                        pos2(ir.left() + 10.0, ir.center().y),
-                        Align2::LEFT_CENTER,
-                        *label,
-                        FontId::new(13.5, ui_kit::medium()),
+                    ui_kit::marquee(
+                        ui,
+                        Rect::from_min_max(
+                            pos2(ir.left() + 10.0, ir.top()),
+                            pos2(ir.right() - 30.0, ir.bottom()),
+                        ),
+                        label,
+                        FontId::new(14.0, egui::FontFamily::Proportional),
                         if on { p.accent_ink } else { p.text },
                     );
                     if on {
@@ -619,21 +627,12 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
     let (r, _) = ui.allocate_exact_size(vec2(w, 230.0), Sense::hover());
     let d = ui_kit::DARK;
     let painter = ui.painter().with_clip_rect(r);
-    {
-        let (top, bottom) = (
-            Color32::from_rgb(0x1d, 0x1f, 0x1b),
-            Color32::from_rgb(0x0e, 0x0f, 0x0d),
-        );
-        let mut mesh = egui::epaint::Mesh::default();
-        mesh.colored_vertex(r.left_top(), top);
-        mesh.colored_vertex(r.right_top(), top);
-        mesh.colored_vertex(r.right_bottom(), bottom);
-        mesh.colored_vertex(r.left_bottom(), bottom);
-        mesh.add_triangle(0, 1, 2);
-        mesh.add_triangle(0, 2, 3);
-        painter.add(egui::Shape::mesh(mesh));
-    }
+    let has_code = vimora_core::pin::valid(&c.unlock_pin);
+    let has_text = !c.lock_title.trim().is_empty() || !c.lock_message.trim().is_empty();
+    let mut y = r.top() + if has_code || has_text { 30.0 } else { 80.0 };
     let acc = d.accent;
+    // The same background as the real lock screen (and the program's code screen).
+    ui_kit::lock_background(&painter, r, pos2(r.center().x, y + 24.0), acc, 1.0);
     let font = |size: f32| FontId::proportional(size);
     // The top bar of the real screen: the logo and the clock, the same height.
     let lr = Rect::from_min_size(r.left_top() + vec2(14.0, 12.0), vec2(18.0, 18.0));
@@ -652,27 +651,7 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
         FontId::new(15.0, ui_kit::mono_bold()),
         Color32::WHITE,
     );
-    let has_code = vimora_core::pin::valid(&c.unlock_pin);
-    let has_text = !c.lock_title.trim().is_empty() || !c.lock_message.trim().is_empty();
-    let mut y = r.top() + if has_code || has_text { 30.0 } else { 80.0 };
-    // Soft glow + tile.
     let centre = pos2(r.center().x, y + 24.0);
-    {
-        let mut mesh = egui::epaint::Mesh::default();
-        mesh.colored_vertex(centre, acc.gamma_multiply(0.28));
-        const N: u32 = 40;
-        for i in 0..N {
-            let a = i as f32 / N as f32 * std::f32::consts::TAU;
-            mesh.colored_vertex(
-                centre + vec2(a.cos(), a.sin()) * 120.0,
-                Color32::TRANSPARENT,
-            );
-        }
-        for i in 0..N {
-            mesh.add_triangle(0, 1 + i, 1 + (i + 1) % N);
-        }
-        painter.add(egui::Shape::mesh(mesh));
-    }
     // The icon on its own (no tile), as on the real lock screen.
     painter.text(
         centre,
@@ -813,11 +792,12 @@ fn icon_picker(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig, current: &
     if !open {
         return;
     }
-    let rect = ui_kit::arrow_popup(
+    let rect = ui_kit::arrow_popup_at(
         ui.ctx(),
         egui::Id::new("lock-icon-gallery"),
         resp.rect,
         resp.rect.center().x,
+        true,
         true,
         |ui| {
             ui.spacing_mut().item_spacing = vec2(4.0, 4.0);

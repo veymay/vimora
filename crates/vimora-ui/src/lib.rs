@@ -927,7 +927,7 @@ pub fn logo_rgba(size: u32) -> (u32, u32, Vec<u8>) {
 /// Space between the brand mark and the name next to it: the same share of the mark's size
 /// everywhere (lock screen, teacher's top bar, windows).
 pub fn logo_gap(size: f32) -> f32 {
-    (size * 0.2).round()
+    (size * 0.1).round()
 }
 
 /// The brand mark, drawn inside `rect` (a square): a texture of the fitting size, made once.
@@ -1238,6 +1238,20 @@ pub fn arrow_popup(
     interactive: bool,
     add_contents: impl FnOnce(&mut Ui),
 ) -> Rect {
+    arrow_popup_at(ctx, id, anchor, x, interactive, false, add_contents)
+}
+
+/// Like [`arrow_popup`]; with `flush` the popup's left edge is the anchor's (a dropdown opens
+/// straight under its field, as wide as it).
+pub fn arrow_popup_at(
+    ctx: &egui::Context,
+    id: egui::Id,
+    anchor: Rect,
+    x: f32,
+    interactive: bool,
+    flush: bool,
+    add_contents: impl FnOnce(&mut Ui),
+) -> Rect {
     let p = palette(ctx);
     let screen = ctx.screen_rect();
     let size = ctx
@@ -1250,10 +1264,14 @@ pub fn arrow_popup(
         anchor.left() + 8.0,
         (anchor.right() - 8.0).max(anchor.left() + 8.0),
     );
-    let left = (ax - 22.0).clamp(
-        screen.left() + 6.0,
-        (screen.right() - size.x - 6.0).max(6.0),
-    );
+    let left = if flush {
+        anchor.left()
+    } else {
+        (ax - 22.0).clamp(
+            screen.left() + 6.0,
+            (screen.right() - size.x - 6.0).max(6.0),
+        )
+    };
     let (pos, pivot) = if below {
         (egui::pos2(left, anchor.bottom() + gap), Align2::LEFT_TOP)
     } else {
@@ -1317,6 +1335,35 @@ pub fn arrow_popup(
     rect
 }
 
+/// Text in `rect`, left aligned and centred vertically. Too long for it: it slides sideways
+/// (a pause, a medium-speed run to the end, a pause, back to the start) like a ticker.
+pub fn marquee(ui: &Ui, rect: Rect, text: &str, font: FontId, color: Color32) {
+    let painter = ui.painter().with_clip_rect(rect);
+    let g = ui.painter().layout_no_wrap(text.to_string(), font, color);
+    let over = g.size().x - rect.width();
+    let y = rect.center().y - g.size().y / 2.0;
+    if over <= 0.5 {
+        painter.galley(egui::pos2(rect.left(), y), g, color);
+        return;
+    }
+    const SPEED: f32 = 45.0; // points per second
+    const PAUSE: f64 = 1.2;
+    let run = (over / SPEED) as f64;
+    let cycle = PAUSE * 2.0 + run * 2.0;
+    let t = ui.input(|i| i.time) % cycle;
+    let off = if t < PAUSE {
+        0.0
+    } else if t < PAUSE + run {
+        (t - PAUSE) as f32 * SPEED
+    } else if t < PAUSE * 2.0 + run {
+        over
+    } else {
+        over - (t - PAUSE * 2.0 - run) as f32 * SPEED
+    };
+    painter.galley(egui::pos2(rect.left() - off, y), g, color);
+    ui.ctx().request_repaint();
+}
+
 /// `response.tip("text")`: a tooltip with an arrow, shown at once while hovering.
 pub trait ResponseExt: Sized {
     /// Tooltip anchored to the widget; the arrow points at the pointer (or the widget's centre).
@@ -1361,13 +1408,17 @@ pub fn tip_colored(resp: &Response, text: &str, color: Color32) {
     }
 }
 
-/// A tooltip with a title and `label  value` rows (a value may have its own colour); the arrow
-/// follows the pointer along the widget.
-pub fn tip_rows_at_pointer(
-    resp: &Response,
-    title: &str,
-    rows: &[(String, String, Option<Color32>)],
-) {
+/// One line of a rich tooltip: an icon, a label (may be empty) and a value; `color` tints the
+/// icon and the value.
+pub struct TipRow {
+    pub icon: &'static str,
+    pub label: String,
+    pub value: String,
+    pub color: Option<Color32>,
+}
+
+/// A tooltip with a title and icon rows; the arrow follows the pointer along the widget.
+pub fn tip_rows_at_pointer(resp: &Response, title: &str, rows: &[TipRow]) {
     if resp.hovered() && !resp.ctx.input(|i| i.pointer.any_down()) {
         let p = palette(&resp.ctx);
         let x = resp
@@ -1384,6 +1435,7 @@ pub fn tip_rows_at_pointer(
             |ui| {
                 ui.set_max_width(340.0);
                 ui.spacing_mut().item_spacing = vec2(10.0, 3.0);
+                ui.spacing_mut().interact_size.y = 16.0;
                 ui.label(
                     RichText::new(title)
                         .family(bold())
@@ -1391,16 +1443,29 @@ pub fn tip_rows_at_pointer(
                         .color(p.strong),
                 );
                 ui.add_space(4.0);
-                egui::Grid::new(("tip-rows", resp.id))
-                    .spacing(vec2(12.0, 3.0))
-                    .min_row_height(16.0)
-                    .show(ui, |ui| {
-                        for (k, v, c) in rows {
-                            ui.label(RichText::new(k).size(12.0).color(p.muted));
-                            ui.label(RichText::new(v).size(12.5).color(c.unwrap_or(p.text)));
-                            ui.end_row();
+                for r in rows {
+                    let col = r.color.unwrap_or(p.text);
+                    ui.horizontal_top(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        let (ir, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
+                        ui.painter().text(
+                            ir.center(),
+                            Align2::CENTER_CENTER,
+                            r.icon,
+                            FontId::proportional(13.0),
+                            r.color.unwrap_or(p.muted),
+                        );
+                        if r.label.is_empty() {
+                            ui.add(
+                                egui::Label::new(RichText::new(&r.value).size(12.5).color(col))
+                                    .wrap(),
+                            );
+                        } else {
+                            ui.label(RichText::new(&r.label).size(12.0).color(p.muted));
+                            ui.label(RichText::new(&r.value).size(12.5).color(col));
                         }
                     });
+                }
             },
         );
     }

@@ -123,7 +123,7 @@ mod imp {
             .parent()
             .map(|d| wide(&d.to_string_lossy()))
             .unwrap_or_else(|| wide("C:\\"));
-        let mut cmd = wide(&format!("\"{}\" run", exe.display()));
+        let mut cmd = wide(&format!("\"{}\" run --restarted", exe.display()));
         let mut env = null_mut();
         let have_env = CreateEnvironmentBlock(&mut env, token, 0) != 0;
         let mut desk = wide("winsta0\\default");
@@ -173,7 +173,7 @@ mod imp {
                 std::thread::sleep(std::time::Duration::from_secs(10));
                 let mut missing = 0u32;
                 loop {
-                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    std::thread::sleep(std::time::Duration::from_secs(1));
                     unsafe {
                         let session = WTSGetActiveConsoleSessionId();
                         if session == u32::MAX || session == 0 {

@@ -128,6 +128,8 @@ struct Ctx {
 }
 
 /// Seconds since the epoch of the agent's last sign of life (watched by `main`'s watchdog).
+/// The service started this agent again after it was ended: the teacher is told once.
+pub static TAMPERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 pub static HEARTBEAT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 pub fn now_secs() -> u64 {

@@ -62,7 +62,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Run the agent (default).
-    Run,
+    Run {
+        /// Internal: the service started it again after it was ended.
+        #[arg(long, hide = true)]
+        restarted: bool,
+    },
     /// Write the effective configuration to the config file and exit.
     Init,
     /// (Admin) Install: write configs, register and start the service.
@@ -177,8 +181,18 @@ fn main() -> anyhow::Result<()> {
             println!("config written to {}", path.display());
             Ok(())
         }
-        Some(Cmd::Run) | None => {
-            let cfg = config::load().merge_cli(cli.server, cli.name);
+        Some(Cmd::Run { restarted }) => run_agent(cli.server, cli.name, restarted),
+        None => run_agent(cli.server, cli.name, false),
+    }
+}
+
+fn run_agent(server: Option<String>, name: Option<String>, restarted: bool) -> anyhow::Result<()> {
+    {
+        {
+            if restarted {
+                agent::TAMPERED.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            let cfg = config::load().merge_cli(server, name);
             single::take_over();
             single::watch();
             system::set_dpi_aware();

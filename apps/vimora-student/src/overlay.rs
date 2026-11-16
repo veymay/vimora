@@ -513,16 +513,16 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
     );
     let now = chrono::Local::now();
     painter.text(
-        pos2(rect.right() - 48.0, logo.center().y),
-        Align2::RIGHT_CENTER,
+        pos2(rect.right() - 48.0, logo.top() - 2.0),
+        Align2::RIGHT_TOP,
         now.format("%H:%M").to_string(),
         // 5 characters as wide as the 10 of the date (13 pt) under it: the same width.
         FontId::new(26.0, vimora_ui::mono_bold()),
         p.text.gamma_multiply(fade),
     );
     painter.text(
-        pos2(rect.right() - 48.0, logo.bottom() + 12.0),
-        Align2::RIGHT_CENTER,
+        pos2(rect.right() - 48.0, logo.top() + 30.0),
+        Align2::RIGHT_TOP,
         now.format("%d.%m.%Y").to_string(),
         FontId::new(13.0, vimora_ui::mono()),
         p.faint.gamma_multiply(fade),

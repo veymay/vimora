@@ -431,9 +431,9 @@ unsafe fn paint(hwnd: HWND, st: &mut State) {
                 p.text,
                 RECT {
                     left: w / 2,
-                    top: (40.0 * s) as i32,
+                    top: (38.0 * s) as i32,
                     right: w - (48.0 * s) as i32,
-                    bottom: (80.0 * s) as i32,
+                    bottom: (68.0 * s) as i32,
                 },
                 DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
             );
@@ -446,9 +446,9 @@ unsafe fn paint(hwnd: HWND, st: &mut State) {
                 p.faint,
                 RECT {
                     left: w / 2,
-                    top: (84.0 * s) as i32,
+                    top: (68.0 * s) as i32,
                     right: w - (48.0 * s) as i32,
-                    bottom: (104.0 * s) as i32,
+                    bottom: (86.0 * s) as i32,
                 },
                 DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
             );

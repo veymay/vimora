@@ -95,6 +95,11 @@ pub(super) async fn session(
     // --- writer ----------------------------------------------------------------------------
     let (tx, mut rx) = mpsc::channel::<StudentMsg>(32);
     *ctx.uplink.lock().unwrap() = Some(tx.clone());
+    if super::TAMPERED.swap(false, std::sync::atomic::Ordering::Relaxed) {
+        let _ = tx.try_send(StudentMsg::Alert {
+            text: "Vimora jarayoni to'xtatilgan edi va qayta ishga tushirildi".into(),
+        });
+    }
     let writer = tokio::spawn(async move {
         while let Some(m) = rx.recv().await {
             // A teacher that stops reading must not freeze the agent: give up and reconnect.

@@ -722,9 +722,8 @@ pub(super) fn timer(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx
                 l.request = Some(LessonRequest::Banner(true));
             }
         });
-        if l.banner_on
-            && ui_kit::button(ui, Some(icons::X), tr("Olib tashlash"), Kind::Outline).clicked()
-        {
+        // Always there (the window may have been closed and opened again): stops the timer.
+        if ui_kit::button(ui, Some(icons::SQUARE), tr("To'xtatish"), Kind::Cancel).clicked() {
             l.request = Some(LessonRequest::Banner(false));
         }
     });
