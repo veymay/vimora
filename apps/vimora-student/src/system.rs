@@ -66,6 +66,14 @@ fn open_target(url: &str) -> Result<()> {
                 keybd_event(VK_MENU as u8, 0, 0, 0);
                 keybd_event(VK_MENU as u8, 0, KEYEVENTF_KEYUP, 0);
             }
+            // ShellExecute needs COM on this thread (the page handlers use it); harmless when it
+            // is already set up.
+            unsafe {
+                windows_sys::Win32::System::Com::CoInitializeEx(
+                    std::ptr::null(),
+                    windows_sys::Win32::System::Com::COINIT_APARTMENTTHREADED as u32,
+                );
+            }
             let verb: Vec<u16> = "open\0".encode_utf16().collect();
             let target: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
             // SW_SHOWNORMAL = 1; a result above 32 means it worked.

@@ -187,7 +187,7 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
     if let Some(i) = ui_kit::tab_strip(ui, &items, current) {
         *f.tab = tabs[i].0;
     }
-    ui.add_space(12.0);
+    ui.add_space(7.0);
 
     // The IT tabs are for the administrator.
     if matches!(
@@ -195,7 +195,7 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
         MachineTab::Security | MachineTab::Services | MachineTab::Apps
     ) && !cx.admin
     {
-        ui.add_space(20.0);
+        ui.add_space(12.0);
         ui.vertical_centered(|ui| {
             ui.label(RichText::new(icons::LOCK).size(30.0).color(p.muted));
             ui.add_space(6.0);
@@ -204,7 +204,7 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
                     .size(13.5)
                     .color(p.text),
             );
-            ui.add_space(10.0);
+            ui.add_space(6.0);
             if ui_kit::button(ui, Some(icons::LOCK_OPEN), tr("Kirish"), Kind::Primary).clicked() {
                 *f.request = Some(MachineRequest::Login);
             }
@@ -228,7 +228,7 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
                 *f.request = Some(MachineRequest::RefreshSecurity);
             }
             let Some(sec) = sec else {
-                ui.add_space(20.0);
+                ui.add_space(12.0);
                 ui.vertical_centered(|ui| {
                     ui.spinner();
                     ui.label(RichText::new(tr("Ma'lumot olinmoqda…")).color(p.muted));
@@ -259,7 +259,7 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
         } else {
             tr("Kompyuter oflayn")
         };
-        ui.add_space(30.0);
+        ui.add_space(18.0);
         ui.vertical_centered(|ui| {
             if online {
                 ui.spinner();
@@ -594,7 +594,7 @@ fn sec_group(
     refresh: Option<&mut bool>,
     rows: &[(String, Vec<(String, Color32)>)],
 ) {
-    ui.add_space(10.0);
+    ui.add_space(6.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         ui.label(RichText::new(icon).size(13.0).color(p.muted));
@@ -842,7 +842,7 @@ fn programs(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, cx: &FormCtx<'_>
     );
     ui.add_space(8.0);
     let Some(apps) = apps else {
-        ui.add_space(20.0);
+        ui.add_space(12.0);
         ui.vertical_centered(|ui| {
             ui.spinner();
             ui.label(RichText::new(tr("Ma'lumot olinmoqda…")).color(p.muted));

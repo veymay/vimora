@@ -413,118 +413,135 @@ impl TeacherApp {
             }
             let counts = self.filter_counts;
             let f = &mut self.list_filter;
-            egui::popup_below_widget(
-                ui,
-                id,
-                &resp,
-                egui::PopupCloseBehavior::CloseOnClickOutside,
-                |ui| {
-                    ui.set_min_width(190.0);
-                    // Order: the two columns that can lead the list.
-                    if matches!(col, Col::Name | Col::Ip) {
-                        let by = if *col == Col::Name {
-                            crate::config::SortBy::Name
-                        } else {
-                            crate::config::SortBy::Ip
-                        };
-                        let (cur, desc) = {
-                            let c = self.cfg.read().unwrap();
-                            (c.sort, c.sort_desc)
-                        };
-                        for (is_desc, label) in [(false, tr("A → Z")), (true, tr("Z → A"))] {
-                            let on = cur == by && desc == is_desc;
-                            if ui
-                                .selectable_label(
-                                    on,
-                                    with_icon(
-                                        if is_desc {
-                                            icons::ARROW_DOWN
-                                        } else {
-                                            icons::ARROW_UP
-                                        },
-                                        label,
-                                    ),
-                                )
-                                .clicked()
-                            {
-                                let mut c = self.cfg.write().unwrap();
-                                c.sort = by;
-                                c.sort_desc = is_desc;
-                            }
-                        }
-                        ui.separator();
-                    }
-                    match col {
-                        Col::Name | Col::User | Col::Ip => {
-                            let text = match col {
-                                Col::Name => &mut f.name,
-                                Col::User => &mut f.user,
-                                _ => &mut f.ip,
+            let open = ui.memory(|m| m.is_popup_open(id));
+            if open {
+                let rect = ui_kit::arrow_popup(
+                    ui.ctx(),
+                    id.with("arrow"),
+                    resp.rect,
+                    resp.rect.center().x,
+                    true,
+                    |ui| {
+                        ui.set_min_width(190.0);
+                        // Order: the two columns that can lead the list.
+                        if matches!(col, Col::Name | Col::Ip) {
+                            let by = if *col == Col::Name {
+                                crate::config::SortBy::Name
+                            } else {
+                                crate::config::SortBy::Ip
                             };
-                            let r = ui.add(
-                                ui_kit::text_field(text)
-                                    .hint_text(tr("Qidirish…"))
-                                    .desired_width(f32::INFINITY),
-                            );
-                            if ui.memory(|m| m.focused().is_none()) {
-                                r.request_focus();
-                            }
-                        }
-                        Col::Status => {
-                            for (v, label, n) in [
-                                (StatusFilter::Any, tr("Hammasi"), None),
-                                (StatusFilter::Locked, tr("Qulflangan"), Some(counts.locked)),
-                                (
-                                    StatusFilter::Attention,
-                                    tr("Diqqat talab qiladi"),
-                                    Some(counts.attention),
-                                ),
-                            ] {
-                                if filter_option(ui, f.status == v, label, n) {
-                                    f.status = v;
-                                    ui.close_menu();
-                                }
-                            }
-                        }
-                        Col::Shadow => {
-                            for (v, label, n) in [
-                                (ShadowFilter::Any, tr("Hammasi"), None),
-                                (ShadowFilter::On, tr("Muzlatilgan"), Some(counts.frozen)),
-                                (ShadowFilter::Off, tr("Muzlatilmagan"), Some(counts.thawed)),
-                            ] {
-                                if filter_option(ui, f.shadow == v, label, n) {
-                                    f.shadow = v;
-                                    ui.close_menu();
-                                }
-                            }
-                        }
-                        Col::Room => {
-                            if ui
-                                .selectable_label(f.room == RoomFilter::Any, tr("Hammasi"))
-                                .clicked()
+                            let (cur, desc) = {
+                                let c = self.cfg.read().unwrap();
+                                (c.sort, c.sort_desc)
+                            };
+                            for (is_desc, label) in [(false, tr("A → Z")), (true, tr("Z → A"))]
                             {
-                                f.room = RoomFilter::Any;
-                                ui.close_menu();
-                            }
-                            if ui
-                                .selectable_label(f.room == RoomFilter::Unassigned, tr("Xonasiz"))
-                                .clicked()
-                            {
-                                f.room = RoomFilter::Unassigned;
-                                ui.close_menu();
-                            }
-                            for r in rooms {
-                                let on = f.room == RoomFilter::Is(r.clone());
-                                if ui.selectable_label(on, r).clicked() {
-                                    f.room = RoomFilter::Is(r.clone());
-                                    ui.close_menu();
+                                let on = cur == by && desc == is_desc;
+                                if ui
+                                    .selectable_label(
+                                        on,
+                                        with_icon(
+                                            if is_desc {
+                                                icons::ARROW_DOWN
+                                            } else {
+                                                icons::ARROW_UP
+                                            },
+                                            label,
+                                        ),
+                                    )
+                                    .clicked()
+                                {
+                                    let mut c = self.cfg.write().unwrap();
+                                    c.sort = by;
+                                    c.sort_desc = is_desc;
                                 }
                             }
+                            ui.separator();
                         }
-                        _ => {}
-                    }
-                },
-            );
+                        match col {
+                            Col::Name | Col::User | Col::Ip => {
+                                let text = match col {
+                                    Col::Name => &mut f.name,
+                                    Col::User => &mut f.user,
+                                    _ => &mut f.ip,
+                                };
+                                let r = ui.add(
+                                    ui_kit::text_field(text)
+                                        .hint_text(tr("Qidirish…"))
+                                        .desired_width(f32::INFINITY),
+                                );
+                                if ui.memory(|m| m.focused().is_none()) {
+                                    r.request_focus();
+                                }
+                            }
+                            Col::Status => {
+                                for (v, label, n) in [
+                                    (StatusFilter::Any, tr("Hammasi"), None),
+                                    (StatusFilter::Locked, tr("Qulflangan"), Some(counts.locked)),
+                                    (
+                                        StatusFilter::Attention,
+                                        tr("Diqqat talab qiladi"),
+                                        Some(counts.attention),
+                                    ),
+                                ] {
+                                    if filter_option(ui, f.status == v, label, n) {
+                                        f.status = v;
+                                        ui.close_menu();
+                                    }
+                                }
+                            }
+                            Col::Shadow => {
+                                for (v, label, n) in [
+                                    (ShadowFilter::Any, tr("Hammasi"), None),
+                                    (ShadowFilter::On, tr("Muzlatilgan"), Some(counts.frozen)),
+                                    (ShadowFilter::Off, tr("Muzlatilmagan"), Some(counts.thawed)),
+                                ] {
+                                    if filter_option(ui, f.shadow == v, label, n) {
+                                        f.shadow = v;
+                                        ui.close_menu();
+                                    }
+                                }
+                            }
+                            Col::Room => {
+                                if ui
+                                    .selectable_label(f.room == RoomFilter::Any, tr("Hammasi"))
+                                    .clicked()
+                                {
+                                    f.room = RoomFilter::Any;
+                                    ui.close_menu();
+                                }
+                                if ui
+                                    .selectable_label(
+                                        f.room == RoomFilter::Unassigned,
+                                        tr("Xonasiz"),
+                                    )
+                                    .clicked()
+                                {
+                                    f.room = RoomFilter::Unassigned;
+                                    ui.close_menu();
+                                }
+                                for r in rooms {
+                                    let on = f.room == RoomFilter::Is(r.clone());
+                                    if ui.selectable_label(on, r).clicked() {
+                                        f.room = RoomFilter::Is(r.clone());
+                                        ui.close_menu();
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    },
+                );
+                let out = ui.input(|i| {
+                    i.pointer.any_pressed()
+                        && i.pointer
+                            .interact_pos()
+                            .is_some_and(|pos| !rect.contains(pos) && !resp.rect.contains(pos))
+                });
+                if out || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    ui.memory_mut(|m| m.close_popup());
+                }
+            }
         }
         ui.add_space(-ui.spacing().item_spacing.y);
 

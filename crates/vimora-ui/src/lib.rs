@@ -909,7 +909,7 @@ pub fn logo_rgba(size: u32) -> (u32, u32, Vec<u8>) {
 /// Space between the brand mark and the name next to it: the same share of the mark's size
 /// everywhere (lock screen, teacher's top bar, windows).
 pub fn logo_gap(size: f32) -> f32 {
-    (size * 0.35).round()
+    (size * 0.2).round()
 }
 
 /// The brand mark, drawn inside `rect` (a square): a texture of the fitting size, made once.

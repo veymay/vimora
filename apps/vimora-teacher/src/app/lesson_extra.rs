@@ -104,7 +104,7 @@ pub(super) fn attendance(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &Fo
             }
         });
     });
-    ui.add_space(10.0);
+    ui.add_space(6.0);
     let rows: Vec<Vec<(String, Color32)>> = cx
         .all
         .iter()
@@ -179,14 +179,14 @@ pub(super) fn poll(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
     if l.poll_kind == 3 && (before != 3 || l.poll_q.is_empty()) {
         l.poll_q = tr("Bugungi dars sizga qanday bo'ldi?").to_string();
     }
-    ui.add_space(12.0);
+    ui.add_space(7.0);
     caption(ui, p, tr("Savol"));
     ui.add(
         ui_kit::text_field(&mut l.poll_q)
             .hint_text(tr("Savol"))
             .desired_width(ui.available_width()),
     );
-    ui.add_space(12.0);
+    ui.add_space(7.0);
     if l.poll_kind == 0 {
         caption(ui, p, tr("Javob variantlari"));
         while l.poll_opts.len() < 2 {
@@ -211,13 +211,10 @@ pub(super) fn poll(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
                         egui::FontId::new(14.0, ui_kit::bold()),
                         p.muted,
                     );
-                    let fw = (ui.available_width() - ui_kit::CONTROL_H - 6.0).max(40.0);
-                    ui.add(ui_kit::text_field(o).desired_width(fw));
-                    if i >= 2
-                        && ui_kit::icon_cell(ui, icons::X, ui_kit::CONTROL_H, false)
-                            .tip(tr("Olib tashlash"))
-                            .clicked()
-                    {
+                    let fw = (w - 18.0 - 6.0).max(40.0);
+                    let r = ui.add(ui_kit::text_field(o).desired_width(fw));
+                    // The remove button sits inside the field, at its right end.
+                    if i >= 2 && inner_x(ui, r.rect, "Olib tashlash") {
                         remove = Some(i);
                     }
                 },
@@ -252,6 +249,23 @@ pub(super) fn poll(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
 }
 
 /// The options a poll kind sends.
+/// A small remove (×) button inside the right end of `field`; true when it was clicked.
+fn inner_x(ui: &mut egui::Ui, field: egui::Rect, tip: &'static str) -> bool {
+    let h = ui_kit::CONTROL_H;
+    let cell = egui::Rect::from_min_size(
+        egui::pos2(field.right() - h, field.center().y - h / 2.0),
+        vec2(h, h),
+    );
+    let mut c = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(cell)
+            .layout(Layout::top_down(Align::Center)),
+    );
+    ui_kit::icon_cell(&mut c, icons::X, h, false)
+        .tip(tr(tip))
+        .clicked()
+}
+
 pub(super) fn poll_options(l: &Lesson) -> Vec<String> {
     match l.poll_kind {
         0 => l
@@ -293,7 +307,7 @@ fn poll_results(
             .size(12.5)
             .color(p.muted),
     );
-    ui.add_space(12.0);
+    ui.add_space(7.0);
     let w = ui.available_width();
     for (i, o) in options.iter().enumerate() {
         let n = answers.iter().filter(|a| a.2 == Some(i as u32)).count();
@@ -321,7 +335,7 @@ fn poll_results(
         );
         ui.add_space(4.0);
     }
-    ui.add_space(10.0);
+    ui.add_space(6.0);
     caption(ui, p, tr("Kim nima javob berdi (birinchi javob tepada)"));
     let rows: Vec<Vec<(String, Color32)>> = answers
         .iter()
@@ -347,7 +361,7 @@ fn poll_results(
         &[("#", 0.1), (tr("Kompyuter"), 0.35), (tr("Javob"), 0.55)],
         &rows,
     );
-    ui.add_space(12.0);
+    ui.add_space(7.0);
     ui.horizontal(|ui| {
         if ui_kit::button(ui, Some(icons::SQUARE), tr("Yakunlash"), Kind::Outline).clicked() {
             l.request = Some(LessonRequest::EndPoll);
@@ -412,7 +426,7 @@ pub(super) fn test(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
             .size(12.5)
             .color(p.muted),
         );
-        ui.add_space(10.0);
+        ui.add_space(6.0);
         results.sort_by_key(|r| std::cmp::Reverse(r.1));
         let rows: Vec<Vec<(String, Color32)>> = results
             .iter()
@@ -445,7 +459,7 @@ pub(super) fn test(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
             ],
             &rows,
         );
-        ui.add_space(12.0);
+        ui.add_space(7.0);
         ui.horizontal(|ui| {
             if ui_kit::button(
                 ui,
@@ -485,7 +499,7 @@ pub(super) fn test(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
                 }
             }
         });
-        ui.add_space(12.0);
+        ui.add_space(7.0);
     }
 
     let t = &mut l.test;
@@ -524,16 +538,17 @@ pub(super) fn test(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
             ui_kit::toggle(ui, &mut t.def.shuffle);
         },
     );
-    ui.add_space(14.0);
+    ui.add_space(8.0);
     t.correct.resize(t.def.questions.len(), String::new());
     let mut remove_q = None;
     for (qi, q) in t.def.questions.iter_mut().enumerate() {
         let correct = &mut t.correct[qi];
+        let inner_w = ui.available_width() - 22.0;
         Frame::none()
             .stroke(Stroke::new(1.0_f32, p.line))
             .inner_margin(Margin::same(10.0))
             .show(ui, |ui| {
-                ui.set_width(ui.available_width());
+                ui.set_width(inner_w);
                 ui.horizontal(|ui| {
                     ui_kit::hud(ui, &tf!("{n}-savol", n = qi + 1), p.muted);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -588,16 +603,13 @@ pub(super) fn test(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
                                 {
                                     *correct = oi.to_string();
                                 }
-                                let fw = (ui.available_width() - ui_kit::CONTROL_H - 6.0).max(40.0);
-                                ui.add(
+                                let fw = (w - ui_kit::CONTROL_H - 6.0).max(40.0);
+                                let r = ui.add(
                                     ui_kit::text_field(o)
                                         .hint_text(tr("Variant"))
                                         .desired_width(fw),
                                 );
-                                if oi >= 2
-                                    && ui_kit::icon_cell(ui, icons::X, ui_kit::CONTROL_H, false)
-                                        .clicked()
-                                {
+                                if oi >= 2 && inner_x(ui, r.rect, "Olib tashlash") {
                                     remove_o = Some(oi);
                                 }
                             },
@@ -636,7 +648,7 @@ pub(super) fn test(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
         });
         t.correct.push("0".into());
     }
-    ui.add_space(14.0);
+    ui.add_space(8.0);
     let n = online_targets(cx).len();
     let ready = !t.def.title.trim().is_empty()
         && !t.def.questions.is_empty()
@@ -692,7 +704,7 @@ pub(super) fn timer(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx
     super::settings::row(ui, p, tr("Taymer"), None, |ui| {
         super::settings::dropdown(ui, p, "timer-minutes", &mut l.minutes, &items);
     });
-    ui.add_space(10.0);
+    ui.add_space(6.0);
     ui.horizontal(|ui| {
         let ok = !l.goal.trim().is_empty() || l.minutes > 0;
         ui.add_enabled_ui(ok, |ui| {
@@ -716,7 +728,7 @@ pub(super) fn timer(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx
             l.request = Some(LessonRequest::Banner(false));
         }
     });
-    ui.add_space(14.0);
+    ui.add_space(8.0);
     caption(ui, p, tr("Rag'batlantirish"));
     let stars = cx.hub.lock().unwrap().stars.clone();
     let w = ui.available_width();

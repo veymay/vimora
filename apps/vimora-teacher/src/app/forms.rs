@@ -37,7 +37,7 @@ pub(super) fn activity_body(
                 }
             });
         }
-        ui.add_space(10.0);
+        ui.add_space(6.0);
     }
     ui.horizontal(|ui| {
         ui_kit::hud(ui, tr("Hodisalar"), p.muted);
@@ -49,7 +49,7 @@ pub(super) fn activity_body(
     });
     let h = hub.lock().unwrap();
     if h.log.is_empty() {
-        ui.add_space(20.0);
+        ui.add_space(12.0);
         ui.vertical_centered(|ui| ui_kit::hud(ui, tr("Hozircha hech narsa yo'q"), p.faint));
     }
     ui.add_space(4.0);
@@ -266,7 +266,7 @@ pub(super) fn dialog_body(
                 *web = i == 0;
                 *terminal = i == 2;
             }
-            ui.add_space(10.0);
+            ui.add_space(6.0);
             if *terminal {
                 terminal_tab(ui, p, shell, code, run, cx);
             } else if *web {
@@ -347,7 +347,7 @@ pub(super) fn dialog_body(
                     }
                 }
             });
-            ui.add_space(10.0);
+            ui.add_space(6.0);
             if *a == PowerChoice::Wake {
                 let (off, with_mac) = (cx.offline, cx.offline_with_mac);
                 ui.label(
@@ -502,7 +502,7 @@ fn terminal_tab(
         _ => "$ ",
     };
     for (name, (ok, text)) in answers {
-        ui.add_space(10.0);
+        ui.add_space(6.0);
         ui_kit::hud(ui, &name, if ok { p.muted } else { p.danger });
         ui.add_space(4.0);
         Frame::none()
@@ -625,7 +625,7 @@ fn launch_site(
     if (r.has_focus() || r.lost_focus()) && ui.input(|i| i.key_pressed(Key::Enter)) {
         *confirm = true;
     }
-    ui.add_space(12.0);
+    ui.add_space(7.0);
 
     // Saved sites first, then the recent ones that are not saved.
     let rows: Vec<(String, bool)> = bookmarks
@@ -850,7 +850,7 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
     if let Some(i) = ui_kit::tab_strip(ui, &items, current) {
         *f.tab = tabs[i].0;
     }
-    ui.add_space(12.0);
+    ui.add_space(7.0);
 
     // The computers picked in the grid (all of them when none is picked): each has its own
     // switch, so the filter goes on or off for exactly that one.
@@ -1020,12 +1020,12 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
 
 /// A section heading inside the Muzlatish page: a rule, the title and a "?".
 fn freeze_section(ui: &mut egui::Ui, p: &Palette, title: &str, help: &str) {
-    ui.add_space(22.0);
+    ui.add_space(13.0);
     let w = ui.available_width();
     let (r, _) = ui.allocate_exact_size(vec2(w, 1.0), Sense::hover());
     ui.painter()
         .hline(r.x_range(), r.center().y, Stroke::new(1.0_f32, p.line));
-    ui.add_space(14.0);
+    ui.add_space(8.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         ui.label(
@@ -1149,7 +1149,7 @@ fn commit_section(ui: &mut egui::Ui, p: &Palette, f: &mut ShadowForm<'_>, cx: &F
             *f.request = Some(ShadowRequest::SaveFolders);
         }
     }
-    ui.add_space(12.0);
+    ui.add_space(7.0);
     ui.add_enabled_ui(usable && !list.is_empty(), |ui| {
         if ui_kit::button(
             ui,
@@ -1313,7 +1313,7 @@ pub(super) fn updates_form(
     if let Some(i) = ui_kit::tab_strip(ui, &items, current) {
         *tab = tabs[i].0;
     }
-    ui.add_space(14.0);
+    ui.add_space(8.0);
 
     let views: Vec<&View> = cx
         .all
@@ -1326,7 +1326,7 @@ pub(super) fn updates_form(
         .map(|v| v.id)
         .collect();
 
-    ui.add_space(12.0);
+    ui.add_space(7.0);
     if views.is_empty() {
         ui.label(
             RichText::new(tr("Onlayn kompyuter yo'q"))
@@ -2312,14 +2312,38 @@ fn categories(
                         cat.set_all(all);
                         toggled = true;
                     }
-                    let (txt, col) = if cat.all {
-                        (tr("Hammasi").to_string(), p.accent)
-                    } else if n_on > 0 {
-                        (format!("{n_on} / {}", cat.items.len()), p.warning)
-                    } else {
-                        (format!("{}", cat.items.len()), p.faint)
-                    };
-                    ui_kit::hud(ui, &txt, col);
+                    // Right of the name: blocked / open / all, each with its icon.
+                    let total = cat.items.len();
+                    let blocked = if cat.all { total } else { n_on };
+                    let chips = [
+                        (icons::LIST, total, p.muted, tr("Jami")),
+                        (icons::LOCK_OPEN, total - blocked, p.muted, tr("Ochiq")),
+                        (
+                            icons::LOCK,
+                            blocked,
+                            if blocked > 0 { p.accent } else { p.faint },
+                            tr("Bloklangan"),
+                        ),
+                    ];
+                    for (ic, n, col, tip) in chips {
+                        // Fixed cells: the numbers line up from row to row.
+                        let (r, resp) = ui.allocate_exact_size(vec2(52.0, 20.0), Sense::hover());
+                        ui.painter().text(
+                            r.left_center() + vec2(2.0, 0.0),
+                            egui::Align2::LEFT_CENTER,
+                            ic,
+                            FontId::proportional(13.0),
+                            col,
+                        );
+                        ui.painter().text(
+                            r.right_center(),
+                            egui::Align2::RIGHT_CENTER,
+                            n.to_string(),
+                            FontId::new(12.5, ui_kit::mono()),
+                            col,
+                        );
+                        resp.tip(tip);
+                    }
                     if cat.imported()
                         && ui_kit::icon_cell(ui, icons::TRASH_2, 30.0, false)
                             .tip(tr("Toifani o'chirish"))
@@ -2384,7 +2408,7 @@ fn categories(
         }
         cats.remove(i);
     }
-    ui.add_space(12.0);
+    ui.add_space(7.0);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2449,7 +2473,7 @@ pub(super) fn net_form(
         entry.clear();
         *open_cat = None;
     }
-    ui.add_space(12.0);
+    ui.add_space(7.0);
     match tab {
         NetTab::Domains => {
             mode_switches(ui, p, &mut extra.web_mode, true);
@@ -2883,7 +2907,7 @@ fn mode_switches(ui: &mut egui::Ui, p: &Palette, mode: &mut u8, with_none: bool)
     } else {
         0
     };
-    ui.add_space(10.0);
+    ui.add_space(6.0);
 }
 
 /// "25, 6881" → ports.
@@ -2955,10 +2979,10 @@ fn free_pcs_form(
         &mut ctl,
         tr("Vimora o'rnatilgan, lekin hali hech bir o'qituvchiga qo'shilmagan kompyuterlar shu yerda chiqadi. Kompyuter shu tarmoqda (Wi-Fi yoki LAN) bo'lishi kerak."),
     );
-    ui.add_space(12.0);
+    ui.add_space(7.0);
     if free.is_empty() {
         // An empty list: a calm picture instead of a paragraph.
-        ui.add_space(46.0);
+        ui.add_space(28.0);
         ui.vertical_centered(|ui| {
             ui.label(ui_kit::icon(
                 if scanning {
@@ -3020,7 +3044,7 @@ fn free_pcs_form(
                 }
             }
         });
-    ui.add_space(12.0);
+    ui.add_space(7.0);
     if free.len() > 1
         && ui_kit::button(
             ui,

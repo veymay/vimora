@@ -579,7 +579,7 @@ impl TeacherApp {
                     // The same space on the left and the right: the width actually left inside
                     // (the scroll bar's strip is not taken from the right margin).
                     Frame::none()
-                        .inner_margin(Margin::symmetric(22.0, 18.0))
+                        .inner_margin(Margin::symmetric(18.0, 12.0))
                         .show(ui, |ui| {
                             let w = ui.available_width().min(width - 44.0);
                             ui.set_width(w);
@@ -665,7 +665,7 @@ impl TeacherApp {
                     ui.painter()
                         .hline(footer_rect.x_range(), top, Stroke::new(1.0_f32, p.line));
                     Frame::none()
-                        .inner_margin(Margin::symmetric(18.0, 14.0))
+                        .inner_margin(Margin::symmetric(16.0, 10.0))
                         .show(ui, |ui| {
                             ui.set_width(width - 36.0);
                             ui.horizontal(|ui| {

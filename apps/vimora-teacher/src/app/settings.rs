@@ -76,8 +76,8 @@ pub(super) struct SettingsOut {
 /// Settings live in a drawer like everything else: same width as the others.
 pub(super) const SETTINGS_W: f32 = super::overlay::DRAWER_W;
 const NAV_W: f32 = 176.0;
-const ROW_H: f32 = 56.0;
-const NAV_ITEM_H: f32 = 46.0;
+const ROW_H: f32 = 46.0;
+const NAV_ITEM_H: f32 = 40.0;
 
 pub(super) struct SettingsCtx<'a> {
     pub(super) fingerprint: &'a str,
@@ -220,9 +220,9 @@ pub(super) fn settings_page(
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         Frame::none()
-                            .inner_margin(Margin::symmetric(26.0, 14.0))
+                            .inner_margin(Margin::symmetric(20.0, 8.0))
                             .show(ui, |ui| {
-                                ui.set_width(SETTINGS_W - NAV_W - 52.0);
+                                ui.set_width(SETTINGS_W - NAV_W - 40.0);
                                 ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
                                 match tab {
                                     SettingsTab::General => general(ui, p, c, out),
@@ -403,44 +403,62 @@ pub(super) fn dropdown<T: Copy + PartialEq>(
         ui.memory_mut(|m| m.toggle_popup(popup_id));
     }
     let mut changed = false;
-    egui::popup_below_widget(
-        ui,
-        popup_id,
-        &resp,
-        egui::PopupCloseBehavior::CloseOnClick,
-        |ui| {
-            ui.set_min_width(W);
-            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-            for (v, label) in items {
-                let (ir, iresp) = ui.allocate_exact_size(vec2(W, ITEM_H), Sense::click());
-                let on = *value == *v;
-                if iresp.hovered() {
-                    ui.painter().rect_filled(ir, Rounding::ZERO, p.hover);
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                }
-                ui.painter().text(
-                    pos2(ir.left() + 14.0, ir.center().y),
-                    Align2::LEFT_CENTER,
-                    *label,
-                    FontId::new(13.5, ui_kit::medium()),
-                    if on { p.accent_ink } else { p.text },
-                );
-                if on {
+    if open {
+        let area_id = egui::Id::new(("dropdown-area", id));
+        let rect = ui_kit::arrow_popup(
+            ui.ctx(),
+            area_id,
+            resp.rect,
+            resp.rect.center().x,
+            true,
+            |ui| {
+                ui.set_min_width(W - 12.0);
+                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                for (v, label) in items {
+                    let (ir, iresp) =
+                        ui.allocate_exact_size(vec2(W - 12.0, ITEM_H), Sense::click());
+                    let on = *value == *v;
+                    if iresp.hovered() {
+                        ui.painter().rect_filled(ir, Rounding::ZERO, p.hover);
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
                     ui.painter().text(
-                        pos2(ir.right() - 18.0, ir.center().y),
-                        Align2::CENTER_CENTER,
-                        icons::CHECK,
-                        FontId::proportional(15.0),
-                        p.accent_ink,
+                        pos2(ir.left() + 10.0, ir.center().y),
+                        Align2::LEFT_CENTER,
+                        *label,
+                        FontId::new(13.5, ui_kit::medium()),
+                        if on { p.accent_ink } else { p.text },
                     );
+                    if on {
+                        ui.painter().text(
+                            pos2(ir.right() - 14.0, ir.center().y),
+                            Align2::CENTER_CENTER,
+                            icons::CHECK,
+                            FontId::proportional(15.0),
+                            p.accent_ink,
+                        );
+                    }
+                    if iresp.clicked() {
+                        if !on {
+                            *value = *v;
+                            changed = true;
+                        }
+                        ui.memory_mut(|m| m.close_popup());
+                    }
                 }
-                if iresp.clicked() && !on {
-                    *value = *v;
-                    changed = true;
-                }
-            }
-        },
-    );
+            },
+        );
+        // A click anywhere else, or Escape, closes it.
+        let clicked_out = ui.input(|i| {
+            i.pointer.any_pressed()
+                && i.pointer
+                    .interact_pos()
+                    .is_some_and(|pos| !rect.contains(pos) && !resp.rect.contains(pos))
+        });
+        if clicked_out || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            ui.memory_mut(|m| m.close_popup());
+        }
+    }
     changed
 }
 
@@ -707,7 +725,7 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
             ui.add(ui_kit::text_field(&mut c.lock_title).desired_width(300.0));
         },
     );
-    ui.add_space(12.0);
+    ui.add_space(7.0);
     ui.horizontal(|ui| {
         ui.label(RichText::new(tr("Matn")).size(13.5).color(p.text));
         ui_kit::info(ui, tr("Qulflanganda o'quvchi ekranining o'rtasida chiqadi. Bo'sh qoldirsangiz ko'rinmaydi. O'zgarish keyingi qulflashda ko'rinadi."));
@@ -718,7 +736,7 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
             .desired_rows(3)
             .desired_width(f32::INFINITY),
     );
-    ui.add_space(12.0);
+    ui.add_space(7.0);
     row(
         ui,
         p,
@@ -1008,7 +1026,7 @@ fn about(ui: &mut egui::Ui, p: &Palette) {
         FontId::proportional(12.5),
         p.muted,
     );
-    ui.add_space(14.0);
+    ui.add_space(8.0);
 }
 
 fn about_rows(ui: &mut egui::Ui, p: &Palette, cx: &SettingsCtx<'_>) {

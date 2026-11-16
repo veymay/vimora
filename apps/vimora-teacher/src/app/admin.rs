@@ -315,7 +315,7 @@ pub(super) fn schedule_page(ui: &mut egui::Ui, p: &Palette, c: &mut crate::confi
                                     }
                                 });
                             });
-                            ui.add_space(10.0);
+                            ui.add_space(6.0);
                             let cells: Vec<(&str, bool)> = DAYS
                                 .iter()
                                 .enumerate()
@@ -328,7 +328,7 @@ pub(super) fn schedule_page(ui: &mut egui::Ui, p: &Palette, c: &mut crate::confi
                 });
             }
         });
-    ui.add_space(12.0);
+    ui.add_space(7.0);
     if let Some(i) = remove {
         c.schedules.remove(i);
     }
@@ -468,7 +468,7 @@ fn secret_row(
             open = !open;
             text.clear();
         }
-        ui.add_space(10.0);
+        ui.add_space(6.0);
         ui.label(
             RichText::new(if is_set { tr("Yoqilgan") } else { tr("O'chiq") })
                 .size(13.0)

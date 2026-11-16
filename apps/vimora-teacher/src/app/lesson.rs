@@ -81,7 +81,7 @@ pub(super) fn lesson_form(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &F
     if let Some(i) = ui_kit::tab_strip(ui, &items, current) {
         l.tab = tabs[i].0;
     }
-    ui.add_space(12.0);
+    ui.add_space(7.0);
     match l.tab {
         LessonTab::Files => files(ui, p, l, cx),
         LessonTab::Attendance => super::lesson_extra::attendance(ui, p, l, cx),
@@ -159,7 +159,7 @@ fn files(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<'_>) {
         });
     });
 
-    ui.add_space(16.0);
+    ui.add_space(10.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         ui.add_enabled_ui(!online.is_empty(), |ui| {
@@ -177,7 +177,7 @@ fn files(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<'_>) {
             l.request = Some(LessonRequest::OpenCollected);
         }
     });
-    ui.add_space(10.0);
+    ui.add_space(6.0);
     let collected = cx.hub.lock().unwrap().collected.clone();
     let rows: Vec<(String, String, Color32)> = online
         .iter()
