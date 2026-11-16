@@ -91,6 +91,7 @@ pub(super) fn lesson_form(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &F
     }
 }
 
+#[allow(dead_code)]
 fn caption(ui: &mut egui::Ui, p: &Palette, text: &str, help: &str) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
@@ -107,22 +108,22 @@ fn files(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<'_>) {
         .filter(|v| v.online && cx.targets.contains(&v.id))
         .collect();
 
-    caption(
-        ui,
-        p,
-        tr("Fayl yoki papka yuborish"),
-        tr("O'quvchi kompyuterida Vimora papkasidagi Files ichiga tushadi. Papka ichidagi hamma narsa bilan yuboriladi (jami 100 MB gacha)."),
-    );
     let w = ui.available_width();
     ui.allocate_ui_with_layout(
         vec2(w, ui_kit::CONTROL_H),
         Layout::right_to_left(Align::Center),
         |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            if ui_kit::button(ui, Some(icons::FOLDER), tr("Papka"), Kind::Outline).clicked() {
+            if ui_kit::icon_cell(ui, icons::FOLDER, ui_kit::CONTROL_H, false)
+                .tip(tr("Papka tanlash"))
+                .clicked()
+            {
                 l.request = Some(LessonRequest::Pick(true));
             }
-            if ui_kit::button(ui, Some(icons::FILE_UP), tr("Fayl"), Kind::Outline).clicked() {
+            if ui_kit::icon_cell(ui, icons::FILE_UP, ui_kit::CONTROL_H, false)
+                .tip(tr("Fayl tanlash"))
+                .clicked()
+            {
                 l.request = Some(LessonRequest::Pick(false));
             }
             ui.add(
@@ -136,7 +137,7 @@ fn files(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<'_>) {
     ui.horizontal(|ui| {
         ui_kit::toggle(ui, &mut l.open_after);
         ui.label(
-            RichText::new(tr("Yuborilgach o'quvchida ochilsin"))
+            RichText::new(tr("Yuborilgach ochish"))
                 .size(13.0)
                 .color(p.text),
         );
@@ -149,6 +150,7 @@ fn files(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<'_>) {
                     &tf!("Yuborish ({n})", n = online.len()),
                     Kind::Primary,
                 )
+                .tip(tr("O'quvchi kompyuterida Vimora papkasidagi Files ichiga tushadi. Papka ichidagi hamma narsa bilan yuboriladi (jami 100 MB gacha)."))
                 .clicked()
                 {
                     l.request = Some(LessonRequest::Send);
@@ -157,21 +159,21 @@ fn files(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<'_>) {
         });
     });
 
-    ui.add_space(22.0);
-    caption(
-        ui,
-        p,
-        tr("Topshiriqlarni yig'ish"),
-        tr("O'quvchilar ishini Hujjatlar → Topshiriq papkasiga saqlaydi. \"Yig'ish\" bosilganda hammasi sizning Hujjatlar/Vimora/Topshiriqlar papkangizga kompyuter nomi bilan tushadi."),
-    );
+    ui.add_space(16.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         ui.add_enabled_ui(!online.is_empty(), |ui| {
-            if ui_kit::button(ui, Some(icons::DOWNLOAD), tr("Yig'ish"), Kind::Primary).clicked() {
+            if ui_kit::button(ui, Some(icons::DOWNLOAD), tr("Yig'ish"), Kind::Primary)
+                .tip(tr("O'quvchilar ishini Hujjatlar → Topshiriq papkasidan oladi va Hujjatlar/Vimora/Topshiriqlar ga kompyuter nomi bilan saqlaydi."))
+                .clicked()
+            {
                 l.request = Some(LessonRequest::Collect);
             }
         });
-        if ui_kit::button(ui, Some(icons::FOLDER), tr("Papkani ochish"), Kind::Outline).clicked() {
+        if ui_kit::icon_cell(ui, icons::FOLDER, ui_kit::CONTROL_H, false)
+            .tip(tr("Papkani ochish"))
+            .clicked()
+        {
             l.request = Some(LessonRequest::OpenCollected);
         }
     });

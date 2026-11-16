@@ -512,58 +512,60 @@ fn secret_row(
         );
     });
     if open {
-        Frame::none()
-            .fill(p.sunken)
-            .stroke(Stroke::new(1.0_f32, p.line))
-            .inner_margin(egui::Margin::same(12.0))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 6.0;
-                    let r = ui.add(
-                        ui_kit::password_field(&mut text)
-                            .hint_text(if digits_only {
-                                tr("4–8 raqam")
-                            } else {
-                                tr("Kamida 4 ta belgi")
-                            })
-                            .desired_width(ui.available_width() - 230.0),
-                    );
-                    if r.changed() && digits_only {
-                        text.retain(|ch| ch.is_ascii_digit());
-                        text.truncate(8);
-                    }
-                    if !r.has_focus() && text.is_empty() {
-                        r.request_focus();
-                    }
-                    let ok = valid(&text);
-                    let enter = (r.has_focus() || r.lost_focus())
-                        && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    ui.add_enabled_ui(ok, |ui| {
-                        if ui_kit::button(ui, Some(icons::CHECK), tr("Saqlash"), Kind::Primary)
-                            .clicked()
-                            || (enter && ok)
-                        {
-                            result = Secret::Save(std::mem::take(&mut text));
-                            open = false;
-                        }
-                    });
-                    if is_set
-                        && ui_kit::icon_cell(ui, icons::TRASH_2, ui_kit::CONTROL_H, false)
-                            .tip(tr("Olib tashlash"))
-                            .clicked()
-                    {
-                        result = Secret::Remove;
-                        open = false;
-                    }
-                    if ui_kit::icon_cell(ui, icons::X, ui_kit::CONTROL_H, false)
-                        .tip(tr("Bekor qilish"))
+        // One line under the row, from the right edge: cancel, remove, save, and the field
+        // takes what is left; every control the same height.
+        ui.add_space(6.0);
+        let w = ui.available_width();
+        ui.allocate_ui_with_layout(
+            vec2(w, ui_kit::CONTROL_H),
+            Layout::right_to_left(Align::Center),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                if ui_kit::icon_cell(ui, icons::X, ui_kit::CONTROL_H, false)
+                    .tip(tr("Bekor qilish"))
+                    .clicked()
+                {
+                    open = false;
+                }
+                if is_set
+                    && ui_kit::icon_cell(ui, icons::TRASH_2, ui_kit::CONTROL_H, false)
+                        .tip(tr("Olib tashlash"))
                         .clicked()
-                    {
-                        open = false;
-                    }
+                {
+                    result = Secret::Remove;
+                    open = false;
+                }
+                let ok = valid(&text);
+                let mut save = false;
+                ui.add_enabled_ui(ok, |ui| {
+                    save = ui_kit::button(ui, Some(icons::CHECK), tr("Saqlash"), Kind::Primary)
+                        .clicked();
                 });
-            });
+                let r = ui.add(
+                    ui_kit::password_field(&mut text)
+                        .hint_text(if digits_only {
+                            tr("4–8 raqam")
+                        } else {
+                            tr("Kamida 4 ta belgi")
+                        })
+                        .desired_width(ui.available_width()),
+                );
+                if r.changed() && digits_only {
+                    text.retain(|ch| ch.is_ascii_digit());
+                    text.truncate(8);
+                }
+                if !r.has_focus() && text.is_empty() {
+                    r.request_focus();
+                }
+                let enter = (r.has_focus() || r.lost_focus())
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if (save || enter) && ok {
+                    result = Secret::Save(std::mem::take(&mut text));
+                    open = false;
+                }
+            },
+        );
+        ui.add_space(6.0);
     }
     ui.data_mut(|d| {
         d.insert_temp(open_id, open);

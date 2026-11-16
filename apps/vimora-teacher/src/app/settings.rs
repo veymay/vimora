@@ -264,11 +264,6 @@ pub(super) fn settings_page(
 // ---------------------------------------------------------------------------------------------
 // Building blocks
 
-/// A gap between groups of settings. (The groups have no titles: the rows say it themselves.)
-fn heading(ui: &mut egui::Ui, _p: &Palette, _text: &str) {
-    ui.add_space(14.0);
-}
-
 /// Title (+ optional ⓘ tooltip) on the left, the control on the right, hairline below.
 pub(super) fn row(
     ui: &mut egui::Ui,
@@ -481,7 +476,6 @@ fn general(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig, out: &mut Sett
             }
         },
     );
-    heading(ui, p, tr("Zaxira nusxa"));
     row(
         ui,
         p,
@@ -502,7 +496,6 @@ fn general(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig, out: &mut Sett
 }
 
 fn appearance(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
-    heading(ui, p, tr("Ko'rinish"));
     #[derive(Clone, Copy, PartialEq)]
     enum Theme {
         Dark,
@@ -541,7 +534,6 @@ fn appearance(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
             }
         },
     );
-    heading(ui, p, tr("Kompyuterlar"));
     let mut ms = c.thumb_interval_ms;
     let sec: Vec<String> = [1, 2, 5, 10].iter().map(|n| tf!("{n} s", n = n)).collect();
     row(
@@ -678,7 +670,6 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
             }
         }
     }
-    heading(ui, p, tr("Matn"));
     row(
         ui,
         p,
@@ -726,7 +717,6 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
                 .color(p.warning),
         );
     }
-    heading(ui, p, tr("Ko'rinish"));
     ui.horizontal(|ui| {
         ui.label(RichText::new(tr("Ikonka")).size(13.5).color(p.text));
         ui_kit::info(ui, tr("Qulflanganda o'quvchi ekranining o'rtasida chiqadigan belgi. Keyingi qulflashda ko'rinadi."));
@@ -787,7 +777,6 @@ fn updates(
     cx: &SettingsCtx<'_>,
     out: &mut SettingsOut,
 ) {
-    heading(ui, p, tr("Yangilanish"));
     // Status card: what's installed, what's available, one action.
     let w = ui.available_width();
     ui_kit::card(p, false, false).fill(p.bg).show(ui, |ui| {
@@ -997,7 +986,6 @@ fn about(ui: &mut egui::Ui, p: &Palette) {
 }
 
 fn about_rows(ui: &mut egui::Ui, p: &Palette, cx: &SettingsCtx<'_>) {
-    heading(ui, p, tr("Ma'lumot"));
     row(ui, p, tr("O'qituvchi identifikatori"), Some(tr("Vimora o'rnatilgan kompyuterlar tarmoqda o'zi paydo bo'ladi. Har bir kompyuter birinchi ulangan o'qituvchini eslab qoladi va faqat unga bo'ysunadi. Kompyuterni o'qituvchidan olib tashlasangiz, uni boshqa o'qituvchi ulab olishi mumkin.")), |ui| {
         ui.label(
             RichText::new(cx.fingerprint)

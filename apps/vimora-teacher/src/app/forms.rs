@@ -416,11 +416,25 @@ fn terminal_tab(
     run: &mut bool,
     cx: &FormCtx<'_>,
 ) {
-    if let Some(i) = ui_kit::choices(
-        ui,
-        &[(None, "PowerShell"), (None, "CMD"), (None, "Bash")],
-        *shell as usize,
-    ) {
+    // The three shells, one full-width strip, the cells the same width.
+    let items = [
+        ui_kit::TabItem {
+            icon: Some(icons::TERMINAL),
+            label: "PowerShell",
+            count: None,
+        },
+        ui_kit::TabItem {
+            icon: Some(icons::APP_WINDOW),
+            label: "CMD",
+            count: None,
+        },
+        ui_kit::TabItem {
+            icon: Some(icons::SERVER),
+            label: "Bash",
+            count: None,
+        },
+    ];
+    if let Some(i) = ui_kit::tab_strip(ui, &items, *shell as usize) {
         *shell = i as u8;
     }
     let chosen: Vec<&View> = cx
@@ -1306,55 +1320,12 @@ pub(super) fn updates_form(
         .iter()
         .filter(|v| v.online && cx.targets.contains(&v.id))
         .collect();
-    let ids: Vec<u64> = views.iter().map(|v| v.id).collect();
     let behind: Vec<u64> = views
         .iter()
         .filter(|v| v.version.is_empty() || vimora_update::is_newer(cx.latest, &v.version))
         .map(|v| v.id)
         .collect();
 
-    // One row: what this is about on the left, the one action for every computer on the right.
-    ui.horizontal(|ui| {
-        let line = match *tab {
-            UpdateTab::Vimora => tf!("Eng so'nggi: {v}", v = cx.latest),
-            _ => tf!("{n} ta kompyuter", n = ids.len()),
-        };
-        ui.label(RichText::new(line).size(13.5).color(p.muted));
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.add_enabled_ui(!ids.is_empty(), |ui| match *tab {
-                UpdateTab::Apps => {
-                    if ui_kit::icon_cell(ui, icons::REFRESH_CW, ui_kit::CONTROL_H, false)
-                        .tip(tr("Tekshirish"))
-                        .clicked()
-                    {
-                        *request = Some(UpdateRequest::ListApps(ids.clone()));
-                    }
-                }
-                UpdateTab::System => {
-                    if ui_kit::icon_cell(ui, icons::REFRESH_CW, ui_kit::CONTROL_H, false)
-                        .tip(tr("Tekshirish"))
-                        .clicked()
-                    {
-                        *request = Some(UpdateRequest::Check(ids.clone()));
-                    }
-                }
-                UpdateTab::Vimora => {
-                    ui.add_enabled_ui(!behind.is_empty(), |ui| {
-                        if ui_kit::button(
-                            ui,
-                            Some(icons::CLOUD_DOWNLOAD),
-                            &tf!("Vimora'ni yangilash ({n})", n = behind.len()),
-                            Kind::Primary,
-                        )
-                        .clicked()
-                        {
-                            *request = Some(UpdateRequest::Vimora(behind.clone()));
-                        }
-                    });
-                }
-            });
-        });
-    });
     ui.add_space(12.0);
     if views.is_empty() {
         ui.label(

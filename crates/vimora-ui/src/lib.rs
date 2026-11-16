@@ -825,22 +825,26 @@ pub fn card(p: &Palette, selected: bool, hovered: bool) -> Frame {
 }
 
 /// Inner padding of every text input (same height as buttons: [`CONTROL_H`]).
-pub const INPUT_MARGIN: egui::Vec2 = egui::Vec2::new(10.0, 8.5);
+pub const INPUT_MARGIN: egui::Vec2 = egui::Vec2::new(10.0, 7.0);
 
 /// Single-line text input, exactly [`CONTROL_H`] tall.
 pub fn text_field(text: &mut dyn egui::TextBuffer) -> egui::TextEdit<'_> {
     egui::TextEdit::singleline(text)
         .margin(INPUT_MARGIN)
-        .min_size(vec2(0.0, CONTROL_H))
+        // The margin is on top of this: margin + content = exactly one control high.
+        .min_size(vec2(0.0, CONTROL_H - 2.0 * INPUT_MARGIN.y))
         .vertical_align(egui::Align::Center)
 }
 
 /// A password box: the dots come from the monospace face, where they sit in the middle of the
 /// line (in the text face they ride high).
 pub fn password_field(text: &mut dyn egui::TextBuffer) -> egui::TextEdit<'_> {
+    // The mono face is a little lower than the text face: the margin makes up the difference so
+    // the box is exactly one control high.
     text_field(text)
         .password(true)
-        .font(FontId::new(16.0, mono()))
+        .font(FontId::new(14.0, mono()))
+        .margin(egui::Vec2::new(INPUT_MARGIN.x, 8.32))
 }
 
 /// Multi-line text input with the same padding as [`text_field`].
@@ -1457,5 +1461,60 @@ pub fn accordion_body(ui: &mut Ui, id: egui::Id, open: bool, add: impl FnOnce(&m
     }
     if t > 0.0 && t < 1.0 {
         ui.ctx().request_repaint();
+    }
+}
+
+#[cfg(test)]
+mod height_tests {
+    use super::*;
+
+    /// Inputs, password boxes and buttons all take exactly one control's height in a row
+    /// (they stand side by side and must line up). Measured as the space each one takes.
+    #[test]
+    fn controls_have_the_same_height() {
+        let ctx = egui::Context::default();
+        install_fonts(&ctx);
+        apply_theme(&ctx, ThemeMode::Dark);
+        let mut heights: Vec<(&str, f32)> = vec![];
+        let mut a = String::from("abc");
+        let mut b = String::from("1234");
+        let mut c = String::new();
+        for _ in 0..2 {
+            heights.clear();
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    let mut measure = |ui: &mut Ui, name: &'static str, f: &dyn Fn(&mut Ui)| {
+                        let top = ui.cursor().min.y;
+                        f(ui);
+                        heights.push((name, ui.cursor().min.y - top));
+                    };
+                    measure(ui, "text", &|ui| {
+                        ui.add(text_field(&mut a.clone()));
+                    });
+                    measure(ui, "hint", &|ui| {
+                        ui.add(text_field(&mut c.clone()).hint_text("4–8 raqam"));
+                    });
+                    measure(ui, "password", &|ui| {
+                        ui.add(password_field(&mut b.clone()));
+                    });
+                    measure(ui, "button", &|ui| {
+                        button(ui, Some(icons::CHECK), "Saqlash", Kind::Primary);
+                    });
+                    measure(ui, "outline", &|ui| {
+                        button(ui, None, "Ok", Kind::Outline);
+                    });
+                    measure(ui, "icon cell", &|ui| {
+                        icon_cell(ui, icons::X, CONTROL_H, false);
+                    });
+                });
+            });
+        }
+        for (name, h) in heights {
+            assert!(
+                (h - CONTROL_H).abs() < 0.6,
+                "{name} takes {h}, not {CONTROL_H}"
+            );
+        }
     }
 }

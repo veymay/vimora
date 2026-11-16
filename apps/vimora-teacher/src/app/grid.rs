@@ -374,11 +374,8 @@ impl TeacherApp {
                     _ => None,
                 }
             };
-            let ink = if active || ordered_by.is_some() {
-                p.accent_ink
-            } else {
-                p.faint
-            };
+            // Only a filter is green; the column the list is ordered by just shows its arrow.
+            let ink = if active { p.accent_ink } else { p.faint };
             let g = ui_kit::caps(ui, col.title(), 9.5, ui_kit::mono(), ink);
             let gw = g.size().x;
             ui.painter()
@@ -395,7 +392,7 @@ impl TeacherApp {
                         icons::ARROW_UP
                     },
                     FontId::proportional(12.0),
-                    p.accent_ink,
+                    p.muted,
                 );
                 icon_x += 15.0;
             }

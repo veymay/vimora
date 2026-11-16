@@ -6,6 +6,11 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Aralash tartib", "Shuffled order", "Перемешивание"),
+    ("Papka tanlash", "Choose a folder", "Выбрать папку"),
+    ("Fayl tanlash", "Choose a file", "Выбрать файл"),
+    ("Yuborilgach ochish", "Open after sending", "Открыть после отправки"),
+    ("O'quvchilar ishini Hujjatlar → Topshiriq papkasidan oladi va Hujjatlar/Vimora/Topshiriqlar ga kompyuter nomi bilan saqlaydi.", "Takes the students' work from Documents → Topshiriq and saves it to Documents/Vimora/Topshiriqlar under each computer's name.", "Забирает работы учеников из «Документы → Topshiriq» и сохраняет в Документы/Vimora/Topshiriqlar под именем компьютера."),
     ("Avto-saqlash", "Autosave", "Автосохранение"),
     ("O'zgarishlar darhol saqlanadi. O'chirsangiz, \"Saqlash\" tugmasini bosing.", "Changes are saved at once. If you turn it off, press \"Save\".", "Изменения сохраняются сразу. Если выключить, нажимайте «Сохранить»."),
     ("Google, Yandex, Bing, DuckDuckGo va YouTube'da nomaqbul natijalar yashiriladi. O'quvchi o'chira olmaydi.", "Unsuitable results are hidden in Google, Yandex, Bing, DuckDuckGo and YouTube. The student cannot turn it off.", "Неподходящие результаты скрываются в Google, Yandex, Bing, DuckDuckGo и YouTube. Ученик не может это отключить."),

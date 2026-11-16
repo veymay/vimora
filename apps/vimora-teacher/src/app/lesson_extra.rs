@@ -69,10 +69,8 @@ pub(super) fn table(
         });
 }
 
-fn caption(ui: &mut egui::Ui, p: &Palette, text: &str) {
-    ui_kit::hud(ui, text, p.muted);
-    ui.add_space(6.0);
-}
+/// The groups of the lesson tabs have no headings: the fields' own words say what they are.
+fn caption(_ui: &mut egui::Ui, _p: &Palette, _text: &str) {}
 
 fn online_targets<'a>(cx: &'a FormCtx<'_>) -> Vec<&'a View> {
     cx.all
@@ -163,12 +161,19 @@ pub(super) fn poll(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
         (3, tr("Dars haqida fikr")),
     ];
     let before = l.poll_kind;
-    let cells: Vec<(Option<&str>, &str)> = kinds.iter().map(|(_, l)| (None, *l)).collect();
+    let cells: Vec<ui_kit::TabItem> = kinds
+        .iter()
+        .map(|(_, l)| ui_kit::TabItem {
+            icon: None,
+            label: l,
+            count: None,
+        })
+        .collect();
     let current = kinds
         .iter()
         .position(|(k, _)| *k == l.poll_kind)
         .unwrap_or(0);
-    if let Some(i) = ui_kit::choices(ui, &cells, current) {
+    if let Some(i) = ui_kit::tab_strip(ui, &cells, current) {
         l.poll_kind = kinds[i].0;
     }
     if l.poll_kind == 3 && (before != 3 || l.poll_q.is_empty()) {
@@ -189,22 +194,33 @@ pub(super) fn poll(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
         }
         let mut remove = None;
         for (i, o) in l.poll_opts.iter_mut().enumerate() {
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(format!("{}", (b'A' + i as u8) as char))
-                        .family(ui_kit::bold())
-                        .color(p.muted),
-                );
-                ui.add(ui_kit::text_field(o).desired_width(ui.available_width() - 40.0));
-                if i >= 2
-                    && ui_kit::icon_cell(ui, icons::X, 30.0, false)
-                        .tip(tr("Olib tashlash"))
-                        .clicked()
-                {
-                    remove = Some(i);
-                }
-            });
-            ui.add_space(4.0);
+            // From the right edge: the remove cell (an empty place for the first two, so every
+            // field is as wide), the field, and the letter at the left.
+            let w = ui.available_width();
+            ui.allocate_ui_with_layout(
+                vec2(w, ui_kit::CONTROL_H),
+                Layout::right_to_left(Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    if i >= 2 {
+                        if ui_kit::icon_cell(ui, icons::X, ui_kit::CONTROL_H, false)
+                            .tip(tr("Olib tashlash"))
+                            .clicked()
+                        {
+                            remove = Some(i);
+                        }
+                    } else {
+                        ui.add_space(ui_kit::CONTROL_H);
+                    }
+                    ui.add(ui_kit::text_field(o).desired_width(ui.available_width() - 24.0));
+                    ui.label(
+                        RichText::new(format!("{}", (b'A' + i as u8) as char))
+                            .family(ui_kit::bold())
+                            .color(p.muted),
+                    );
+                },
+            );
+            ui.add_space(6.0);
         }
         if let Some(i) = remove {
             l.poll_opts.remove(i);
@@ -477,29 +493,35 @@ pub(super) fn test(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
             .hint_text(tr("Dars mavzusi"))
             .desired_width(ui.available_width()),
     );
-    ui.add_space(10.0);
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(tr("Vaqt")).size(13.0).color(p.text));
-        for m in [0u32, 5, 10, 15, 20, 30, 45] {
-            let label = if m == 0 {
+    ui.add_space(6.0);
+    let minutes: Vec<String> = [0u32, 5, 10, 15, 20, 30, 45]
+        .iter()
+        .map(|m| {
+            if *m == 0 {
                 tr("Cheksiz").to_string()
             } else {
                 format!("{m} min")
-            };
-            if ui_kit::tab(ui, &label, None, t.def.minutes == m).clicked() {
-                t.def.minutes = m;
             }
-        }
+        })
+        .collect();
+    let mins = [0u32, 5, 10, 15, 20, 30, 45];
+    let items: Vec<(u32, &str)> = mins
+        .iter()
+        .zip(minutes.iter())
+        .map(|(m, s)| (*m, s.as_str()))
+        .collect();
+    super::settings::row(ui, p, tr("Vaqt"), None, |ui| {
+        super::settings::dropdown(ui, p, "test-minutes", &mut t.def.minutes, &items);
     });
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        ui_kit::toggle(ui, &mut t.def.shuffle);
-        ui.label(
-            RichText::new(tr("Savollar va variantlar har o'quvchida aralash tartibda"))
-                .size(13.0)
-                .color(p.text),
-        );
-    });
+    super::settings::row(
+        ui,
+        p,
+        tr("Aralash tartib"),
+        Some(tr("Savollar va variantlar har o'quvchida aralash tartibda")),
+        |ui| {
+            ui_kit::toggle(ui, &mut t.def.shuffle);
+        },
+    );
     ui.add_space(14.0);
     t.correct.resize(t.def.questions.len(), String::new());
     let mut remove_q = None;
@@ -641,19 +663,25 @@ pub(super) fn timer(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx
             .hint_text(tr("Maqsad"))
             .desired_width(ui.available_width()),
     );
-    ui.add_space(10.0);
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(tr("Taymer")).size(13.0).color(p.text));
-        for m in [0u32, 5, 10, 15, 20, 30, 45] {
-            let label = if m == 0 {
+    ui.add_space(6.0);
+    let mins = [0u32, 5, 10, 15, 20, 30, 45];
+    let labels: Vec<String> = mins
+        .iter()
+        .map(|m| {
+            if *m == 0 {
                 tr("Yo'q").to_string()
             } else {
                 format!("{m} min")
-            };
-            if ui_kit::tab(ui, &label, None, l.minutes == m).clicked() {
-                l.minutes = m;
             }
-        }
+        })
+        .collect();
+    let items: Vec<(u32, &str)> = mins
+        .iter()
+        .zip(labels.iter())
+        .map(|(m, s)| (*m, s.as_str()))
+        .collect();
+    super::settings::row(ui, p, tr("Taymer"), None, |ui| {
+        super::settings::dropdown(ui, p, "timer-minutes", &mut l.minutes, &items);
     });
     ui.add_space(10.0);
     ui.horizontal(|ui| {
@@ -665,6 +693,9 @@ pub(super) fn timer(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx
                 tr("Ekranlarda ko'rsatish"),
                 Kind::Primary,
             )
+            .tip(tr(
+                "O'quvchi ekranining yuqori o'ng burchagida maqsad va qolgan vaqt ko'rinadi.",
+            ))
             .clicked()
             {
                 l.request = Some(LessonRequest::Banner(true));
@@ -676,16 +707,7 @@ pub(super) fn timer(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx
             l.request = Some(LessonRequest::Banner(false));
         }
     });
-    ui.add_space(6.0);
-    ui.label(
-        RichText::new(tr(
-            "O'quvchi ekranining yuqori o'ng burchagida maqsad va qolgan vaqt ko'rinadi.",
-        ))
-        .size(12.0)
-        .color(p.faint),
-    );
-
-    ui.add_space(22.0);
+    ui.add_space(14.0);
     caption(ui, p, tr("Rag'batlantirish"));
     let stars = cx.hub.lock().unwrap().stars.clone();
     let w = ui.available_width();
