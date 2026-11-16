@@ -66,7 +66,8 @@ pub fn run_poll() -> anyhow::Result<()> {
     // the question is answered (it has no close button). Hidden until it sits on the edge.
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Vimora — savol")
+            .with_title("VIMORA — savol")
+            .with_icon(crate::smallwin::icon())
             .with_decorations(false)
             .with_always_on_top()
             .with_taskbar(false)
@@ -212,7 +213,8 @@ pub fn run_banner(goal: String, end_unix: u64) -> anyhow::Result<()> {
     const W: f32 = 420.0;
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Vimora")
+            .with_title("VIMORA")
+            .with_icon(crate::smallwin::icon())
             .with_decorations(false)
             .with_transparent(true)
             .with_always_on_top()
@@ -358,7 +360,8 @@ pub fn run_test() -> anyhow::Result<()> {
     let n = def.questions.len();
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Vimora — test")
+            .with_title("VIMORA — test")
+            .with_icon(crate::smallwin::icon())
             .with_fullscreen(true)
             .with_always_on_top()
             .with_decorations(false),

@@ -9,7 +9,8 @@ pub fn run(word: &str) -> anyhow::Result<()> {
     let word = word.to_string();
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Vimora")
+            .with_title("VIMORA")
+            .with_icon(crate::smallwin::icon())
             .with_fullscreen(true)
             .with_always_on_top()
             .with_decorations(false)

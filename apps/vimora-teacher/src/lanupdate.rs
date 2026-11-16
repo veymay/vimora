@@ -259,7 +259,7 @@ fn round(
             h.log(
                 Level::Info,
                 tf!(
-                    "{name}: Vimora {v} tarmoq orqali yuborildi",
+                    "{name}: VIMORA {v} tarmoq orqali yuborildi",
                     name = label,
                     v = p.version.clone()
                 ),

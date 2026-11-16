@@ -893,7 +893,7 @@ fn updates(
                 Phase::Available(r) => (
                     icons::CIRCLE_ARROW_UP,
                     p.accent_ink,
-                    tf!("Yangi versiya mavjud: {v}", v = r.version),
+                    tf!("Yangi versiya mavjud: {v}", v = format!("v{}", r.version)),
                 ),
                 Phase::Downloading {
                     version,
@@ -944,7 +944,7 @@ fn updates(
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
                 ui.label(
-                    RichText::new(tf!("Vimora {v}", v = vimora_update::current()))
+                    RichText::new(tf!("VIMORA {v}", v = format!("v{}", vimora_update::current())))
                         .family(ui_kit::bold())
                         .size(15.0)
                         .color(p.strong),
@@ -956,7 +956,7 @@ fn updates(
                     if ui_kit::primary_button(
                         ui,
                         icons::DOWNLOAD,
-                        &tf!("{v} ni o'rnatish", v = r.version),
+                        &tf!("{v} ni o'rnatish", v = format!("v{}", r.version)),
                     )
                     .clicked()
                     {
@@ -1062,7 +1062,7 @@ fn about(ui: &mut egui::Ui, p: &Palette) {
     ui.painter().text(
         pos2(logo.right() + 18.0, r.top() + 52.0),
         Align2::LEFT_CENTER,
-        tf!("Versiya {v}", v = vimora_update::current()),
+        tf!("Versiya {v}", v = format!("v{}", vimora_update::current())),
         FontId::new(13.0, ui_kit::mono()),
         p.accent_ink,
     );
@@ -1077,7 +1077,7 @@ fn about(ui: &mut egui::Ui, p: &Palette) {
 }
 
 fn about_rows(ui: &mut egui::Ui, p: &Palette, cx: &SettingsCtx<'_>) {
-    row(ui, p, tr("O'qituvchi identifikatori"), Some(tr("Vimora o'rnatilgan kompyuterlar tarmoqda o'zi paydo bo'ladi. Har bir kompyuter birinchi ulangan o'qituvchini eslab qoladi va faqat unga bo'ysunadi. Kompyuterni o'qituvchidan olib tashlasangiz, uni boshqa o'qituvchi ulab olishi mumkin.")), |ui| {
+    row(ui, p, tr("O'qituvchi identifikatori"), Some(tr("VIMORA o'rnatilgan kompyuterlar tarmoqda o'zi paydo bo'ladi. Har bir kompyuter birinchi ulangan o'qituvchini eslab qoladi va faqat unga bo'ysunadi. Kompyuterni o'qituvchidan olib tashlasangiz, uni boshqa o'qituvchi ulab olishi mumkin.")), |ui| {
         ui.label(
             RichText::new(cx.fingerprint)
                 .family(ui_kit::mono())

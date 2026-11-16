@@ -269,7 +269,7 @@ pub(super) fn dialog_body(
             );
             ui.label(
                 RichText::new(tr(
-                    "O'quvchi kompyuterida Vimora papkasidagi Files ichiga saqlanadi.",
+                    "O'quvchi kompyuterida VIMORA papkasidagi Files ichiga saqlanadi.",
                 ))
                 .size(12.5)
                 .color(p.faint),
@@ -1280,7 +1280,7 @@ pub(super) fn updates_form(
             icons::MONITOR,
             tr("Windows va drayverlar"),
         ),
-        (UpdateTab::Vimora, icons::CLOUD_DOWNLOAD, "Vimora"),
+        (UpdateTab::Vimora, icons::CLOUD_DOWNLOAD, "VIMORA"),
     ];
     let items: Vec<ui_kit::TabItem> = tabs
         .iter()
@@ -1646,7 +1646,7 @@ pub(super) fn updates_form(
                                     p,
                                     icons::CLOUD_DOWNLOAD,
                                     p.accent,
-                                    "Vimora",
+                                    "VIMORA",
                                     Some((&now, p.muted)),
                                     |_| {},
                                 );
@@ -1989,7 +1989,7 @@ fn vimora_state(v: &View, cx: &FormCtx<'_>) -> Option<VimoraState> {
         .status
         .busy
         .as_deref()
-        .is_some_and(|b| b.contains("Vimora"));
+        .is_some_and(|b| b.to_lowercase().contains("vimora"));
     match (current, job) {
         (true, Some(_)) => Some(VimoraState::Done),
         (true, None) => None,
@@ -2967,7 +2967,7 @@ fn free_pcs_form(
     ctl.add_space(6.0);
     ui_kit::info(
         &mut ctl,
-        tr("Vimora o'rnatilgan, lekin hali hech bir o'qituvchiga qo'shilmagan kompyuterlar shu yerda chiqadi. Kompyuter shu tarmoqda (Wi-Fi yoki LAN) bo'lishi kerak."),
+        tr("VIMORA o'rnatilgan, lekin hali hech bir o'qituvchiga qo'shilmagan kompyuterlar shu yerda chiqadi. Kompyuter shu tarmoqda (Wi-Fi yoki LAN) bo'lishi kerak."),
     );
     ui.add_space(7.0);
     if free.is_empty() {

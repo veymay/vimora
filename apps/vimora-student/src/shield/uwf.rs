@@ -339,7 +339,7 @@ impl Backend for Uwf {
                 note: Some(if pending {
                     "UWF o'rnatildi — qayta yuklash kerak".into()
                 } else {
-                    "UWF yo'q: Windows 10/11 Education yoki Enterprise kerak (Muzlatish yoqilsa, Vimora o'zi o'rnatadi)".into()
+                    "UWF yo'q: Windows 10/11 Education yoki Enterprise kerak (Muzlatish yoqilsa, VIMORA o'zi o'rnatadi)".into()
                 }),
             };
         };

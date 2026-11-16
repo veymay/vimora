@@ -784,7 +784,7 @@ pub(super) fn run(shared: Arc<Mutex<Shared>>) -> anyhow::Result<()> {
         };
         RegisterClassW(&wc);
         let (cx, cy) = (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-        let title = wide("Vimora");
+        let title = wide("VIMORA");
         let hwnd = CreateWindowExW(
             WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
             class.as_ptr(),

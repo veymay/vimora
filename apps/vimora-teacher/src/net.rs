@@ -729,7 +729,7 @@ async fn session(
                     // An older Vimora on the computer doesn't know a newer command: say that,
                     // not the decoder's words.
                     let message = if message.contains("expected variant index") {
-                        tr("Vimora eski versiyada — avval uni yangilang").to_string()
+                        tr("VIMORA eski versiyada — avval uni yangilang").to_string()
                     } else {
                         message
                     };
@@ -738,7 +738,7 @@ async fn session(
                         s.last_result = Some((ok, message.clone()));
                     }
                     // A Vimora update that failed: shown in the Updates drawer's table.
-                    if !ok && message.contains("Vimora") {
+                    if !ok && message.to_lowercase().contains("vimora") {
                         if let Some(j) = h.vimora_jobs.get_mut(&info.key()) {
                             j.failed = Some(message.clone());
                         }

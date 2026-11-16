@@ -6,10 +6,19 @@ use vimora_ui::icons;
 
 pub const TITLE_H: f32 = 40.0;
 
+/// The window / taskbar icon: the app icon (the dark tile with the mark), not egui's default.
+pub fn icon() -> std::sync::Arc<egui::IconData> {
+    std::sync::Arc::new(
+        eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/brand/vimora-256.png"))
+            .unwrap_or_default(),
+    )
+}
+
 /// Window options for a small fixed-size window without a system title bar.
 pub fn options(app_id: &str, size: [f32; 2], position: Option<[f32; 2]>) -> eframe::NativeOptions {
     let mut vp = egui::ViewportBuilder::default()
-        .with_title("Vimora")
+        .with_title("VIMORA")
+        .with_icon(crate::smallwin::icon())
         .with_app_id(app_id)
         .with_inner_size(size)
         .with_resizable(false)
@@ -60,7 +69,7 @@ pub fn title_bar(ctx: &egui::Context, title: &str) -> bool {
                 pos2(logo.right() + vimora_ui::logo_gap(20.0), r.center().y),
                 Align2::LEFT_CENTER,
                 title,
-                FontId::new(14.0, vimora_ui::bold()),
+                FontId::new(14.0, vimora_ui::brand()),
                 p.strong,
             );
             let x = Rect::from_min_max(pos2(r.right() - TITLE_H, r.top()), r.max);

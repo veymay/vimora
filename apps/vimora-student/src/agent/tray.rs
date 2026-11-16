@@ -10,14 +10,21 @@ static WINDOW: Mutex<Option<std::process::Child>> = Mutex::new(None);
 
 fn open_window(state: &Shared) {
     let mut w = WINDOW.lock().unwrap();
-    // Still open: a second click closes it (like a menu), so it never piles up.
-    if let Some(child) = w.as_mut() {
-        if matches!(child.try_wait(), Ok(None)) {
-            let _ = child.kill();
-            let _ = child.wait();
-            *w = None;
+    // A click and a double click both open the window; the two events of one double click
+    // must not open it twice (or close it again): a click right after the last one is ignored.
+    static LAST: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+    {
+        let mut last = LAST.lock().unwrap();
+        if last.is_some_and(|t| t.elapsed() < Duration::from_millis(700)) {
             return;
         }
+        *last = Some(std::time::Instant::now());
+    }
+    // Still open: it comes to the front again (a fresh copy replaces it), never piles up.
+    if let Some(child) = w.as_mut() {
+        let _ = child.kill();
+        let _ = child.wait();
+        *w = None;
     }
     let (teacher, connected) = {
         let s = state.lock().unwrap();
@@ -43,12 +50,12 @@ pub(super) fn start(state: Shared) {
             let Some(icons) = vimora_tray::brand_icons() else {
                 return;
             };
-            let version = format!("Vimora {}", env!("CARGO_PKG_VERSION"));
+            let version = format!("VIMORA v{}", env!("CARGO_PKG_VERSION"));
             let st = state.clone();
             let Some(tray) = Tray::spawn(
                 Spec {
                     id: "vimora-student",
-                    title: "Vimora".into(),
+                    title: "VIMORA".into(),
                     tooltip: version.clone(),
                     icons,
                     items: vec![],

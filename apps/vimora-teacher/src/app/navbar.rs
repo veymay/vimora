@@ -724,7 +724,7 @@ impl TeacherApp {
                 a(
                     icons::DOWNLOAD,
                     tr("Yangilanish"),
-                    tr("Dasturlar, Windows va Vimora yangilanishlari"),
+                    tr("Dasturlar, Windows va VIMORA yangilanishlari"),
                     Menu::Updates,
                     false,
                     None,

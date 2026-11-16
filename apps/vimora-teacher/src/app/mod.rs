@@ -848,7 +848,7 @@ impl TeacherApp {
                     self.send_priv(
                         &ids,
                         PrivCommand::UninstallVimora,
-                        tr("Vimora'ni o'chirish"),
+                        tr("VIMORA'ni o'chirish"),
                     );
                     // Gone from the list too (a new install shows up under "Skanerlash").
                     self.forget(&keys, &[]);
@@ -1670,8 +1670,8 @@ fn teacher_tray(
     Tray::spawn(
         Spec {
             id: "vimora-teacher",
-            title: "Vimora".into(),
-            tooltip: vimora_ui::tr("Vimora — O'qituvchi").into(),
+            title: "VIMORA".into(),
+            tooltip: vimora_ui::tr("VIMORA — O'qituvchi").into(),
             icons,
             items: vec![
                 Item::new("open", vimora_ui::tr("O'qituvchini ochish")),
@@ -1716,7 +1716,7 @@ impl TeacherApp {
                 self.tray_tip = (online, Instant::now());
                 let total = self.cfg.read().unwrap().known.len().max(online);
                 t.set_tooltip(vimora_ui::tf!(
-                    "Vimora — {on} / {all} onlayn",
+                    "VIMORA — {on} / {all} onlayn",
                     on = online,
                     all = total
                 ));

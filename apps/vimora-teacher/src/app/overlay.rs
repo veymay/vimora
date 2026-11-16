@@ -840,7 +840,7 @@ impl TeacherApp {
         h.toast(
             false,
             tf!(
-                "{name}: Vimora eski versiyada — avval uni yangilang",
+                "{name}: VIMORA eski versiyada — avval uni yangilang",
                 name = label
             ),
         );
@@ -917,7 +917,7 @@ impl TeacherApp {
                         );
                     }
                 }
-                self.send_priv(&ids, PrivCommand::UpdateVimora, tr("Vimora yangilanishi"));
+                self.send_priv(&ids, PrivCommand::UpdateVimora, tr("VIMORA yangilanishi"));
                 // Not done in a minute and a half (no internet there, or it failed): the file
                 // goes over the classroom network.
                 crate::lanupdate::push_after(
@@ -1098,7 +1098,7 @@ impl TeacherApp {
                         .hub
                         .lock()
                         .unwrap()
-                        .toast(false, tr("Bu Vimora zaxira fayli emas.")),
+                        .toast(false, tr("Bu VIMORA zaxira fayli emas.")),
                 }
             }
         }
@@ -1619,7 +1619,7 @@ impl TeacherApp {
                 c.lock_message = new_m.into();
             }
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(
-                vimora_ui::tr("Vimora — O'qituvchi").into(),
+                vimora_ui::tr("VIMORA — O'qituvchi").into(),
             ));
         }
         c.grid_columns = c.grid_columns.clamp(MIN_COLUMNS, MAX_COLUMNS);

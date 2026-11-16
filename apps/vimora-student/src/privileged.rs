@@ -141,7 +141,7 @@ impl Engine {
                 // No internet is normal in a classroom; anything else the teacher should see.
                 let offline = msg.contains("bog'lanib bo'lmadi") || msg.contains("reliz topilmadi");
                 if !offline {
-                    self.push(false, format!("Vimora yangilanmadi: {msg}"));
+                    self.push(false, format!("VIMORA yangilanmadi: {msg}"));
                 }
             }
         }
@@ -155,7 +155,7 @@ impl Engine {
         let current = vimora_update::current();
         if !vimora_update::is_newer(&p.version, current) {
             PendingUpdate::clear();
-            self.push(true, format!("Vimora {current} o'rnatildi"));
+            self.push(true, format!("VIMORA {current} o'rnatildi"));
             return;
         }
         // The installer finished with an error, or it is still the old version 10 minutes
@@ -179,11 +179,11 @@ impl Engine {
             #[cfg(windows)]
             if p.tries <= 1 {
                 tracing::warn!("installer failed ({why}): trying the second way");
-                let _ = self.job("Vimora yangilanmoqda (2-usul)", |e| e.update_by_swap());
+                let _ = self.job("VIMORA yangilanmoqda (2-usul)", |e| e.update_by_swap());
                 return;
             }
             let text = format!(
-                "Vimora {} o'rnatilmadi ({why}, {}-urinish) — keyinroq yana urinib ko'riladi",
+                "VIMORA {} o'rnatilmadi ({why}, {}-urinish) — keyinroq yana urinib ko'riladi",
                 p.version, p.tries
             );
             // Also for the student's own window.
@@ -198,7 +198,7 @@ impl Engine {
         let rel = vimora_update::latest()?;
         if !rel.is_newer() {
             return Ok(format!(
-                "Vimora {} — eng so'nggi versiya",
+                "VIMORA {} — eng so'nggi versiya",
                 vimora_update::current()
             ));
         }
@@ -216,7 +216,7 @@ impl Engine {
         }
         let _lock = UpdateLock::take()?;
         // Progress goes to the teacher through the status ("busy"), e.g.
-        // "Vimora 0.3.9 yuklanmoqda 45%" — the teacher draws a bar from the percent.
+        // "VIMORA 0.3.9 yuklanmoqda 45%" — the teacher draws a bar from the percent.
         let v = rel.version.clone();
         let last = std::sync::Mutex::new(u64::MAX);
         let progress = |done: u64, total: u64| {
@@ -227,7 +227,7 @@ impl Engine {
             let mut l = last.lock().unwrap();
             if *l != pct {
                 *l = pct;
-                self.inner.lock().unwrap().busy = Some(format!("Vimora {v} yuklanmoqda {pct}%"));
+                self.inner.lock().unwrap().busy = Some(format!("VIMORA {v} yuklanmoqda {pct}%"));
             }
         };
         vimora_update::clear_old(&update_dir());
@@ -245,7 +245,7 @@ impl Engine {
         let rel = vimora_update::latest()?;
         if !rel.is_newer() {
             return Ok(format!(
-                "Vimora {} — eng so'nggi versiya",
+                "VIMORA {} — eng so'nggi versiya",
                 vimora_update::current()
             ));
         }
@@ -261,7 +261,7 @@ impl Engine {
             if *l != pct {
                 *l = pct;
                 self.inner.lock().unwrap().busy =
-                    Some(format!("Vimora {v} yuklanmoqda (2-usul) {pct}%"));
+                    Some(format!("VIMORA {v} yuklanmoqda (2-usul) {pct}%"));
             }
         };
         let pkg =
@@ -287,7 +287,7 @@ impl Engine {
             self.shield
                 .queue_commit(vec![dir.to_string_lossy().into_owned()]);
         }
-        self.inner.lock().unwrap().busy = Some(format!("Vimora {version} o'rnatilmoqda (2-usul)"));
+        self.inner.lock().unwrap().busy = Some(format!("VIMORA {version} o'rnatilmoqda (2-usul)"));
         let tries = PendingUpdate::load()
             .filter(|p| p.version == version)
             .map_or(0, |p| p.tries)
@@ -343,7 +343,7 @@ impl Engine {
             std::process::exit(0);
         });
         Ok(format!(
-            "Vimora {version} o'rnatildi — qayta ishga tushmoqda"
+            "VIMORA {version} o'rnatildi — qayta ishga tushmoqda"
         ))
     }
 
@@ -416,7 +416,7 @@ impl Engine {
         }
         // In the background: the window follows it through `update_state`, the same progress
         // the teacher sees.
-        self.job("Vimora yangilanishi tekshirilmoqda", |e| e.run_update())
+        self.job("VIMORA yangilanishi tekshirilmoqda", |e| e.run_update())
     }
 
     /// `update_vimora`, with its outcome kept for the student's window.
@@ -436,7 +436,7 @@ impl Engine {
         let busy = i
             .busy
             .clone()
-            .filter(|b| b.contains("Vimora"))
+            .filter(|b| b.to_lowercase().contains("vimora"))
             .or_else(|| PendingUpdate::load().and_then(|p| install_running(&p.version)));
         (busy, i.update_note.clone())
     }
@@ -474,7 +474,7 @@ impl Engine {
         let version = vimora_update::verify_package(&name, &data, sums, sig)?;
         if !vimora_update::is_newer(&version, vimora_update::current()) {
             return Ok(format!(
-                "Vimora {} — eng so'nggi versiya",
+                "VIMORA {} — eng so'nggi versiya",
                 vimora_update::current()
             ));
         }
@@ -501,7 +501,7 @@ impl Engine {
         if self.shield.protected_now() {
             if !cfg!(windows) {
                 bail!(
-                    "Muzlatish yoqilgan: Vimora {version} ni o'rnatish uchun avval uni o'chiring"
+                    "Muzlatish yoqilgan: VIMORA {version} ni o'rnatish uchun avval uni o'chiring"
                 );
             }
             // The freeze would throw the new files away at the next restart (the PC would fall
@@ -514,7 +514,7 @@ impl Engine {
                 self.shield.queue_commit(vec![dir]);
             }
         }
-        self.inner.lock().unwrap().busy = Some(format!("Vimora {version} o'rnatilmoqda"));
+        self.inner.lock().unwrap().busy = Some(format!("VIMORA {version} o'rnatilmoqda"));
         let tries = PendingUpdate::load()
             .filter(|p| p.version == version)
             .map_or(0, |p| p.tries)
@@ -542,7 +542,7 @@ impl Engine {
             }
             me.check_pending_update();
         });
-        Ok(format!("Vimora {version} o'rnatilmoqda"))
+        Ok(format!("VIMORA {version} o'rnatilmoqda"))
     }
 
     /// Runs `f` on a background thread; the outcome arrives later through [`status`].
@@ -594,8 +594,10 @@ impl Engine {
                 // Already updating by itself: not an error for the teacher.
                 let running = self.inner.lock().unwrap().busy.clone();
                 match running {
-                    Some(b) if b.contains("Vimora") => format!("{b} (allaqachon boshlangan)"),
-                    _ => self.job("Vimora yangilanmoqda", |e| e.run_update())?,
+                    Some(b) if b.to_lowercase().contains("vimora") => {
+                        format!("{b} (allaqachon boshlangan)")
+                    }
+                    _ => self.job("VIMORA yangilanmoqda", |e| e.run_update())?,
                 }
             }
             PrivCommand::CheckUpdates => {
@@ -690,7 +692,7 @@ impl Engine {
             }
             PrivCommand::UninstallVimora => {
                 remove_vimora()?;
-                "Vimora o'chirilmoqda".into()
+                "VIMORA o'chirilmoqda".into()
             }
             PrivCommand::UninstallApp(id) => self.job("Dastur o'chirilmoqda", move |e| {
                 let msg = apps::uninstall(&id)?;
@@ -912,9 +914,9 @@ fn install_running(version: &str) -> Option<String> {
             _ => "",
         };
         if step.is_empty() {
-            format!("Vimora {} o'rnatilmoqda", p.version)
+            format!("VIMORA {} o'rnatilmoqda", p.version)
         } else {
-            format!("Vimora {} o'rnatilmoqda · {step}", p.version)
+            format!("VIMORA {} o'rnatilmoqda · {step}", p.version)
         }
     })
 }
@@ -996,7 +998,7 @@ fn installed_waiting_restart(version: &str) -> Option<String> {
         std::process::exit(0);
     });
     Some(format!(
-        "Vimora {} o'rnatildi — qayta ishga tushmoqda",
+        "VIMORA {} o'rnatildi — qayta ishga tushmoqda",
         p.version
     ))
 }
@@ -1021,7 +1023,7 @@ impl UpdateLock {
             .write(true)
             .create_new(true)
             .open(&path)
-            .map_err(|_| anyhow::anyhow!("Vimora allaqachon yangilanmoqda"))?;
+            .map_err(|_| anyhow::anyhow!("VIMORA allaqachon yangilanmoqda"))?;
         Ok(Self(path))
     }
 }

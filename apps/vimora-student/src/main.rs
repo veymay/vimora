@@ -46,7 +46,7 @@ mod wizard;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "vimora-student", version, about = "Vimora student agent")]
+#[command(name = "vimora-student", version, about = "VIMORA student agent")]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<Cmd>,
@@ -265,7 +265,7 @@ fn ui_probe() -> anyhow::Result<()> {
     impl eframe::App for Probe {
         fn update(&mut self, ctx: &eframe::egui::Context, _: &mut eframe::Frame) {
             eframe::egui::CentralPanel::default().show(ctx, |ui| {
-                ui.label("Vimora");
+                ui.label("VIMORA");
             });
             self.0 += 1;
             if self.0 >= 2 {
@@ -276,7 +276,8 @@ fn ui_probe() -> anyhow::Result<()> {
     }
     let opts = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
-            .with_title("Vimora")
+            .with_title("VIMORA")
+            .with_icon(crate::smallwin::icon())
             .with_inner_size([160.0, 90.0])
             .with_decorations(false)
             .with_taskbar(false)

@@ -58,7 +58,7 @@ fn main() -> eframe::Result<()> {
     }
 
     let mut viewport = eframe::egui::ViewportBuilder::default()
-        .with_title(vimora_ui::tr("Vimora — O'qituvchi"))
+        .with_title(vimora_ui::tr("VIMORA — O'qituvchi"))
         .with_app_id("vimora-teacher")
         .with_inner_size(MIN_WINDOW)
         .with_min_inner_size(MIN_WINDOW)

@@ -150,7 +150,7 @@ fn files(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<'_>) {
                     &tf!("Yuborish ({n})", n = online.len()),
                     Kind::Primary,
                 )
-                .tip(tr("O'quvchi kompyuterida Vimora papkasidagi Files ichiga tushadi. Papka ichidagi hamma narsa bilan yuboriladi (jami 100 MB gacha)."))
+                .tip(tr("O'quvchi kompyuterida VIMORA papkasidagi Files ichiga tushadi. Papka ichidagi hamma narsa bilan yuboriladi (jami 100 MB gacha)."))
                 .clicked()
                 {
                     l.request = Some(LessonRequest::Send);

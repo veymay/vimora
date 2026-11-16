@@ -1,7 +1,7 @@
 //! Firewall rules for the access policy: internet off (the classroom network keeps working)
 //! and blocked outgoing ports. Runs in the Vimora service.
 //!
-//! * **Windows** — Windows Defender Firewall rules named "Vimora …" (`netsh advfirewall`).
+//! * **Windows** — Windows Defender Firewall rules named "VIMORA …" (`netsh advfirewall`).
 //! * **Ubuntu** — an nftables table `inet vimora`.
 
 use anyhow::Result;
@@ -36,7 +36,7 @@ pub fn touched() -> crate::sh::Touched {
             .unwrap_or_default();
         let registry = out
             .lines()
-            .filter(|l| l.contains("Name=Vimora"))
+            .filter(|l| l.contains("Name=VIMORA"))
             .filter_map(|l| {
                 l.split_whitespace()
                     .next()

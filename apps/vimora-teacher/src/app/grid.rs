@@ -683,7 +683,7 @@ impl TeacherApp {
                     let text = match *col {
                         Col::Room => v.room.clone().unwrap_or_else(|| tr("UMUMIY").into()),
                         Col::Os => v.os.clone(),
-                        Col::Version => v.version.clone(),
+                        Col::Version => format!("v{}", v.version),
                         Col::User => v.user.clone(),
                         Col::Ip => v.ip.clone(),
                         _ if !v.online => last_seen_text(v),
@@ -716,7 +716,7 @@ pub(super) fn empty_state(ui: &mut egui::Ui, p: &Palette, _cfg: &TeacherConfig) 
         ui.label(RichText::new(tr("Kompyuterlar hali ulanmagan")).family(ui_kit::bold()).size(22.0).color(p.strong));
         ui.add_space(6.0);
         ui.label(
-            RichText::new(tr("O'quvchi kompyuterlariga Vimora'ni o'rnating, so'ng \"Skanerlash\" ni bosib ularni qo'shing.\nBir xil tarmoqda (Wi-Fi yoki LAN) bo'lsa kifoya."))
+            RichText::new(tr("O'quvchi kompyuterlariga VIMORA'ni o'rnating, so'ng \"Skanerlash\" ni bosib ularni qo'shing.\nBir xil tarmoqda (Wi-Fi yoki LAN) bo'lsa kifoya."))
                 .color(p.muted),
         );
         ui.add_space(18.0);
@@ -1119,7 +1119,7 @@ fn details_rows(p: &Palette, v: &View) -> Vec<ui_kit::TipRow> {
     rows.push(row(icons::TIMER, tr("Vaqt"), fmt_dur(v.online_secs)));
     rows.push(row(icons::DOWNLOAD, tr("Yangi"), updates_label(&v.status)));
     if !v.version.is_empty() {
-        rows.push(row(icons::INFO, "Vimora", v.version.clone()));
+        rows.push(row(icons::INFO, "VIMORA", format!("v{}", v.version)));
     }
     if !v.status.service {
         rows.push(ui_kit::TipRow {
@@ -1437,7 +1437,7 @@ impl TeacherApp {
                         ui,
                         p,
                         icons::BAN,
-                        tr("Vimora'ni o'chirish"),
+                        tr("VIMORA'ni o'chirish"),
                         None,
                         Some(p.danger),
                         false,
@@ -1605,17 +1605,17 @@ impl TeacherApp {
                     let ids: Vec<u64> = online.iter().map(|v| v.id).collect();
                     let text = if online.len() == 1 {
                         tf!(
-                            "Vimora \"{name}\" kompyuteridan butunlay o'chiriladi.",
+                            "VIMORA \"{name}\" kompyuteridan butunlay o'chiriladi.",
                             name = online[0].label.clone()
                         )
                     } else {
                         tf!(
-                            "Vimora {n} ta kompyuterdan butunlay o'chiriladi.",
+                            "VIMORA {n} ta kompyuterdan butunlay o'chiriladi.",
                             n = online.len()
                         )
                     };
                     self.ask(
-                        tr("Vimora o'chirilsinmi?"),
+                        tr("VIMORA o'chirilsinmi?"),
                         text,
                         tr("O'chirish"),
                         ConfirmAction::RemoveVimora { keys, ids },

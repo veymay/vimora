@@ -72,7 +72,7 @@ pub(super) async fn session(
     .await
     {
         Ok(IpcResp::Verified(true)) | Err(_) => {}
-        Ok(_) => bail!("Vimora xizmati bu o'qituvchini rad etdi (boshqa o'qituvchiga bog'langan)"),
+        Ok(_) => bail!("VIMORA xizmati bu o'qituvchini rad etdi (boshqa o'qituvchiga bog'langan)"),
     }
     if pinned.is_none() {
         info!("paired with teacher {}", auth::fingerprint(&teacher_key));
@@ -97,7 +97,7 @@ pub(super) async fn session(
     *ctx.uplink.lock().unwrap() = Some(tx.clone());
     if super::TAMPERED.swap(false, std::sync::atomic::Ordering::Relaxed) {
         let _ = tx.try_send(StudentMsg::Alert {
-            text: "Vimora jarayoni to'xtatilgan edi va qayta ishga tushirildi".into(),
+            text: "VIMORA jarayoni to'xtatilgan edi va qayta ishga tushirildi".into(),
         });
     }
     let writer = tokio::spawn(async move {
@@ -427,7 +427,7 @@ async fn install_from_teacher(
     match res? {
         IpcResp::Done { ok: true, message } => Ok(message),
         IpcResp::Done { ok: false, message } => Err(anyhow::anyhow!(message)),
-        _ => Err(anyhow::anyhow!("Vimora xizmati noto'g'ri javob berdi")),
+        _ => Err(anyhow::anyhow!("VIMORA xizmati noto'g'ri javob berdi")),
     }
 }
 
@@ -470,14 +470,14 @@ pub(super) async fn privileged(
     {
         Ok(IpcResp::Done { ok: true, message }) => Ok(message),
         Ok(IpcResp::Done { ok: false, message }) => Err(anyhow::anyhow!(message)),
-        Ok(_) => Err(anyhow::anyhow!("Vimora xizmati noto'g'ri javob berdi")),
+        Ok(_) => Err(anyhow::anyhow!("VIMORA xizmati noto'g'ri javob berdi")),
         Err(e) => {
             // No service: run here (works only if the agent itself has the rights).
             verify_locally(ctx, counter, &payload, &sig)?;
             let (engine, c) = (ctx.engine.clone(), cmd.clone());
             tokio::task::spawn_blocking(move || engine.execute(c))
                 .await?
-                .map_err(|err| anyhow::anyhow!("{err:#} (Vimora xizmati o'rnatilmagan: {e:#})"))
+                .map_err(|err| anyhow::anyhow!("{err:#} (VIMORA xizmati o'rnatilmagan: {e:#})"))
         }
     };
     if cmd == PrivCommand::Unpair {

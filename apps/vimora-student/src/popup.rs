@@ -11,7 +11,8 @@ pub fn run(title: &str, text: &str, reply: bool) -> anyhow::Result<()> {
     let (title, text) = (title.to_string(), text.to_string());
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Vimora — xabar")
+            .with_title("VIMORA — xabar")
+            .with_icon(crate::smallwin::icon())
             .with_inner_size([460.0, if reply { 300.0 } else { 240.0 }])
             .with_resizable(false)
             .with_always_on_top(),

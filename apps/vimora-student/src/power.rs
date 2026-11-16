@@ -27,7 +27,7 @@ pub fn keep_awake() {
         let _ = std::process::Command::new("systemd-inhibit")
             .args([
                 "--what=sleep:idle",
-                "--who=Vimora",
+                "--who=VIMORA",
                 "--why=Classroom agent must stay reachable",
                 "--mode=block",
                 "sleep",

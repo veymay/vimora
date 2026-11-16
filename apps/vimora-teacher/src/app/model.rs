@@ -440,7 +440,7 @@ impl Col {
             Col::Ip => tr("IP"),
             Col::Online => tr("Ulangan"),
             Col::Os => tr("Tizim"),
-            Col::Version => tr("Vimora"),
+            Col::Version => tr("VIMORA"),
         }
     }
 

@@ -326,7 +326,7 @@ mod imp {
         };
         std::fs::write(
             AUTO,
-            format!("// Managed by Vimora\nAPT::Periodic::Update-Package-Lists \"{lists}\";\nAPT::Periodic::Unattended-Upgrade \"{unattended}\";\n"),
+            format!("// Managed by VIMORA\nAPT::Periodic::Update-Package-Lists \"{lists}\";\nAPT::Periodic::Unattended-Upgrade \"{unattended}\";\n"),
         )?;
         let _ = sh::run(
             "snap",

@@ -10,7 +10,8 @@ const H: f32 = 30.0;
 pub fn run() -> anyhow::Result<()> {
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Vimora")
+            .with_title("VIMORA")
+            .with_icon(crate::smallwin::icon())
             .with_decorations(false)
             .with_transparent(true)
             .with_always_on_top()

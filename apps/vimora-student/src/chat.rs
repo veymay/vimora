@@ -67,7 +67,8 @@ pub fn run() -> anyhow::Result<()> {
     let inbox: Arc<Mutex<Inbox>> = Arc::default();
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Vimora — xabarlar")
+            .with_title("VIMORA — xabarlar")
+            .with_icon(crate::smallwin::icon())
             .with_decorations(false)
             .with_always_on_top()
             .with_taskbar(false)

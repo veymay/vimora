@@ -122,7 +122,7 @@ pub fn restart_soon() -> Result<()> {
             "/t",
             "10",
             "/c",
-            "Vimora: kompyuter qayta yuklanmoqda",
+            "VIMORA: kompyuter qayta yuklanmoqda",
         ],
     )?;
     #[cfg(not(windows))]

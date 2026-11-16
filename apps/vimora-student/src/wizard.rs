@@ -100,9 +100,9 @@ fn t(l: Lang, key: &str) -> &'static str {
         ("done", Lang::Uz) => "Tayyor",
         ("done", Lang::Ru) => "Готово",
         ("done", Lang::En) => "Done",
-        ("done_d", Lang::Uz) => "Vimora o'rnatildi va ishga tushdi.",
-        ("done_d", Lang::Ru) => "Vimora установлена и запущена.",
-        ("done_d", Lang::En) => "Vimora is installed and running.",
+        ("done_d", Lang::Uz) => "VIMORA o'rnatildi va ishga tushdi.",
+        ("done_d", Lang::Ru) => "VIMORA установлена и запущена.",
+        ("done_d", Lang::En) => "VIMORA is installed and running.",
         ("close", Lang::Uz) => "Yopish",
         ("close", Lang::Ru) => "Закрыть",
         ("close", Lang::En) => "Close",
@@ -223,7 +223,7 @@ impl Wizard {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         smallwin::screenshot(ctx);
         let busy = matches!(self.step, Step::Installing(..));
-        if smallwin::title_bar(ctx, "Vimora") && !busy {
+        if smallwin::title_bar(ctx, "VIMORA") && !busy {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         // The installer finished?

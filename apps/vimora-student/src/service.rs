@@ -171,7 +171,7 @@ pub async fn call(req: IpcReq) -> Result<IpcResp> {
         TcpStream::connect(("127.0.0.1", port())),
     )
     .await
-    .context("Vimora xizmati javob bermadi")??;
+    .context("VIMORA xizmati javob bermadi")??;
     write_msg(&mut s, &req).await?;
     let wait = if long {
         Duration::from_secs(900)
@@ -180,7 +180,7 @@ pub async fn call(req: IpcReq) -> Result<IpcResp> {
     };
     tokio::time::timeout(wait, read_msg(&mut s))
         .await
-        .context("Vimora xizmati javob bermadi")?
+        .context("VIMORA xizmati javob bermadi")?
 }
 
 /// Verified teacher sessions (student nonce → last accepted counter). Several agents can share
@@ -228,7 +228,7 @@ async fn serve(pairing: Pairing) -> Result<()> {
     // Bind first: the watchdog starts a second copy every few minutes, and it must exit before
     // touching anything (resuming a commit cycle, updating…).
     let listener = TcpListener::bind(("127.0.0.1", port())).await?;
-    info!("Vimora service listening on 127.0.0.1:{}", port());
+    info!("VIMORA service listening on 127.0.0.1:{}", port());
     cleanup_old_binaries();
     exit_when_replaced();
     // An uninstall that waited for the freeze to be switched off.
@@ -772,7 +772,7 @@ fn register_rest(exe: &str) {
     let uninstall = format!("\"{dir}\\uninstall.exe\"");
     let icon = format!("{dir}\\vimora.ico");
     for (name, value) in [
-        ("DisplayName", "Vimora"),
+        ("DisplayName", "VIMORA"),
         ("DisplayVersion", vimora_update::current()),
         ("Publisher", "VEYMAY"),
         ("DisplayIcon", icon.as_str()),

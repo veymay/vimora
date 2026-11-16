@@ -48,7 +48,7 @@ pub fn run() -> Result<()> {
         std::fs::write(&m, "1")?;
         shield.commit_files(&[m.as_path()]);
         println!(
-            "Muzlatish o'chirildi. Kompyuter qayta yoqilgach Vimora o'zi butunlay o'chiriladi."
+            "Muzlatish o'chirildi. Kompyuter qayta yoqilgach VIMORA o'zi butunlay o'chiriladi."
         );
         std::process::exit(DEFERRED);
     }
@@ -88,7 +88,7 @@ pub fn run() -> Result<()> {
         clean_config(&config_dir_of(&home));
         let _ = std::fs::remove_dir_all(home.join("Downloads").join("Vimora"));
     }
-    println!("Vimora ma'lumotlari o'chirildi.");
+    println!("VIMORA ma'lumotlari o'chirildi.");
     Ok(())
 }
 

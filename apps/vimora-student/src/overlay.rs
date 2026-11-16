@@ -110,7 +110,8 @@ pub fn run() -> anyhow::Result<()> {
     #[cfg(not(windows))]
     {
         let viewport = egui::ViewportBuilder::default()
-            .with_title("Vimora")
+            .with_title("VIMORA")
+            .with_icon(crate::smallwin::icon())
             .with_fullscreen(true)
             .with_always_on_top()
             .with_decorations(false)
@@ -670,7 +671,7 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
     painter.text(
         pos2(rect.center().x, rect.bottom() - 40.0),
         Align2::CENTER_CENTER,
-        format!("{}  Vimora", icons::GRADUATION_CAP),
+        format!("{}  VIMORA", icons::GRADUATION_CAP),
         FontId::proportional(15.0),
         p.faint.gamma_multiply(fade),
     );

@@ -208,7 +208,7 @@ where
 }
 
 pub async fn run(cfg: Config) -> Result<()> {
-    info!("Vimora agent starting");
+    info!("VIMORA agent starting");
     let state: Shared = Arc::default();
     let ctx = Ctx {
         state: state.clone(),
@@ -531,7 +531,7 @@ async fn restart_on_update() {
         let args: Vec<String> = std::env::args().skip(1).collect();
         match std::process::Command::new(&target).args(&args).spawn() {
             Ok(_) => {
-                info!("Vimora was updated — restarting");
+                info!("VIMORA was updated — restarting");
                 std::process::exit(0);
             }
             Err(e) => warn!("cannot start the updated agent: {e}"),
