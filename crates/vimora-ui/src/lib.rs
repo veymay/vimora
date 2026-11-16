@@ -1381,7 +1381,7 @@ pub fn progress_right(ui: &Ui, rect: Rect, state: Progress<'_>) {
     let content = match state {
         Progress::Waiting(t) => 24.0 + text_w(t) + 6.0,
         Progress::Percent(_) => bar_w + 46.0,
-        Progress::Done(t) if t.is_empty() => bar_w + 24.0,
+        Progress::Done("") => bar_w + 24.0,
         Progress::Done(t) => bar_w + 28.0 + text_w(t) + 6.0,
         Progress::Failed(t) => 20.0 + text_w(t) + 6.0,
         Progress::Idle(t, _) => text_w(t) + 6.0,
