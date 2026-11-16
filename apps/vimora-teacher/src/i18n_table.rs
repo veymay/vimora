@@ -6,6 +6,11 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Avto-saqlash", "Autosave", "Автосохранение"),
+    ("O'zgarishlar darhol saqlanadi. O'chirsangiz, \"Saqlash\" tugmasini bosing.", "Changes are saved at once. If you turn it off, press \"Save\".", "Изменения сохраняются сразу. Если выключить, нажимайте «Сохранить»."),
+    ("Google, Yandex, Bing, DuckDuckGo va YouTube'da nomaqbul natijalar yashiriladi. O'quvchi o'chira olmaydi.", "Unsuitable results are hidden in Google, Yandex, Bing, DuckDuckGo and YouTube. The student cannot turn it off.", "Неподходящие результаты скрываются в Google, Yandex, Bing, DuckDuckGo и YouTube. Ученик не может это отключить."),
+    ("Diniy targ'ibot va mazhabiy saytlar", "Religious propaganda and sectarian sites", "Религиозная пропаганда и сектантские сайты"),
+    ("Diniy targ'ibot", "Religious propaganda", "Религиозная пропаганда"),
     ("Dars mavzusi", "Lesson topic", "Тема урока"),
     ("Maqsad", "Goal", "Цель"),
     ("Fayl yo'li", "File path", "Путь к файлу"),

@@ -2551,7 +2551,7 @@ pub(super) fn net_form(
                     true,
                     tr("Xavfsiz qidiruv"),
                     Some(tr(
-                        "Nomaqbul natijalar yashiriladi. O'quvchi o'chira olmaydi.",
+                        "Google, Yandex, Bing, DuckDuckGo va YouTube'da nomaqbul natijalar yashiriladi. O'quvchi o'chira olmaydi.",
                     )),
                     |ui| {
                         ui_kit::toggle(ui, safe);
@@ -2574,13 +2574,6 @@ pub(super) fn net_form(
                         }
                     },
                 );
-            });
-            ui.add_space(12.0);
-            ui.horizontal_wrapped(|ui| {
-                for name in ["Google", "Yandex", "Bing", "DuckDuckGo", "YouTube"] {
-                    let col = if *safe { p.success } else { p.faint };
-                    ui_kit::chip(ui, name, col);
-                }
             });
         }
     }

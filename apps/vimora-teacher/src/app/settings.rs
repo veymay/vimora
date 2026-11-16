@@ -168,43 +168,60 @@ pub(super) fn settings_page(
                 *tab = t;
             }
         }
-        // The bottom of the list: the save icon, the autosave switch and a "?" that says what it
-        // is. With autosave off, a button saves what changed.
+        // The bottom of the list: "Avto-saqlash" with its "?", the switch at the right end of
+        // the same line. With autosave off, a "Saqlash" button above it saves what changed.
         {
-            let strip = Rect::from_min_size(
-                pos2(nav.left() + 16.0, nav.bottom() - 52.0),
-                vec2(NAV_W - 32.0, 36.0),
+            let line = Rect::from_min_size(
+                pos2(nav.left() + 18.0, nav.bottom() - 50.0),
+                vec2(NAV_W - 36.0, 34.0),
+            );
+            if !c.autosave {
+                let mut btn = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(Rect::from_min_size(
+                            pos2(line.left(), line.top() - 44.0),
+                            vec2(line.width(), 34.0),
+                        ))
+                        .layout(Layout::left_to_right(Align::Center)),
+                );
+                if ui_kit::button(
+                    &mut btn,
+                    Some(icons::CHECK),
+                    tr("Saqlash"),
+                    if cx.dirty {
+                        Kind::Primary
+                    } else {
+                        Kind::Outline
+                    },
+                )
+                .clicked()
+                {
+                    out.save_now = true;
+                }
+            }
+            ui.painter().hline(
+                nav.x_range(),
+                line.top() - 6.0,
+                Stroke::new(1.0_f32, p.line),
             );
             let mut f = ui.new_child(
                 egui::UiBuilder::new()
-                    .max_rect(strip)
+                    .max_rect(line)
                     .layout(Layout::left_to_right(Align::Center)),
             );
-            f.spacing_mut().item_spacing.x = 8.0;
-            f.label(RichText::new(icons::HARD_DRIVE).size(16.0).color(
-                if cx.saved {
-                    p.success
-                } else if c.autosave {
-                    p.accent_ink
-                } else {
-                    p.faint
-                },
-            ));
-            ui_kit::toggle(&mut f, &mut c.autosave);
+            f.spacing_mut().item_spacing.x = 4.0;
+            f.label(
+                RichText::new(tr("Avto-saqlash"))
+                    .size(12.5)
+                    .color(if cx.saved { p.success } else { p.text }),
+            );
             ui_kit::info(
                 &mut f,
-                tr("Avto-saqlash: o'zgarishlar darhol saqlanadi. O'chirsangiz, \"Saqlash\" tugmasini bosing."),
+                tr("O'zgarishlar darhol saqlanadi. O'chirsangiz, \"Saqlash\" tugmasini bosing."),
             );
-            if !c.autosave
-                && ui_kit::icon_cell(&mut f, icons::CHECK, ui_kit::CONTROL_H, false)
-                    .tip(tr("Saqlash"))
-                    .clicked()
-            {
-                out.save_now = true;
-            }
-            if !c.autosave && cx.dirty {
-                f.label(RichText::new("●").size(10.0).color(p.warning));
-            }
+            f.with_layout(Layout::right_to_left(Align::Center), |f| {
+                ui_kit::toggle(f, &mut c.autosave);
+            });
         }
 
         // --- rows ----------------------------------------------------------------------------
