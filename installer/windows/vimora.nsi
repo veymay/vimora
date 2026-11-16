@@ -253,6 +253,12 @@ Function InstallStudent
   nsExec::Exec '"$SYSDIR\schtasks.exe" /end /tn "Vimora Service"'
   Pop $0
   Sleep 1500
+  ; The program's folder is locked down by the service (only SYSTEM may change it): an
+  ; installer run by hand takes it back first.
+  nsExec::Exec '"$SYSDIR\takeown.exe" /f "$INSTDIR" /r /d y'
+  Pop $0
+  nsExec::Exec '"$SYSDIR\icacls.exe" "$INSTDIR" /reset /T /C'
+  Pop $0
   !insertmacro Step "files"
   Call DeleteOldFiles
   System::Call 'kernel32::GetTickCount() i .r9'

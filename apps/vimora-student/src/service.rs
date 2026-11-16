@@ -236,7 +236,10 @@ async fn serve(pairing: Pairing) -> Result<()> {
     // The agent is started again in the user's session if the student ends it somehow.
     crate::guard::keep_agent_running();
     #[cfg(windows)]
-    crate::guard::keep_guard_running();
+    {
+        crate::guard::keep_guard_running();
+        std::thread::spawn(harden_install_dir);
+    }
     std::thread::spawn(ensure_updater_tasks);
     crate::power::keep_awake();
     // A lock left over from before a crash or restart: release it; a still-locked agent
@@ -354,6 +357,43 @@ fn ensure_updater_tasks() {
                 tracing::warn!("updater task {name}: {e:#}");
             }
         }
+    }
+}
+
+/// Windows: the program's folder can be read and run by everyone but only changed by SYSTEM
+/// (the service): an administrator can no longer delete or replace the files after ending the
+/// processes. Owner SYSTEM too, so the permissions cannot be rewritten from the folder's
+/// Security tab. The "Files" folder stays writable (the teacher's files, the student's work).
+/// The installer (run by hand) takes ownership back first, see `vimora.nsi`.
+#[cfg(windows)]
+fn harden_install_dir() {
+    let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|p| p.to_path_buf()))
+    else {
+        return;
+    };
+    if std::env::var_os("VIMORA_SERVICE_PORT").is_some() {
+        return; // a test copy
+    }
+    let d = dir.to_string_lossy().into_owned();
+    let all = format!("{d}\\*");
+    let files = dir.join("Files").to_string_lossy().into_owned();
+    let run = |args: &[&str]| {
+        let _ = crate::sh::run("icacls", args);
+    };
+    run(&[&d, "/setowner", "*S-1-5-18", "/T", "/C"]);
+    run(&[&d, "/inheritance:r"]);
+    run(&[
+        &d,
+        "/grant:r",
+        "*S-1-5-18:(OI)(CI)F",
+        "*S-1-5-32-544:(OI)(CI)RX",
+        "*S-1-5-32-545:(OI)(CI)RX",
+    ]);
+    run(&[&all, "/reset", "/T", "/C"]);
+    if std::path::Path::new(&files).is_dir() {
+        run(&[&files, "/grant:r", "*S-1-5-32-545:(OI)(CI)M"]);
     }
 }
 

@@ -37,7 +37,108 @@ pub fn open_url(url: &str) -> Result<()> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         bail!("only http(s) links are allowed");
     }
-    open_target(&url)
+    #[cfg(windows)]
+    {
+        // Starting something is not opening a page: look for the browser window afterwards.
+        let before = browser_windows::snapshot();
+        open_target(&url)?;
+        browser_windows::confirm(&before)
+    }
+    #[cfg(not(windows))]
+    {
+        open_target(&url)
+    }
+}
+
+/// Windows: tells whether a browser window really showed up (or changed) after a launch.
+#[cfg(windows)]
+mod browser_windows {
+    use anyhow::{bail, Result};
+    use std::collections::HashMap;
+    use windows_sys::Win32::Foundation::{CloseHandle, HWND, LPARAM};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
+    };
+
+    const BROWSERS: [&str; 11] = [
+        "chrome.exe",
+        "msedge.exe",
+        "firefox.exe",
+        "brave.exe",
+        "opera.exe",
+        "vivaldi.exe",
+        "browser.exe",
+        "chromium.exe",
+        "iexplore.exe",
+        "yandex.exe",
+        "arc.exe",
+    ];
+
+    fn exe_of(hwnd: HWND) -> Option<String> {
+        unsafe {
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(hwnd, &mut pid);
+            let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if h.is_null() {
+                return None;
+            }
+            let mut buf = [0u16; 520];
+            let mut n = buf.len() as u32;
+            let ok = QueryFullProcessImageNameW(h, 0, buf.as_mut_ptr(), &mut n) != 0;
+            CloseHandle(h);
+            ok.then(|| {
+                let full = String::from_utf16_lossy(&buf[..n as usize]);
+                full.rsplit(['\\', '/']).next().unwrap_or("").to_lowercase()
+            })
+        }
+    }
+
+    fn title_of(hwnd: HWND) -> String {
+        let mut buf = [0u16; 256];
+        let n = unsafe { GetWindowTextW(hwnd, buf.as_mut_ptr(), buf.len() as i32) };
+        String::from_utf16_lossy(&buf[..n.max(0) as usize])
+    }
+
+    /// Visible browser windows now: handle → title.
+    pub fn snapshot() -> HashMap<isize, String> {
+        unsafe extern "system" fn each(hwnd: HWND, lp: LPARAM) -> i32 {
+            let map = &mut *(lp as *mut HashMap<isize, String>);
+            if IsWindowVisible(hwnd) != 0 {
+                if let Some(exe) = exe_of(hwnd) {
+                    if BROWSERS.contains(&exe.as_str()) {
+                        map.insert(hwnd as isize, title_of(hwnd));
+                    }
+                }
+            }
+            1
+        }
+        let mut map: HashMap<isize, String> = HashMap::new();
+        unsafe {
+            EnumWindows(Some(each), &mut map as *mut _ as LPARAM);
+        }
+        map
+    }
+
+    /// Waits a few seconds for a new browser window, a changed title (a new tab) or a browser
+    /// that came to the front; says so honestly when nothing happened.
+    pub fn confirm(before: &HashMap<isize, String>) -> Result<()> {
+        let front_before = unsafe { GetForegroundWindow() } as isize;
+        for _ in 0..24 {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            let now = snapshot();
+            let changed = now
+                .iter()
+                .any(|(h, t)| before.get(h).is_none_or(|old| old != t));
+            let front = unsafe { GetForegroundWindow() } as isize;
+            if changed || (front != front_before && now.contains_key(&front)) {
+                return Ok(());
+            }
+        }
+        bail!("brauzer ishga tushirildi, lekin oyna paydo bo'lmadi (brauzer o'rnatilmagan yoki bloklangan bo'lishi mumkin)")
+    }
 }
 
 /// Opens a file (or a link) the way a double click does: the default program for it. The

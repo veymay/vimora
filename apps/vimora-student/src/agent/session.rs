@@ -368,7 +368,14 @@ pub(super) async fn handle_command(
         Command::CollectFiles | Command::GetSecurityInfo => None,
         // Answered in the session loop (it needs the outgoing channel).
         Command::GetSystemInfo => None,
-        Command::OpenUrl(url) => Some(system::open_url(&url).map(|_| format!("ochildi: {url}"))),
+        Command::OpenUrl(url) => {
+            // Off the async threads: on Windows it waits a few seconds for the browser window.
+            let u = url.clone();
+            let res = tokio::task::spawn_blocking(move || system::open_url(&u))
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("{e}")));
+            Some(res.map(|_| format!("ochildi: {url}")))
+        }
         Command::Run { program, args } => {
             Some(system::run_program(&program, &args).map(|_| format!("ishga tushdi: {program}")))
         }

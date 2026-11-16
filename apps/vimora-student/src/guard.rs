@@ -50,6 +50,8 @@ pub fn run_guard() -> anyhow::Result<()> {
     let Ok(_lock) = std::net::TcpListener::bind(("127.0.0.1", guard_port())) else {
         return Ok(()); // another watcher is running
     };
+    // A new version was installed: this copy leaves, the new service starts a new watcher.
+    crate::selfcheck::watch("guard", |_exe| std::process::exit(0));
     let mut down = 0u32;
     loop {
         std::thread::sleep(std::time::Duration::from_millis(500));
