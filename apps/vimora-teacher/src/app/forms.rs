@@ -2282,38 +2282,44 @@ fn categories(
                         cat.set_all(all);
                         toggled = true;
                     }
-                    // Right of the name: blocked / open / all, each with its icon.
+                    // Right of the name: blocked / open / all as small tinted chips, each with
+                    // its own icon and colour (red / green / grey); a zero is dimmed.
                     let total = cat.items.len();
                     let blocked = if cat.all { total } else { n_on };
                     let chips = [
                         (icons::LIST, total, p.muted, tr("Jami")),
-                        (icons::LOCK_OPEN, total - blocked, p.muted, tr("Ochiq")),
-                        (
-                            icons::LOCK,
-                            blocked,
-                            if blocked > 0 { p.accent } else { p.faint },
-                            tr("Bloklangan"),
-                        ),
+                        (icons::LOCK_OPEN, total - blocked, p.success, tr("Ochiq")),
+                        (icons::LOCK, blocked, p.danger, tr("Bloklangan")),
                     ];
+                    ui.spacing_mut().item_spacing.x = 6.0;
                     for (ic, n, col, tip) in chips {
-                        // Fixed cells: the numbers line up from row to row.
-                        let (r, resp) = ui.allocate_exact_size(vec2(52.0, 20.0), Sense::hover());
+                        let (r, resp) = ui.allocate_exact_size(vec2(50.0, 22.0), Sense::hover());
+                        let live = n > 0;
+                        if live {
+                            ui.painter().rect_filled(
+                                r,
+                                egui::Rounding::ZERO,
+                                col.gamma_multiply(0.16),
+                            );
+                        }
+                        let ink = if live { col } else { p.faint };
                         ui.painter().text(
-                            r.left_center() + vec2(2.0, 0.0),
+                            r.left_center() + vec2(8.0, 0.0),
                             egui::Align2::LEFT_CENTER,
                             ic,
                             FontId::proportional(13.0),
-                            col,
+                            ink,
                         );
                         ui.painter().text(
-                            r.right_center(),
+                            r.right_center() - vec2(7.0, 0.0),
                             egui::Align2::RIGHT_CENTER,
                             n.to_string(),
-                            FontId::new(12.5, ui_kit::mono()),
-                            col,
+                            FontId::new(12.5, ui_kit::mono_bold()),
+                            ink,
                         );
                         resp.tip(tip);
                     }
+                    ui.spacing_mut().item_spacing.x = 10.0;
                     if cat.imported()
                         && ui_kit::icon_cell(ui, icons::TRASH_2, 30.0, false)
                             .tip(tr("Toifani o'chirish"))
