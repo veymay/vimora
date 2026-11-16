@@ -447,7 +447,7 @@ fn overview(ui: &mut egui::Ui, p: &Palette, s: &SystemInfo) {
 fn processes(ui: &mut egui::Ui, p: &Palette, s: &SystemInfo, f: MachineForm<'_>) {
     ui.add(
         ui_kit::text_field(f.filter)
-            .hint_text(tr("Nomi yoki PID bo'yicha qidirish"))
+            .hint_text(tr("Qidirish…"))
             .desired_width(ui.available_width()),
     );
     ui.add_space(8.0);
@@ -716,7 +716,7 @@ fn services(ui: &mut egui::Ui, p: &Palette, s: &vimora_core::SecurityInfo, f: Ma
         ui.spacing_mut().item_spacing.x = 6.0;
         ui.add(
             ui_kit::text_field(f.filter)
-                .hint_text(tr("Xizmat nomi bo'yicha qidirish"))
+                .hint_text(tr("Qidirish…"))
                 .desired_width(ui.available_width() - 40.0),
         );
         if ui_kit::icon_cell(ui, icons::REFRESH_CW, ui_kit::CONTROL_H, false)

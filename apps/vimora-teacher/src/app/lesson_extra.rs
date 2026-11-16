@@ -178,7 +178,7 @@ pub(super) fn poll(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
     caption(ui, p, tr("Savol"));
     ui.add(
         ui_kit::text_field(&mut l.poll_q)
-            .hint_text(tr("Masalan: 7 × 8 nechaga teng?"))
+            .hint_text(tr("Savol"))
             .desired_width(ui.available_width()),
     );
     ui.add_space(12.0);
@@ -474,7 +474,7 @@ pub(super) fn test(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
     caption(ui, p, tr("Test nomi"));
     ui.add(
         ui_kit::text_field(&mut t.def.title)
-            .hint_text(tr("Masalan: 5-sinf, Informatika, 3-mavzu"))
+            .hint_text(tr("Dars mavzusi"))
             .desired_width(ui.available_width()),
     );
     ui.add_space(10.0);
@@ -540,7 +540,7 @@ pub(super) fn test(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
                 if q.options.is_empty() {
                     ui.add(
                         ui_kit::text_field(correct)
-                            .hint_text(tr("To'g'ri javob (bir nechta bo'lsa: Toshkent | Tashkent)"))
+                            .hint_text(tr("Javob"))
                             .desired_width(ui.available_width()),
                     );
                 } else {
@@ -638,7 +638,7 @@ pub(super) fn timer(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx
     caption(ui, p, tr("Dars maqsadi"));
     ui.add(
         ui_kit::text_field(&mut l.goal)
-            .hint_text(tr("Masalan: Python'da sikllar — 3 ta mashq"))
+            .hint_text(tr("Maqsad"))
             .desired_width(ui.available_width()),
     );
     ui.add_space(10.0);

@@ -382,7 +382,7 @@ pub(super) fn dialog_body(
         Dialog::Room { name, .. } => {
             let r = ui.add(
                 ui_kit::text_field(name)
-                    .hint_text(tr("Masalan: 204-XONA, INFORMATIKA"))
+                    .hint_text("204-XONA")
                     .desired_width(f32::INFINITY),
             );
             // Room names are always in capitals, as they are typed.
@@ -601,7 +601,7 @@ fn launch_site(
 ) {
     let r = ui.add(
         ui_kit::text_field(url)
-            .hint_text(tr("Sayt nomi yoki qidiruv so'zi, keyin Enter"))
+            .hint_text(tr("Sayt yoki qidiruv"))
             .desired_width(f32::INFINITY),
     );
     if ui.memory(|m| m.focused().is_none()) {
@@ -2501,7 +2501,7 @@ pub(super) fn net_form(
                     domains,
                     entry,
                     import,
-                    tr("sayt: tiktok.com"),
+                    "tiktok.com",
                     if allow {
                         tr("Faqat yoqilgan saytlar ochiladi.")
                     } else {
@@ -2518,7 +2518,7 @@ pub(super) fn net_form(
             keywords,
             entry,
             import,
-            tr("so'z: kazino"),
+            "kazino",
             tr("Shu so'z bilan qidirilsa, sahifa yopiladi, o'quvchiga ogohlantirish chiqadi va sizga xabar keladi."),
             crate::blockcat::WORDS,
             |ui| categories(ui, p, word_cats, crate::blockcat::WORDS, open_cat, false),
@@ -2532,7 +2532,7 @@ pub(super) fn net_form(
                 apps,
                 entry,
                 import,
-                tr("dastur: steam.exe"),
+                "steam.exe",
                 if allow {
                     tr("Faqat yoqilgan dasturlar ishlaydi.")
                 } else {

@@ -321,6 +321,7 @@ impl TeacherApp {
             saved: self
                 .saved_at
                 .is_some_and(|t| t.elapsed() < Duration::from_secs(2)),
+            dirty: self.settings_dirty.is_some(),
         };
         let latest = scx.latest.clone();
         let admin = self.admin;
@@ -1660,6 +1661,11 @@ impl TeacherApp {
                 .lock()
                 .unwrap()
                 .toast(true, tr("Administrator paroli saqlandi"));
+        }
+        if out.save_now {
+            self.settings_dirty = None;
+            config::save(&self.cfg.read().unwrap());
+            self.saved_at = Some(Instant::now());
         }
         if out.check_update {
             self.updater.check();

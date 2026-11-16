@@ -21,10 +21,10 @@ pub(super) enum SettingsTab {
 impl SettingsTab {
     const ALL: [SettingsTab; 7] = [
         SettingsTab::General,
+        SettingsTab::Access,
         SettingsTab::LockScreen,
         SettingsTab::Schedule,
         SettingsTab::Reports,
-        SettingsTab::Access,
         SettingsTab::Updates,
         SettingsTab::Author,
     ];
@@ -58,6 +58,8 @@ impl SettingsTab {
 #[derive(Default)]
 pub(super) struct SettingsOut {
     pub(super) check_update: bool,
+    /// The "Saqlash" button (autosave off): write the settings now.
+    pub(super) save_now: bool,
     pub(super) install_update: bool,
     pub(super) restart: bool,
     /// Export a report: 0 computers, 1 activity log, 2 attendance.
@@ -79,6 +81,8 @@ pub(super) struct SettingsCtx<'a> {
     pub(super) phase: Phase,
     /// Last automatic save, for the "saved" hint.
     pub(super) saved: bool,
+    /// Changes not on disk yet (autosave is off).
+    pub(super) dirty: bool,
     /// Newest version known (an available release, else this teacher's own).
     pub(super) latest: String,
 }
@@ -164,24 +168,44 @@ pub(super) fn settings_page(
                 *tab = t;
             }
         }
-        // "Saved automatically" hint at the bottom of the list.
-        let hint = if cx.saved {
-            with_icon(icons::CHECK, tr("Saqlandi"))
-        } else {
-            tr("O'zgarishlar darhol saqlanadi").to_string()
-        };
-        let g = ui_kit::truncated(
-            ui,
-            &hint,
-            FontId::proportional(11.5),
-            if cx.saved { p.success } else { p.faint },
-            NAV_W - 32.0,
-        );
-        ui.painter().galley(
-            pos2(nav.left() + 24.0, nav.bottom() - 18.0 - g.size().y),
-            g,
-            p.faint,
-        );
+        // The bottom of the list: the save icon, the autosave switch and a "?" that says what it
+        // is. With autosave off, a button saves what changed.
+        {
+            let strip = Rect::from_min_size(
+                pos2(nav.left() + 16.0, nav.bottom() - 52.0),
+                vec2(NAV_W - 32.0, 36.0),
+            );
+            let mut f = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(strip)
+                    .layout(Layout::left_to_right(Align::Center)),
+            );
+            f.spacing_mut().item_spacing.x = 8.0;
+            f.label(RichText::new(icons::HARD_DRIVE).size(16.0).color(
+                if cx.saved {
+                    p.success
+                } else if c.autosave {
+                    p.accent_ink
+                } else {
+                    p.faint
+                },
+            ));
+            ui_kit::toggle(&mut f, &mut c.autosave);
+            ui_kit::info(
+                &mut f,
+                tr("Avto-saqlash: o'zgarishlar darhol saqlanadi. O'chirsangiz, \"Saqlash\" tugmasini bosing."),
+            );
+            if !c.autosave
+                && ui_kit::icon_cell(&mut f, icons::CHECK, ui_kit::CONTROL_H, false)
+                    .tip(tr("Saqlash"))
+                    .clicked()
+            {
+                out.save_now = true;
+            }
+            if !c.autosave && cx.dirty {
+                f.label(RichText::new("●").size(10.0).color(p.warning));
+            }
+        }
 
         // --- rows ----------------------------------------------------------------------------
         ui.allocate_ui_with_layout(
@@ -669,7 +693,7 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
         |ui| {
             let r = ui.add(
                 ui_kit::password_field(&mut c.unlock_pin)
-                    .hint_text(tr("masalan 4821"))
+                    .hint_text("4821")
                     .desired_width(160.0),
             );
             if r.changed() {

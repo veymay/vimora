@@ -127,7 +127,7 @@ fn files(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<'_>) {
             }
             ui.add(
                 ui_kit::text_field(&mut l.path)
-                    .hint_text(tr("Fayl yoki papka yo'li"))
+                    .hint_text(tr("Fayl yo'li"))
                     .desired_width(ui.available_width()),
             );
         },

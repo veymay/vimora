@@ -1275,6 +1275,10 @@ impl TeacherApp {
 
     /// Writes settings to disk shortly after the last change (they apply immediately anyway).
     fn autosave(&mut self) {
+        // Autosave off: the changes wait for the "Saqlash" button (or the program's exit).
+        if !self.cfg.read().unwrap().autosave {
+            return;
+        }
         if self
             .settings_dirty
             .is_some_and(|t| t.elapsed() > Duration::from_millis(400))

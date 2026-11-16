@@ -39,6 +39,8 @@ pub struct TeacherConfig {
     pub sort: SortBy,
     /// The order is reversed (Z → A, high IP first).
     pub sort_desc: bool,
+    /// Settings are saved at once (off: with the "Saqlash" button in the settings window).
+    pub autosave: bool,
     /// Look for a new teacher version on GitHub at start-up (and every few hours).
     pub check_updates: bool,
     pub thumb_interval_ms: u32,
@@ -174,6 +176,7 @@ impl Default for TeacherConfig {
             sounds: true,
             sort: SortBy::Name,
             sort_desc: false,
+            autosave: true,
             check_updates: true,
             thumb_interval_ms: 2000,
             grid_columns: 6,
@@ -192,9 +195,9 @@ impl Default for TeacherConfig {
             lock_title: lock_title.into(),
             lock_message: lock_message.into(),
             unlock_pin: String::new(),
-            app_blocklist: "steam, discord, telegram".into(),
-            web_blocklist: "tiktok.com\ninstagram.com".into(),
-            keyword_blocklist: "kazino\ncasino\n1xbet".into(),
+            app_blocklist: String::new(),
+            web_blocklist: String::new(),
+            keyword_blocklist: String::new(),
             site_categories: vec![],
             app_categories: vec![],
             word_categories: vec![],
