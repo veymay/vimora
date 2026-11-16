@@ -171,15 +171,23 @@ pub(super) fn settings_page(
         // The bottom of the list: "Avto-saqlash" with its "?", the switch at the right end of
         // the same line. With autosave off, a "Saqlash" button above it saves what changed.
         {
+            // A footer of its own: a line on top, the label and the switch centred in the
+            // space under it (the same room above and below).
+            const FOOT_H: f32 = 56.0;
             let line = Rect::from_min_size(
-                pos2(nav.left() + 18.0, nav.bottom() - 50.0),
-                vec2(NAV_W - 36.0, 34.0),
+                pos2(nav.left() + 18.0, nav.bottom() - FOOT_H),
+                vec2(NAV_W - 36.0, FOOT_H),
+            );
+            ui.painter().hline(
+                nav.x_range(),
+                nav.bottom() - FOOT_H,
+                Stroke::new(1.0_f32, p.line),
             );
             if !c.autosave {
                 let mut btn = ui.new_child(
                     egui::UiBuilder::new()
                         .max_rect(Rect::from_min_size(
-                            pos2(line.left(), line.top() - 44.0),
+                            pos2(line.left(), line.top() - 50.0),
                             vec2(line.width(), 34.0),
                         ))
                         .layout(Layout::left_to_right(Align::Center)),
@@ -199,11 +207,6 @@ pub(super) fn settings_page(
                     out.save_now = true;
                 }
             }
-            ui.painter().hline(
-                nav.x_range(),
-                line.top() - 6.0,
-                Stroke::new(1.0_f32, p.line),
-            );
             let mut f = ui.new_child(
                 egui::UiBuilder::new()
                     .max_rect(line)
