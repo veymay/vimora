@@ -977,6 +977,18 @@ pub fn lock_background(
     accent: Color32,
     fade: f32,
 ) {
+    lock_background_ex(painter, rect, centre, accent, fade, true);
+}
+
+/// [`lock_background`]; `brackets` off leaves out the corner marks (small previews).
+pub fn lock_background_ex(
+    painter: &egui::Painter,
+    rect: Rect,
+    centre: egui::Pos2,
+    accent: Color32,
+    fade: f32,
+    brackets: bool,
+) {
     let mut mesh = egui::Mesh::default();
     for (pt, col) in [
         (rect.left_top(), LOCK_TOP),
@@ -1004,6 +1016,9 @@ pub fn lock_background(
             mesh.add_triangle(0, 1 + i, 1 + (i + 1) % N);
         }
         painter.add(mesh);
+    }
+    if !brackets {
+        return;
     }
     // Fine corner brackets: a quiet "locked" frame around the screen.
     let line = Stroke::new(2.0_f32, accent.gamma_multiply(0.55 * fade));
@@ -1461,7 +1476,7 @@ pub fn tip_rows_at_pointer(resp: &Response, title: &str, rows: &[TipRow]) {
                         if r.label.is_empty() {
                             ui.add(
                                 egui::Label::new(RichText::new(&r.value).size(12.5).color(col))
-                                    .wrap(),
+                                    .truncate(),
                             );
                         } else {
                             ui.label(RichText::new(&r.label).size(12.0).color(p.muted));

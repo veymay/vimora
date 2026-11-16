@@ -2305,15 +2305,10 @@ fn categories(
                     ui.spacing_mut().item_spacing.x = 6.0;
                     for (ic, n, col, tip) in chips {
                         let (r, resp) = ui.allocate_exact_size(vec2(50.0, 22.0), Sense::hover());
-                        let live = n > 0;
-                        if live {
-                            ui.painter().rect_filled(
-                                r,
-                                egui::Rounding::ZERO,
-                                col.gamma_multiply(0.16),
-                            );
-                        }
-                        let ink = if live { col } else { p.faint };
+                        // Always in its own colour, a zero too.
+                        ui.painter()
+                            .rect_filled(r, egui::Rounding::ZERO, col.gamma_multiply(0.16));
+                        let ink = col;
                         // Icon and number as one group, a fixed gap between them, centred.
                         let num = ui.painter().layout_no_wrap(
                             n.to_string(),

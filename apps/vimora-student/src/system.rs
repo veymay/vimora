@@ -46,9 +46,83 @@ pub fn open_path(path: &std::path::Path) -> Result<()> {
     open_target(&path.to_string_lossy())
 }
 
+/// Windows: the command line of the default browser for web pages, read from the registry
+/// (what a double click on a link would run), with the address in place.
+#[cfg(windows)]
+fn default_browser_command(url: &str) -> Option<(String, Vec<String>)> {
+    use std::os::windows::process::CommandExt;
+    const NO_WINDOW: u32 = 0x0800_0000;
+    let query = |key: &str, value: Option<&str>| -> Option<String> {
+        let mut c = Command::new("reg");
+        c.arg("query").arg(key);
+        match value {
+            Some(v) => c.args(["/v", v]),
+            None => c.arg("/ve"),
+        };
+        let out = c.creation_flags(NO_WINDOW).output().ok()?;
+        let text = String::from_utf8_lossy(&out.stdout).into_owned();
+        // "    ProgId    REG_SZ    ChromeHTML" / "    (Default)    REG_SZ    "C:\...\chrome.exe" -- "%1""
+        text.lines().find_map(|l| {
+            let l = l.trim();
+            let i = l.find("REG_SZ").or_else(|| l.find("REG_EXPAND_SZ"))?;
+            let rest = l[i..].split_once(char::is_whitespace)?.1.trim();
+            (!rest.is_empty()).then(|| rest.to_string())
+        })
+    };
+    let prog = query(
+        r"HKCU\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice",
+        Some("ProgId"),
+    )?;
+    let cmd = query(&format!(r"HKCR\{prog}\shell\open\command"), None)?;
+    let cmd = cmd.replace("%1", url).replace("%L", url);
+    // Split "<program> <args>": the program may be quoted.
+    let (exe, rest) = if let Some(r) = cmd.strip_prefix('"') {
+        let end = r.find('"')?;
+        (r[..end].to_string(), r[end + 1..].trim().to_string())
+    } else {
+        let (a, b) = cmd.split_once(' ').unwrap_or((cmd.as_str(), ""));
+        (a.to_string(), b.to_string())
+    };
+    // The arguments as typed (they may be quoted); a plain split on spaces outside quotes.
+    let mut args = vec![];
+    let mut cur = String::new();
+    let mut quoted = false;
+    for ch in rest.chars() {
+        match ch {
+            '"' => quoted = !quoted,
+            ' ' if !quoted => {
+                if !cur.is_empty() {
+                    args.push(std::mem::take(&mut cur));
+                }
+            }
+            c => cur.push(c),
+        }
+    }
+    if !cur.is_empty() {
+        args.push(cur);
+    }
+    if !rest.contains(url) {
+        args.push(url.to_string());
+    }
+    Some((exe, args))
+}
+
 fn open_target(url: &str) -> Result<()> {
     #[cfg(windows)]
     {
+        // A web address: start the default browser straight from its registered command (the
+        // shell's own "open" can silently do nothing for a protected background program).
+        if url.starts_with("http://") || url.starts_with("https://") {
+            if let Some((exe, args)) = default_browser_command(url) {
+                match Command::new(&exe).args(&args).spawn() {
+                    Ok(_) => {
+                        tracing::info!("opened {url} with {exe}");
+                        return Ok(());
+                    }
+                    Err(e) => tracing::warn!("default browser {exe}: {e}"),
+                }
+            }
+        }
         // The system's own "open" (what a double click does) first, then helpers: the first
         // that starts wins.
         use std::os::windows::process::CommandExt;

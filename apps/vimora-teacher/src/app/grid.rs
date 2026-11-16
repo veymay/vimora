@@ -1033,11 +1033,7 @@ fn card_flags(p: &Palette, v: &View) -> Vec<(&'static str, Color32, String)> {
         out.push((icons::TRIANGLE_ALERT, p.danger, a.clone()));
     }
     if v.help.is_some() {
-        out.push((
-            icons::HAND,
-            p.warning,
-            tr("O'quvchi yordam so'ramoqda").to_string(),
-        ));
+        out.push((icons::HAND, p.warning, tr("Yordam so'ramoqda").to_string()));
     }
     let s = &v.status;
     match s.freeze {
@@ -1051,37 +1047,32 @@ fn card_flags(p: &Palette, v: &View) -> Vec<(&'static str, Color32, String)> {
                 p.accent_ink
             };
             let text = if pct >= 75 {
-                tf!(
-                    "Muzlatilgan: o'zgarishlar kompyuter o'chganda yo'qoladi. Himoya {pct}% to'lgan",
-                    pct = pct
-                )
+                tf!("Muzlatilgan · himoya {pct}%", pct = pct)
             } else {
-                tr("Muzlatilgan: o'zgarishlar kompyuter o'chganda yo'qoladi").to_string()
+                tr("Muzlatilgan").to_string()
             };
             out.push((icons::SNOWFLAKE, col, text));
         }
         FreezeState::FreezePending => out.push((
             icons::SNOWFLAKE,
             p.warning,
-            tr("Muzlatish yoqilmoqda: kompyuter qayta ishga tushadi").to_string(),
+            tr("Muzlatish yoqilmoqda").to_string(),
         )),
         FreezeState::ThawPending => out.push((
             icons::SUN_SNOW,
             p.warning,
-            tr("Muzlatish o'chirilmoqda: kompyuter qayta ishga tushadi").to_string(),
+            tr("Muzlatish o'chmoqda").to_string(),
         )),
-        FreezeState::Maintenance => out.push((
-            icons::WRENCH,
-            p.warning,
-            tr("Xizmat rejimi: o'zgarishlar saqlanadi").to_string(),
-        )),
+        FreezeState::Maintenance => {
+            out.push((icons::WRENCH, p.warning, tr("Xizmat rejimi").to_string()))
+        }
         _ => {}
     }
     if s.web_blocklist + s.keywords > 0 || s.safe_search {
         out.push((
             icons::GLOBE_LOCK,
             p.accent_ink,
-            tr("Internet cheklovlari yoqilgan").to_string(),
+            tr("Internet cheklangan").to_string(),
         ));
     }
     if s.app_blocklist > 0 {
@@ -1091,17 +1082,13 @@ fn card_flags(p: &Palette, v: &View) -> Vec<(&'static str, Color32, String)> {
         out.push((
             icons::CAST,
             p.accent_ink,
-            tr("O'qituvchi ekrani namoyish qilinmoqda").to_string(),
+            tr("Ekran namoyishda").to_string(),
         ));
     }
     if let Some(b) = &s.busy {
         out.push((icons::DOWNLOAD, p.warning, b.clone()));
     } else if s.os_updates.unwrap_or(0) + s.app_updates.unwrap_or(0) > 0 {
-        out.push((
-            icons::DOWNLOAD,
-            p.muted,
-            tr("Yangilanishlar kutilmoqda").to_string(),
-        ));
+        out.push((icons::DOWNLOAD, p.muted, tr("Yangilanish bor").to_string()));
     }
     out
 }
@@ -1142,7 +1129,7 @@ fn details_rows(p: &Palette, v: &View) -> Vec<ui_kit::TipRow> {
         rows.push(ui_kit::TipRow {
             icon: icons::TRIANGLE_ALERT,
             label: String::new(),
-            value: tr("Vimora xizmati ishlamayapti").to_string(),
+            value: tr("Xizmat ishlamayapti").to_string(),
             color: Some(p.danger),
         });
     }

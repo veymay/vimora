@@ -632,7 +632,7 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
     let mut y = r.top() + if has_code || has_text { 30.0 } else { 80.0 };
     let acc = d.accent;
     // The same background as the real lock screen (and the program's code screen).
-    ui_kit::lock_background(&painter, r, pos2(r.center().x, y + 24.0), acc, 1.0);
+    ui_kit::lock_background_ex(&painter, r, pos2(r.center().x, y + 24.0), acc, 1.0, false);
     let font = |size: f32| FontId::proportional(size);
     // The top bar of the real screen: the logo and the clock, the same height.
     let lr = Rect::from_min_size(r.left_top() + vec2(14.0, 12.0), vec2(18.0, 18.0));
