@@ -133,28 +133,34 @@ fn flag_words(
     y: f32,
     right: f32,
 ) {
-    let mut words: Vec<(&str, Color32)> = vec![];
+    let mut words: Vec<(&'static str, &str, Color32)> = vec![];
     if v.alert.is_some() {
-        words.push((tr("Diqqat"), p.danger));
+        words.push((icons::TRIANGLE_ALERT, tr("Diqqat"), p.danger));
     }
     if v.help.is_some() {
-        words.push((tr("Yordam"), p.warning));
+        words.push((icons::HAND, tr("Yordam"), p.warning));
     }
     if v.status.web_blocklist + v.status.keywords > 0 || v.status.safe_search {
-        words.push((tr("Internet"), p.accent_ink));
+        words.push((icons::GLOBE_LOCK, tr("Internet"), p.accent_ink));
     }
     if v.status.app_blocklist > 0 {
-        words.push((tr("Dastur"), p.accent_ink));
+        words.push((icons::BAN, tr("Dastur"), p.danger));
     }
     if v.status.showing_teacher {
-        words.push((tr("Namoyish"), p.accent_ink));
+        words.push((icons::CAST, tr("Namoyish"), p.accent_ink));
     }
     if v.status.busy.is_some() {
-        words.push((tr("Yangilanmoqda"), p.warning));
+        words.push((icons::DOWNLOAD, tr("Yangilanmoqda"), p.warning));
+    } else if v.status.os_updates.unwrap_or(0) + v.status.app_updates.unwrap_or(0) > 0 {
+        words.push((icons::DOWNLOAD, tr("Yangilanish"), p.muted));
+    }
+    if words.is_empty() {
+        let g = ui_kit::caps(ui, "—", 9.5, ui_kit::mono(), p.faint);
+        painter.galley(pos2(left, y - g.size().y / 2.0), g, p.faint);
     }
     let mut x = left;
-    for (w, col) in words {
-        let g = ui_kit::caps(ui, w, 9.0, ui_kit::mono_bold(), col);
+    for (icon, w, col) in words {
+        let g = ui_kit::caps(ui, &format!("{icon} {w}"), 9.0, ui_kit::mono_bold(), col);
         let r = Rect::from_min_size(pos2(x, y - 10.0), vec2(g.size().x + 12.0, 20.0));
         if r.right() > right {
             break;
@@ -172,9 +178,9 @@ fn list_columns(width: f32) -> Vec<(Col, f32)> {
         (Col::Num, 52.0),
         (Col::Thumb, 62.0),
         (Col::Name, 140.0),
-        (Col::Status, 100.0),
-        (Col::Shadow, 140.0),
-        (Col::Flags, 190.0),
+        (Col::Status, 110.0),
+        (Col::Shadow, 150.0),
+        (Col::Flags, 240.0),
         (Col::Room, 130.0),
     ];
     if width > 1000.0 {
@@ -184,7 +190,13 @@ fn list_columns(width: f32) -> Vec<(Col, f32)> {
         cols.push((Col::Ip, 130.0));
     }
     if width > 1250.0 {
-        cols.push((Col::Online, 90.0));
+        cols.push((Col::Online, 100.0));
+    }
+    if width > 1400.0 {
+        cols.push((Col::Os, 130.0));
+    }
+    if width > 1560.0 {
+        cols.push((Col::Version, 90.0));
     }
     if let Some(last) = cols.last_mut() {
         last.1 = 0.0;
@@ -333,7 +345,7 @@ impl TeacherApp {
                 let c = self.cfg.read().unwrap();
                 match (col, c.sort) {
                     (Col::Name, crate::config::SortBy::Name)
-                    | (Col::Ip, crate::config::SortBy::Ip) => Some(c.sort_desc),
+                    | (Col::Ip, crate::config::SortBy::Ip) => c.sort_set.then_some(c.sort_desc),
                     _ => None,
                 }
             };
@@ -378,14 +390,18 @@ impl TeacherApp {
             let f = &mut self.list_filter;
             let open = ui.memory(|m| m.is_popup_open(id));
             if open {
-                let rect = ui_kit::arrow_popup(
+                // Opens straight under the column and is exactly as wide: nothing sticks out.
+                let colw = cell.width();
+                let rect = ui_kit::arrow_popup_at(
                     ui.ctx(),
                     id.with("arrow"),
-                    resp.rect,
-                    resp.rect.center().x,
+                    cell,
+                    cell.center().x,
+                    true,
                     true,
                     |ui| {
-                        ui.set_min_width(190.0);
+                        ui.set_width(colw - 12.0);
+                        ui.spacing_mut().item_spacing.y = 2.0;
                         // Order: the two columns that can lead the list.
                         if matches!(col, Col::Name | Col::Ip) {
                             let by = if *col == Col::Name {
@@ -393,33 +409,26 @@ impl TeacherApp {
                             } else {
                                 crate::config::SortBy::Ip
                             };
-                            let (cur, desc) = {
+                            let (cur, desc, sorted) = {
                                 let c = self.cfg.read().unwrap();
-                                (c.sort, c.sort_desc)
+                                (c.sort, c.sort_desc, c.sort_set)
                             };
                             for (is_desc, label) in [(false, tr("A → Z")), (true, tr("Z → A"))]
                             {
-                                let on = cur == by && desc == is_desc;
-                                if ui
-                                    .selectable_label(
-                                        on,
-                                        with_icon(
-                                            if is_desc {
-                                                icons::ARROW_DOWN
-                                            } else {
-                                                icons::ARROW_UP
-                                            },
-                                            label,
-                                        ),
-                                    )
-                                    .clicked()
-                                {
+                                let on = cur == by && desc == is_desc && sorted;
+                                let icon = if is_desc {
+                                    icons::ARROW_DOWN
+                                } else {
+                                    icons::ARROW_UP
+                                };
+                                if menu_item(ui, Some(icon), on, label, None) {
                                     let mut c = self.cfg.write().unwrap();
                                     c.sort = by;
                                     c.sort_desc = is_desc;
+                                    c.sort_set = true;
                                 }
                             }
-                            ui.separator();
+                            ui.add_space(4.0);
                         }
                         match col {
                             Col::Name | Col::User | Col::Ip => {
@@ -447,9 +456,9 @@ impl TeacherApp {
                                         Some(counts.attention),
                                     ),
                                 ] {
-                                    if filter_option(ui, f.status == v, label, n) {
+                                    if menu_item(ui, None, f.status == v, label, n) {
                                         f.status = v;
-                                        ui.close_menu();
+                                        ui.memory_mut(|m| m.close_popup());
                                     }
                                 }
                             }
@@ -459,35 +468,38 @@ impl TeacherApp {
                                     (ShadowFilter::On, tr("Muzlatilgan"), Some(counts.frozen)),
                                     (ShadowFilter::Off, tr("Muzlatilmagan"), Some(counts.thawed)),
                                 ] {
-                                    if filter_option(ui, f.shadow == v, label, n) {
+                                    if menu_item(ui, None, f.shadow == v, label, n) {
                                         f.shadow = v;
-                                        ui.close_menu();
+                                        ui.memory_mut(|m| m.close_popup());
                                     }
                                 }
                             }
                             Col::Room => {
-                                if ui
-                                    .selectable_label(f.room == RoomFilter::Any, tr("Hammasi"))
-                                    .clicked()
-                                {
+                                if menu_item(
+                                    ui,
+                                    None,
+                                    f.room == RoomFilter::Any,
+                                    tr("UMUMIY"),
+                                    None,
+                                ) {
                                     f.room = RoomFilter::Any;
-                                    ui.close_menu();
+                                    ui.memory_mut(|m| m.close_popup());
                                 }
-                                if ui
-                                    .selectable_label(
-                                        f.room == RoomFilter::Unassigned,
-                                        tr("Xonasiz"),
-                                    )
-                                    .clicked()
-                                {
+                                if menu_item(
+                                    ui,
+                                    None,
+                                    f.room == RoomFilter::Unassigned,
+                                    tr("Xonasiz"),
+                                    None,
+                                ) {
                                     f.room = RoomFilter::Unassigned;
-                                    ui.close_menu();
+                                    ui.memory_mut(|m| m.close_popup());
                                 }
                                 for r in rooms {
                                     let on = f.room == RoomFilter::Is(r.clone());
-                                    if ui.selectable_label(on, r).clicked() {
+                                    if menu_item(ui, None, on, r, None) {
                                         f.room = RoomFilter::Is(r.clone());
-                                        ui.close_menu();
+                                        ui.memory_mut(|m| m.close_popup());
                                     }
                                 }
                             }
@@ -669,7 +681,9 @@ impl TeacherApp {
                 }
                 _ => {
                     let text = match *col {
-                        Col::Room => v.room.clone().unwrap_or_else(|| "—".into()),
+                        Col::Room => v.room.clone().unwrap_or_else(|| tr("UMUMIY").into()),
+                        Col::Os => v.os.clone(),
+                        Col::Version => v.version.clone(),
                         Col::User => v.user.clone(),
                         Col::Ip => v.ip.clone(),
                         _ if !v.online => last_seen_text(v),
@@ -713,14 +727,67 @@ pub(super) fn empty_state(ui: &mut egui::Ui, p: &Palette, _cfg: &TeacherConfig) 
 
 /// One line of a filter menu: the option and how many computers it shows; an option that shows
 /// nothing is greyed (unless it is the one chosen, so it can still be taken off).
-fn filter_option(ui: &mut egui::Ui, selected: bool, label: &str, n: Option<usize>) -> bool {
-    let text = match n {
-        Some(n) => format!("{label} · {n}"),
-        None => label.to_string(),
-    };
+/// One full-width row of a header menu: an optional icon, the label (it slides when it is too
+/// long for the column) and a count; the selected one is green.
+fn menu_item(
+    ui: &mut egui::Ui,
+    icon: Option<&str>,
+    selected: bool,
+    label: &str,
+    n: Option<usize>,
+) -> bool {
+    let p = vimora_ui::palette(ui.ctx());
     let enabled = selected || n != Some(0);
-    ui.add_enabled_ui(enabled, |ui| ui.selectable_label(selected, text).clicked())
-        .inner
+    let w = ui.available_width();
+    let (r, resp) = ui.allocate_exact_size(vec2(w, 32.0), Sense::click());
+    let resp = if enabled {
+        resp
+    } else {
+        ui.interact(r, resp.id.with("off"), Sense::hover())
+    };
+    if enabled && resp.hovered() {
+        ui.painter().rect_filled(r, Rounding::ZERO, p.hover);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    let ink = if !enabled {
+        p.faint
+    } else if selected {
+        p.accent_ink
+    } else {
+        p.text
+    };
+    let mut x = r.left() + 8.0;
+    if let Some(ic) = icon {
+        ui.painter().text(
+            pos2(x + 7.0, r.center().y),
+            Align2::CENTER_CENTER,
+            ic,
+            FontId::proportional(14.0),
+            ink,
+        );
+        x += 22.0;
+    }
+    let right = match n {
+        Some(n) => {
+            ui.painter().text(
+                pos2(r.right() - 8.0, r.center().y),
+                Align2::RIGHT_CENTER,
+                n.to_string(),
+                FontId::new(11.5, ui_kit::mono()),
+                p.muted,
+            );
+            r.right() - 34.0
+        }
+        None => r.right() - 8.0,
+    };
+    ui_kit::marquee(
+        ui,
+        Rect::from_min_max(pos2(x, r.top()), pos2(right, r.bottom())),
+        label,
+        FontId::proportional(13.5),
+        ink,
+    );
+    enabled && resp.clicked()
 }
 
 impl TeacherApp {

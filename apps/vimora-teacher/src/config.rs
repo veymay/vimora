@@ -39,6 +39,8 @@ pub struct TeacherConfig {
     pub sort: SortBy,
     /// The order is reversed (Z → A, high IP first).
     pub sort_desc: bool,
+    /// The teacher picked an order from a column header (until then no arrow is shown).
+    pub sort_set: bool,
     /// Settings are saved at once (off: with the "Saqlash" button in the settings window).
     pub autosave: bool,
     /// Look for a new teacher version on GitHub at start-up (and every few hours).
@@ -176,6 +178,7 @@ impl Default for TeacherConfig {
             sounds: true,
             sort: SortBy::Name,
             sort_desc: false,
+            sort_set: false,
             autosave: true,
             check_updates: true,
             thumb_interval_ms: 2000,

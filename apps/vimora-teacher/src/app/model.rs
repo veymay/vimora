@@ -422,21 +422,25 @@ pub(super) enum Col {
     User,
     Ip,
     Online,
+    Os,
+    Version,
 }
 
 impl Col {
     pub(super) fn title(self) -> &'static str {
         match self {
             Col::Num => "#",
-            Col::Thumb => "",
+            Col::Thumb => tr("Ekran"),
             Col::Name => tr("Kompyuter"),
             Col::Status => tr("Holat"),
             Col::Shadow => tr("Muzlatish"),
-            Col::Flags => tr("Belgilar"),
+            Col::Flags => tr("Holatlar"),
             Col::Room => tr("Xona"),
             Col::User => tr("Foydalanuvchi"),
             Col::Ip => tr("IP"),
             Col::Online => tr("Ulangan"),
+            Col::Os => tr("Tizim"),
+            Col::Version => tr("Vimora"),
         }
     }
 

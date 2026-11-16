@@ -1426,14 +1426,17 @@ pub fn tip_rows_at_pointer(resp: &Response, title: &str, rows: &[TipRow]) {
             .input(|i| i.pointer.hover_pos())
             .map(|pos| pos.x)
             .unwrap_or(resp.rect.center().x);
-        arrow_popup(
+        // Never wider than the thing it describes (a card, also when zoomed out).
+        let max_w = (resp.rect.width() - 14.0).max(120.0);
+        arrow_popup_at(
             &resp.ctx,
             egui::Id::new(("arrow-tip", resp.id)),
             resp.rect,
             x,
             false,
+            true,
             |ui| {
-                ui.set_max_width(340.0);
+                ui.set_max_width(max_w);
                 ui.spacing_mut().item_spacing = vec2(10.0, 3.0);
                 ui.spacing_mut().interact_size.y = 16.0;
                 ui.label(
@@ -1462,7 +1465,10 @@ pub fn tip_rows_at_pointer(resp: &Response, title: &str, rows: &[TipRow]) {
                             );
                         } else {
                             ui.label(RichText::new(&r.label).size(12.0).color(p.muted));
-                            ui.label(RichText::new(&r.value).size(12.5).color(col));
+                            ui.add(
+                                egui::Label::new(RichText::new(&r.value).size(12.5).color(col))
+                                    .wrap(),
+                            );
                         }
                     });
                 }
