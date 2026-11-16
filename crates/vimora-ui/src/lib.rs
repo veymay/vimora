@@ -1358,11 +1358,42 @@ pub enum Progress<'a> {
     Idle(&'a str, Color32),
 }
 
-/// One progress cell inside `rect` (a table cell, a row's right part).
+/// One progress cell inside `rect` (a table cell, a row's right part), from its left edge.
 pub fn progress(ui: &Ui, rect: Rect, state: Progress<'_>) {
+    let bar_w = (rect.width() - 64.0).clamp(40.0, 220.0);
+    progress_with(ui, rect, state, bar_w);
+}
+
+/// Like [`progress`], but the whole thing sits against the right edge of `rect` (a header's
+/// right side), not floating in the middle of it.
+pub fn progress_right(ui: &Ui, rect: Rect, state: Progress<'_>) {
+    let bar_w = (rect.width() - 64.0).clamp(40.0, 220.0);
+    let text_w = |t: &str| {
+        let g = truncated(
+            ui,
+            t,
+            FontId::proportional(12.5),
+            Color32::WHITE,
+            rect.width(),
+        );
+        g.size().x
+    };
+    let content = match state {
+        Progress::Waiting(t) => 24.0 + text_w(t) + 6.0,
+        Progress::Percent(_) => bar_w + 46.0,
+        Progress::Done(t) if t.is_empty() => bar_w + 24.0,
+        Progress::Done(t) => bar_w + 28.0 + text_w(t) + 6.0,
+        Progress::Failed(t) => 20.0 + text_w(t) + 6.0,
+        Progress::Idle(t, _) => text_w(t) + 6.0,
+    }
+    .min(rect.width());
+    let sub = Rect::from_min_max(egui::pos2(rect.right() - content, rect.top()), rect.max);
+    progress_with(ui, sub, state, bar_w);
+}
+
+fn progress_with(ui: &Ui, rect: Rect, state: Progress<'_>, bar_w: f32) {
     let p = palette(ui.ctx());
     let y = rect.center().y;
-    let bar_w = (rect.width() - 64.0).clamp(40.0, 220.0);
     let bar = Rect::from_min_size(egui::pos2(rect.left(), y - 3.0), vec2(bar_w, 6.0));
     let label = |text: &str, color: Color32, x: f32| {
         let g = truncated(

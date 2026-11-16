@@ -1868,7 +1868,7 @@ fn paint_acc_header(
         pos2(r.left() + 64.0 + nw + 12.0, r.top()),
         pos2(right.max(r.left() + 64.0 + nw + 12.0), r.bottom()),
     );
-    ui_kit::progress(ui, cell, h.state);
+    ui_kit::progress_right(ui, cell, h.state);
     clicked
 }
 
