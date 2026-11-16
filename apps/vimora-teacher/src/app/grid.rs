@@ -296,6 +296,32 @@ impl TeacherApp {
             });
     }
 
+    /// Nothing matches: the reason, and a button to clear the search / filters.
+    fn empty_result(&mut self, ui: &mut egui::Ui, p: &Palette) {
+        let searching = !self.search.trim().is_empty();
+        let filtering = self.list_filter.any();
+        ui.add_space(40.0);
+        ui.vertical_centered(|ui| {
+            if searching || filtering {
+                ui_kit::hud(ui, tr("Mos kompyuter topilmadi"), p.faint);
+                ui.add_space(12.0);
+                if ui_kit::button(ui, Some(icons::X), tr("Tozalash"), Kind::Outline).clicked() {
+                    self.search.clear();
+                    self.list_filter = ListFilter::default();
+                }
+            } else {
+                ui_kit::hud(ui, tr("Bu ro'yxatda kompyuter yo'q"), p.faint);
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new(tr(
+                        "Kompyuterni o'ng tugma bilan bosib, \"Xonaga biriktirish\" ni tanlang.",
+                    ))
+                    .color(p.muted),
+                );
+            }
+        });
+    }
+
     fn list_view(
         &mut self,
         ui: &mut egui::Ui,
@@ -388,6 +414,7 @@ impl TeacherApp {
             if resp.clicked() {
                 ui.memory_mut(|m| m.toggle_popup(id));
             }
+            let counts = self.filter_counts;
             let f = &mut self.list_filter;
             egui::popup_below_widget(
                 ui,
@@ -447,24 +474,28 @@ impl TeacherApp {
                             }
                         }
                         Col::Status => {
-                            for (v, label) in [
-                                (StatusFilter::Any, tr("Hammasi")),
-                                (StatusFilter::Locked, tr("Qulflangan")),
-                                (StatusFilter::Attention, tr("Diqqat talab qiladi")),
+                            for (v, label, n) in [
+                                (StatusFilter::Any, tr("Hammasi"), None),
+                                (StatusFilter::Locked, tr("Qulflangan"), Some(counts.locked)),
+                                (
+                                    StatusFilter::Attention,
+                                    tr("Diqqat talab qiladi"),
+                                    Some(counts.attention),
+                                ),
                             ] {
-                                if ui.selectable_label(f.status == v, label).clicked() {
+                                if filter_option(ui, f.status == v, label, n) {
                                     f.status = v;
                                     ui.close_menu();
                                 }
                             }
                         }
                         Col::Shadow => {
-                            for (v, label) in [
-                                (ShadowFilter::Any, tr("Hammasi")),
-                                (ShadowFilter::On, tr("Muzlatilgan")),
-                                (ShadowFilter::Off, tr("Muzlatilmagan")),
+                            for (v, label, n) in [
+                                (ShadowFilter::Any, tr("Hammasi"), None),
+                                (ShadowFilter::On, tr("Muzlatilgan"), Some(counts.frozen)),
+                                (ShadowFilter::Off, tr("Muzlatilmagan"), Some(counts.thawed)),
                             ] {
-                                if ui.selectable_label(f.shadow == v, label).clicked() {
+                                if filter_option(ui, f.shadow == v, label, n) {
                                     f.shadow = v;
                                     ui.close_menu();
                                 }
@@ -499,6 +530,12 @@ impl TeacherApp {
             );
         }
         ui.add_space(-ui.spacing().item_spacing.y);
+
+        // Nothing matches the filters: the header above stays, so the filter can be changed.
+        if visible.is_empty() {
+            self.empty_result(ui, p);
+            return;
+        }
 
         egui::ScrollArea::vertical()
             .auto_shrink([false; 2])
@@ -697,6 +734,18 @@ pub(super) fn empty_state(ui: &mut egui::Ui, p: &Palette, _cfg: &TeacherConfig) 
     .inner
 }
 
+/// One line of a filter menu: the option and how many computers it shows; an option that shows
+/// nothing is greyed (unless it is the one chosen, so it can still be taken off).
+fn filter_option(ui: &mut egui::Ui, selected: bool, label: &str, n: Option<usize>) -> bool {
+    let text = match n {
+        Some(n) => format!("{label} · {n}"),
+        None => label.to_string(),
+    };
+    let enabled = selected || n != Some(0);
+    ui.add_enabled_ui(enabled, |ui| ui.selectable_label(selected, text).clicked())
+        .inner
+}
+
 impl TeacherApp {
     pub(super) fn grid(&mut self, ctx: &egui::Context, p: &Palette, all: &[View]) {
         // The list is a table that touches the window edges; cards keep a margin.
@@ -734,24 +783,43 @@ impl TeacherApp {
                 }
 
                 let q = self.search.to_lowercase();
+                // What each filter option would show, for the menu (tab and search applied).
+                {
+                    let base: Vec<&&View> = visible_all
+                        .iter()
+                        .filter(|v| q.is_empty() || v.label.to_lowercase().contains(&q))
+                        .collect();
+                    let count = |f: ListFilter| base.iter().filter(|v| f.matches(v)).count();
+                    self.filter_counts = FilterCounts {
+                        locked: count(ListFilter {
+                            status: StatusFilter::Locked,
+                            ..Default::default()
+                        }),
+                        attention: count(ListFilter {
+                            status: StatusFilter::Attention,
+                            ..Default::default()
+                        }),
+                        frozen: count(ListFilter {
+                            shadow: ShadowFilter::On,
+                            ..Default::default()
+                        }),
+                        thawed: count(ListFilter {
+                            shadow: ShadowFilter::Off,
+                            ..Default::default()
+                        }),
+                    };
+                }
                 let visible: Vec<&View> = visible_all
                     .into_iter()
                     .filter(|v| q.is_empty() || v.label.to_lowercase().contains(&q))
                     .filter(|v| grid_view || self.list_filter.matches(v))
                     .collect();
 
-                if visible.is_empty() {
-                    ui.add_space(40.0);
-                    ui.vertical_centered(|ui| {
-                        ui_kit::hud(ui, tr("Bu ro'yxatda kompyuter yo'q"), p.faint);
-                        ui.add_space(6.0);
-                        ui.label(
-                            RichText::new(tr(
-                                "Kompyuterni o'ng tugma bilan bosib, \"Xonaga biriktirish\" ni tanlang.",
-                            ))
-                            .color(p.muted),
-                        );
-                    });
+                // The cards have nothing to show: say why (and how to get them back). The list
+                // keeps its header and filters even then (see `list_view`), or a filter that
+                // matches nothing could not be taken off.
+                if visible.is_empty() && grid_view {
+                    self.empty_result(ui, p);
                     return;
                 }
 

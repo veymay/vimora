@@ -6,6 +6,7 @@
 use vimora_ui::i18n::Row;
 
 pub static ROWS: &[Row] = &[
+    ("Mos kompyuter topilmadi", "No matching computers", "Подходящих компьютеров нет"),
     ("Dastur ochilganda va bir necha daqiqa tegilmasa shu kod so'raladi. 4–8 raqam.", "The program asks for this code when it opens and after a few minutes without a touch. 4–8 digits.", "Эта программа спрашивает код при запуске и после нескольких минут без касаний. 4–8 цифр."),
     ("O'zgartirish", "Change", "Изменить"),
     ("Yoqilgan", "On", "Включено"),

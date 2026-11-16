@@ -479,6 +479,16 @@ pub(super) enum ShadowFilter {
     Off,
 }
 
+/// How many computers each ready-made filter option would show (the tab and the search
+/// applied): options that show nothing are greyed in the filter menu.
+#[derive(Clone, Copy, Default)]
+pub(super) struct FilterCounts {
+    pub(super) locked: usize,
+    pub(super) attention: usize,
+    pub(super) frozen: usize,
+    pub(super) thawed: usize,
+}
+
 /// Column filters of the list view (all conditions must match).
 #[derive(Clone, PartialEq, Eq, Default)]
 pub(super) struct ListFilter {

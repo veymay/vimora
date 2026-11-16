@@ -82,6 +82,7 @@ pub struct TeacherApp {
     search: String,
     /// Column filters of the list view.
     list_filter: ListFilter,
+    filter_counts: FilterCounts,
     room_tab: RoomTab,
     /// Rubber-band drag in progress.
     marquee: Option<Marquee>,
@@ -179,6 +180,7 @@ impl TeacherApp {
             selected: BTreeSet::new(),
             search: String::new(),
             list_filter: ListFilter::default(),
+            filter_counts: FilterCounts::default(),
             room_tab: RoomTab::All,
             marquee: None,
             anchor: None,
@@ -216,6 +218,10 @@ impl TeacherApp {
                 .ok()
                 .map(|p| (p, Instant::now())),
         };
+        // Dev aid: VIMORA_FILTER=shadow starts with the "frozen" filter on (the list view).
+        if std::env::var("VIMORA_FILTER").as_deref() == Ok("shadow") {
+            app.list_filter.shadow = ShadowFilter::On;
+        }
         app.admin = app.cfg.read().unwrap().admin_hash.is_empty();
         {
             let mut c = app.cfg.write().unwrap();
