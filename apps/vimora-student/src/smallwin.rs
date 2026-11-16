@@ -21,6 +21,8 @@ pub fn options(app_id: &str, size: [f32; 2], position: Option<[f32; 2]>) -> efra
         .with_icon(crate::smallwin::icon())
         .with_app_id(app_id)
         .with_inner_size(size)
+        .with_min_inner_size(size)
+        .with_max_inner_size(size)
         .with_resizable(false)
         .with_decorations(false)
         .with_minimize_button(false)

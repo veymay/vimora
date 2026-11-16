@@ -14,7 +14,7 @@ use eframe::egui::{self, pos2, vec2, Align2, FontId, Rect, Stroke};
 use std::sync::{Arc, Mutex};
 use vimora_ui::{icons, Kind, Progress};
 
-const SIZE: [f32; 2] = [440.0, 410.0];
+const SIZE: [f32; 2] = [460.0, 500.0];
 
 fn t(lang: &str, key: &str) -> &'static str {
     match (key, lang) {
@@ -150,7 +150,7 @@ impl eframe::App for About {
             Progress::Waiting(_) | Progress::Percent(_)
         );
 
-        // The bar at the bottom, like a status bar: a line above it and the two buttons.
+        // The bar at the bottom, like a status bar: a line above it and "Chiqish" at the right.
         egui::TopBottomPanel::bottom("bar")
             .exact_height(64.0)
             .frame(egui::Frame::none().fill(p.panel))
@@ -160,27 +160,19 @@ impl eframe::App for About {
                     .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
                 let mut inner = ui.new_child(
                     egui::UiBuilder::new()
-                        .max_rect(r.shrink2(vec2(18.0, 0.0)))
-                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                        .max_rect(r.shrink2(vec2(20.0, 0.0)))
+                        .layout(egui::Layout::right_to_left(egui::Align::Center)),
                 );
-                inner.spacing_mut().item_spacing.x = 8.0;
                 if vimora_ui::button(&mut inner, Some(icons::X), t(l, "exit"), Kind::Cancel)
                     .clicked()
                 {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
-                inner.add_enabled_ui(!running, |ui| {
-                    if vimora_ui::button(ui, Some(icons::REFRESH_CW), t(l, "check"), Kind::Primary)
-                        .clicked()
-                    {
-                        self.start_check(ctx);
-                    }
-                });
             });
 
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(p.bg))
-            .show(ctx, |ui| self.home(ui, &state, &installed));
+            .show(ctx, |ui| self.home(ui, ctx, &state, &installed, running));
     }
 }
 
@@ -230,7 +222,14 @@ impl About {
     }
 
     /// The window: the mark, the name, the teacher, the version, the update state.
-    fn home(&mut self, ui: &mut egui::Ui, state: &Shared, installed: &str) {
+    fn home(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        state: &Shared,
+        installed: &str,
+        running: bool,
+    ) {
         let p = vimora_ui::palette(ui.ctx());
         let l = self.lang;
         let r = ui.max_rect();
@@ -292,8 +291,23 @@ impl About {
             FontId::new(13.0, vimora_ui::mono()),
             p.accent_ink,
         );
-        y += 30.0;
-        // The update, when there is something to say.
+        y += 34.0;
+        // Under the version: the update check, and what it is doing (checking, downloading with
+        // a percent, installing, done).
+        let label = t(l, "check");
+        let bw = 250.0;
+        let btn = Rect::from_min_size(pos2(cx - bw / 2.0, y), vec2(bw, vimora_ui::CONTROL_H));
+        let mut b = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(btn)
+                .layout(egui::Layout::top_down(egui::Align::Center)),
+        );
+        b.add_enabled_ui(!running, |ui| {
+            if vimora_ui::button(ui, Some(icons::REFRESH_CW), label, Kind::Primary).clicked() {
+                self.start_check(ctx);
+            }
+        });
+        y += vimora_ui::CONTROL_H + 14.0;
         let progress = self.progress_of(state, installed);
         if !matches!(progress, Progress::Idle(..)) {
             let row = Rect::from_min_size(pos2(r.left() + 40.0, y), vec2(r.width() - 80.0, 24.0));
