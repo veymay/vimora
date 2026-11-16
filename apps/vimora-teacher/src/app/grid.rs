@@ -1103,25 +1103,21 @@ fn details_rows(p: &Palette, v: &View) -> Vec<ui_kit::TipRow> {
         color: None,
     };
     let mut rows = vec![
-        row(icons::USER, tr("Foydalanuvchi"), v.user.clone()),
+        row(icons::USER, tr("Kim"), v.user.clone()),
         row(icons::NETWORK, "IP", v.ip.clone()),
     ];
     if !v.online {
-        rows.push(row(icons::HISTORY, tr("Oxirgi ulanish"), last_seen_text(v)));
+        rows.push(row(icons::HISTORY, tr("Oxirgi"), last_seen_text(v)));
         return rows;
     }
-    rows.push(row(icons::MONITOR, tr("Tizim"), v.os.clone()));
+    rows.push(row(icons::MONITOR, tr("OT"), v.os.clone()));
     rows.push(row(
         icons::LAYOUT_GRID,
         tr("Xona"),
         v.room.clone().unwrap_or_else(|| tr("UMUMIY").to_string()),
     ));
-    rows.push(row(icons::TIMER, tr("Ulangan"), fmt_dur(v.online_secs)));
-    rows.push(row(
-        icons::DOWNLOAD,
-        tr("Yangilanishlar"),
-        updates_label(&v.status),
-    ));
+    rows.push(row(icons::TIMER, tr("Vaqt"), fmt_dur(v.online_secs)));
+    rows.push(row(icons::DOWNLOAD, tr("Yangi"), updates_label(&v.status)));
     if !v.version.is_empty() {
         rows.push(row(icons::INFO, "Vimora", v.version.clone()));
     }

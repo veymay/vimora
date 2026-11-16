@@ -1451,41 +1451,52 @@ pub fn tip_rows_at_pointer(resp: &Response, title: &str, rows: &[TipRow]) {
             false,
             true,
             |ui| {
-                ui.set_max_width(max_w);
-                ui.spacing_mut().item_spacing = vec2(10.0, 3.0);
-                ui.spacing_mut().interact_size.y = 16.0;
-                ui.label(
-                    RichText::new(title)
-                        .family(bold())
-                        .size(13.5)
-                        .color(p.strong),
-                );
-                ui.add_space(4.0);
+                // As wide as the card, no wider: every line is one line, long values slide.
+                ui.set_width(max_w);
+                ui.spacing_mut().item_spacing = vec2(0.0, 3.0);
+                let (tr_, _) = ui.allocate_exact_size(vec2(max_w, 18.0), Sense::hover());
+                marquee(ui, tr_, title, FontId::new(13.5, bold()), p.strong);
+                ui.add_space(3.0);
+                let label_w = rows
+                    .iter()
+                    .map(|r| {
+                        ui.painter()
+                            .layout_no_wrap(r.label.clone(), FontId::proportional(12.0), p.muted)
+                            .size()
+                            .x
+                    })
+                    .fold(0.0_f32, f32::max);
                 for r in rows {
+                    let (rr, _) = ui.allocate_exact_size(vec2(max_w, 16.0), Sense::hover());
                     let col = r.color.unwrap_or(p.text);
-                    ui.horizontal_top(|ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
-                        let (ir, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
-                        ui.painter().text(
-                            ir.center(),
-                            Align2::CENTER_CENTER,
-                            r.icon,
-                            FontId::proportional(13.0),
-                            r.color.unwrap_or(p.muted),
+                    ui.painter().text(
+                        egui::pos2(rr.left() + 8.0, rr.center().y),
+                        Align2::CENTER_CENTER,
+                        r.icon,
+                        FontId::proportional(13.0),
+                        r.color.unwrap_or(p.muted),
+                    );
+                    let mut x = rr.left() + 24.0;
+                    if !r.label.is_empty() {
+                        let g = ui.painter().layout_no_wrap(
+                            r.label.clone(),
+                            FontId::proportional(12.0),
+                            p.muted,
                         );
-                        if r.label.is_empty() {
-                            ui.add(
-                                egui::Label::new(RichText::new(&r.value).size(12.5).color(col))
-                                    .truncate(),
-                            );
-                        } else {
-                            ui.label(RichText::new(&r.label).size(12.0).color(p.muted));
-                            ui.add(
-                                egui::Label::new(RichText::new(&r.value).size(12.5).color(col))
-                                    .wrap(),
-                            );
-                        }
-                    });
+                        ui.painter().galley(
+                            egui::pos2(x, rr.center().y - g.size().y / 2.0),
+                            g,
+                            p.muted,
+                        );
+                        x += label_w + 10.0;
+                    }
+                    marquee(
+                        ui,
+                        Rect::from_min_max(egui::pos2(x, rr.top()), rr.max),
+                        &r.value,
+                        FontId::proportional(12.5),
+                        col,
+                    );
                 }
             },
         );
