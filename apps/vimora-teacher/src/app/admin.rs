@@ -432,7 +432,7 @@ pub(super) fn access_page(ui: &mut egui::Ui, p: &Palette, c: &mut crate::config:
     }
 }
 
-enum Secret {
+pub(super) enum Secret {
     None,
     Save(String),
     Remove,
@@ -441,7 +441,7 @@ enum Secret {
 /// One protection as a row: icon, name, "?", its state (on / off) and one button; the button
 /// opens a field below the row with save and cancel (and remove when it is on).
 #[allow(clippy::too_many_arguments)]
-fn secret_row(
+pub(super) fn secret_row(
     ui: &mut egui::Ui,
     p: &Palette,
     key: &str,

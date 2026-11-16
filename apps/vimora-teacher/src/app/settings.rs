@@ -725,41 +725,30 @@ fn lock_screen(ui: &mut egui::Ui, p: &Palette, c: &mut TeacherConfig) {
             ui.add(ui_kit::text_field(&mut c.lock_title).desired_width(300.0));
         },
     );
-    ui.add_space(7.0);
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(tr("Matn")).size(13.5).color(p.text));
-        ui_kit::info(ui, tr("Qulflanganda o'quvchi ekranining o'rtasida chiqadi. Bo'sh qoldirsangiz ko'rinmaydi. O'zgarish keyingi qulflashda ko'rinadi."));
-    });
-    ui.add_space(6.0);
-    ui.add(
-        ui_kit::text_area(&mut c.lock_message)
-            .desired_rows(3)
-            .desired_width(f32::INFINITY),
-    );
-    ui.add_space(7.0);
     row(
         ui,
         p,
-        tr("Ochish kodi"),
-        Some(tr("4–8 raqam. Internet uzilib qolsa, o'quvchi ekrandagi qulfni shu kod bilan ochadi. Bo'sh qoldirsangiz kod so'ralmaydi. Keyingi qulflashdan boshlab kuchga kiradi.")),
+        tr("Matn"),
+        Some(tr("Qulflanganda o'quvchi ekranining o'rtasida chiqadi. Bo'sh qoldirsangiz ko'rinmaydi. O'zgarish keyingi qulflashda ko'rinadi.")),
         |ui| {
-            let r = ui.add(
-                ui_kit::password_field(&mut c.unlock_pin)
-                    .hint_text("4821")
-                    .desired_width(160.0),
-            );
-            if r.changed() {
-                c.unlock_pin.retain(|ch| ch.is_ascii_digit());
-                c.unlock_pin.truncate(8);
-            }
+            ui.add(ui_kit::text_field(&mut c.lock_message).desired_width(300.0));
         },
     );
-    if !c.unlock_pin.is_empty() && !vimora_core::pin::valid(&c.unlock_pin) {
-        ui.label(
-            RichText::new(tr("Kod kamida 4 raqamdan iborat bo'lishi kerak."))
-                .size(12.0)
-                .color(p.warning),
-        );
+    // The unlock code is set like the program code: a button, then a hidden field with save.
+    match super::admin::secret_row(
+        ui,
+        p,
+        "unlock",
+        icons::LOCK,
+        tr("Ochish kodi"),
+        Some(tr("4–8 raqam. Internet uzilib qolsa, o'quvchi ekrandagi qulfni shu kod bilan ochadi. Bo'sh qoldirsangiz kod so'ralmaydi. Keyingi qulflashdan boshlab kuchga kiradi.")),
+        vimora_core::pin::valid(&c.unlock_pin),
+        true,
+        vimora_core::pin::valid,
+    ) {
+        super::admin::Secret::Save(v) => c.unlock_pin = v,
+        super::admin::Secret::Remove => c.unlock_pin.clear(),
+        super::admin::Secret::None => {}
     }
     ui.horizontal(|ui| {
         ui.label(RichText::new(tr("Ikonka")).size(13.5).color(p.text));

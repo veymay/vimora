@@ -478,6 +478,13 @@ pub fn button(ui: &mut Ui, icon: Option<&str>, label: &str, kind: Kind) -> Respo
     } else {
         stroke
     };
+    // Filled buttons get a border of their own colour: stroked neighbours (inputs, outline
+    // buttons) are drawn half a pixel bigger on every side, and the fill must match them.
+    let stroke = if stroke == Stroke::NONE && matches!(kind, Kind::Primary | Kind::Danger) {
+        Stroke::new(1.0_f32, fill)
+    } else {
+        stroke
+    };
     ui.painter().rect(rect, Rounding::ZERO, fill, stroke);
     if label.is_empty() {
         // Icon-only: centre the glyph in the square.
@@ -1534,6 +1541,13 @@ mod height_tests {
                     });
                     measure(ui, "password", &|ui| {
                         ui.add(password_field(&mut b.clone()));
+                    });
+                    measure(ui, "password hint", &|ui| {
+                        ui.add(password_field(&mut c.clone()).hint_text("4–8 raqam"));
+                    });
+                    measure(ui, "password focused", &|ui| {
+                        let r = ui.add(password_field(&mut c.clone()).hint_text("4–8 raqam"));
+                        r.request_focus();
                     });
                     measure(ui, "button", &|ui| {
                         button(ui, Some(icons::CHECK), "Saqlash", Kind::Primary);
