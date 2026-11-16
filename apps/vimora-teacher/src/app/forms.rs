@@ -67,7 +67,14 @@ pub(super) fn activity_body(
         } else {
             e.text.clone()
         };
-        let text_w = w - 100.0;
+        // Icon, time and text in one rhythm: 12 px between each, all on the first line.
+        let time = ui.painter().layout_no_wrap(
+            e.time[..e.time.len().min(5)].to_string(),
+            FontId::new(11.0, ui_kit::mono()),
+            p.faint,
+        );
+        let text_x = 12.0 + 14.0 + 12.0 + time.size().x + 12.0;
+        let text_w = w - text_x - 12.0;
         let g = ui
             .painter()
             .layout(short, FontId::proportional(13.0), p.text, text_w);
@@ -79,22 +86,26 @@ pub(super) fn activity_body(
             Rounding::ZERO,
             col,
         );
+        let line_h = ui
+            .painter()
+            .layout_no_wrap("A".into(), FontId::proportional(13.0), p.text)
+            .size()
+            .y;
+        let cy = rect.top() + 9.0 + line_h / 2.0;
         ui.painter().text(
-            pos2(rect.left() + 20.0, rect.top() + 19.0),
+            pos2(rect.left() + 12.0 + 7.0, cy),
             Align2::CENTER_CENTER,
             ic,
             FontId::proportional(14.0),
             col,
         );
-        ui.painter().text(
-            pos2(rect.left() + 36.0, rect.top() + 19.0),
-            Align2::LEFT_CENTER,
-            &e.time[..e.time.len().min(5)],
-            FontId::new(11.0, ui_kit::mono()),
+        ui.painter().galley(
+            pos2(rect.left() + 12.0 + 14.0 + 12.0, cy - time.size().y / 2.0),
+            time,
             p.faint,
         );
         ui.painter()
-            .galley(pos2(rect.left() + 86.0, rect.top() + 9.0), g, p.text);
+            .galley(pos2(rect.left() + text_x, rect.top() + 9.0), g, p.text);
         if e.text.chars().count() > 150 {
             resp.tip(&e.text);
         }
@@ -2303,18 +2314,26 @@ fn categories(
                             );
                         }
                         let ink = if live { col } else { p.faint };
+                        // Icon and number as one group, a fixed gap between them, centred.
+                        let num = ui.painter().layout_no_wrap(
+                            n.to_string(),
+                            FontId::new(12.5, ui_kit::mono_bold()),
+                            ink,
+                        );
+                        let icon_w = 14.0;
+                        let gap = 5.0;
+                        let total = icon_w + gap + num.size().x;
+                        let x0 = r.center().x - total / 2.0;
                         ui.painter().text(
-                            r.left_center() + vec2(8.0, 0.0),
-                            egui::Align2::LEFT_CENTER,
+                            pos2(x0 + icon_w / 2.0, r.center().y),
+                            egui::Align2::CENTER_CENTER,
                             ic,
                             FontId::proportional(13.0),
                             ink,
                         );
-                        ui.painter().text(
-                            r.right_center() - vec2(7.0, 0.0),
-                            egui::Align2::RIGHT_CENTER,
-                            n.to_string(),
-                            FontId::new(12.5, ui_kit::mono_bold()),
+                        ui.painter().galley(
+                            pos2(x0 + icon_w + gap, r.center().y - num.size().y / 2.0),
+                            num,
                             ink,
                         );
                         resp.tip(tip);

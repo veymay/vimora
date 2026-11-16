@@ -41,6 +41,8 @@ pub struct TeacherConfig {
     pub sort_desc: bool,
     /// The teacher picked an order from a column header (until then no arrow is shown).
     pub sort_set: bool,
+    /// The hand-made block lists were emptied once (they start empty again).
+    pub manual_cleared: bool,
     /// Settings are saved at once (off: with the "Saqlash" button in the settings window).
     pub autosave: bool,
     /// Look for a new teacher version on GitHub at start-up (and every few hours).
@@ -179,6 +181,7 @@ impl Default for TeacherConfig {
             sort: SortBy::Name,
             sort_desc: false,
             sort_set: false,
+            manual_cleared: false,
             autosave: true,
             check_updates: true,
             thumb_interval_ms: 2000,
@@ -285,10 +288,18 @@ pub fn identity() -> vimora_core::auth::Identity {
 }
 
 pub fn load() -> TeacherConfig {
-    path()
+    let mut c: TeacherConfig = path()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    // Once: the lists typed in by hand start empty (the ready-made categories are untouched).
+    if !c.manual_cleared {
+        c.web_blocklist.clear();
+        c.keyword_blocklist.clear();
+        c.app_blocklist.clear();
+        c.manual_cleared = true;
+    }
+    c
 }
 
 pub fn save(cfg: &TeacherConfig) {

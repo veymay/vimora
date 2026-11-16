@@ -234,6 +234,15 @@ impl TeacherApp {
         match std::env::var("VIMORA_OPEN").as_deref() {
             Ok("scan") => app.dev_open = Some(Dialog::scan()),
             Ok("net") => app.dev_open = Some(app.net_dialog(NetTab::Domains)),
+            Ok("net:import") => {
+                // Dev aid: opens the block window and presses "import from file" (see
+                // VIMORA_IMPORT_FILE).
+                let mut d = app.net_dialog(NetTab::Domains);
+                if let Dialog::Net { import, .. } = &mut d {
+                    *import = true;
+                }
+                app.dev_open = Some(d);
+            }
             Ok("net:apps") => app.dev_open = Some(app.net_dialog(NetTab::Apps)),
             Ok("net:devices") => app.dev_open = Some(app.net_dialog(NetTab::Devices)),
             Ok("net:cats") => {

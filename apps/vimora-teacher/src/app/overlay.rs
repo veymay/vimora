@@ -632,9 +632,16 @@ impl TeacherApp {
                         );
                     });
                 } else if drawer {
+                    // Rows that scroll away are cut a little under the header, not on its line.
+                    let gap = if matches!(dialog, Dialog::Activity) {
+                        8.0
+                    } else {
+                        0.0
+                    };
+                    ui.add_space(gap);
                     egui::ScrollArea::vertical()
-                        .min_scrolled_height(body_max)
-                        .max_height(body_max)
+                        .min_scrolled_height(body_max - gap)
+                        .max_height(body_max - gap)
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
                             body(ui, dialog, &mut confirm, &mut clear_help);
@@ -744,9 +751,13 @@ impl TeacherApp {
         if let Some(Dialog::Net { import, .. }) = &mut self.dialog {
             if std::mem::take(import) && self.file_job.is_none() {
                 self.file_job = Some(spawn_file_job(|| {
-                    let picked = rfd::FileDialog::new()
-                        .add_filter("Text", &["txt", "csv", "list"])
-                        .pick_file()?;
+                    // Dev aid: VIMORA_IMPORT_FILE=<path> skips the file dialog (tests).
+                    let picked = match std::env::var_os("VIMORA_IMPORT_FILE") {
+                        Some(p) => std::path::PathBuf::from(p),
+                        None => rfd::FileDialog::new()
+                            .add_filter("Text", &["txt", "csv", "list"])
+                            .pick_file()?,
+                    };
                     let text = std::fs::read(&picked).ok()?;
                     // Refuse huge files; tolerate any encoding.
                     if text.len() > 2 * 1024 * 1024 {
@@ -1038,7 +1049,8 @@ impl TeacherApp {
                         Some(c) => {
                             let n = c.items.len();
                             *open_cat = Some(c.id.clone());
-                            cats.push(c);
+                            // At the top, open: it is seen at once.
+                            cats.insert(0, c);
                             tf!("\"{name}\" toifasi qo'shildi: {n} ta", name = name, n = n)
                         }
                         None => tr("Faylda yaroqli qator topilmadi.").to_string(),
