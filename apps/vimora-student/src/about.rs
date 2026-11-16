@@ -377,14 +377,14 @@ impl About {
         let logo = Rect::from_min_size(r.min, vec2(96.0, 96.0));
         vimora_ui::logo(ui.painter(), logo);
         ui.painter().text(
-            pos2(logo.right() + 20.0, r.top() + 26.0),
+            pos2(logo.right() + vimora_ui::logo_gap(96.0), r.top() + 26.0),
             Align2::LEFT_CENTER,
             "VIMORA",
             FontId::new(30.0, vimora_ui::brand()),
             p.strong,
         );
         ui.painter().text(
-            pos2(logo.right() + 20.0, r.top() + 60.0),
+            pos2(logo.right() + vimora_ui::logo_gap(96.0), r.top() + 60.0),
             Align2::LEFT_CENTER,
             format!("{} {}", t(l, "version"), env!("CARGO_PKG_VERSION")),
             FontId::new(13.0, vimora_ui::mono()),

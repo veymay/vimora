@@ -222,7 +222,6 @@ impl TeacherApp {
         if std::env::var("VIMORA_FILTER").as_deref() == Ok("shadow") {
             app.list_filter.shadow = ShadowFilter::On;
         }
-        app.admin = app.cfg.read().unwrap().admin_hash.is_empty();
         {
             let mut c = app.cfg.write().unwrap();
             // Dev aid: VIMORA_PIN=1234 (nothing is saved).

@@ -414,7 +414,7 @@ unsafe fn paint(hwnd: HWND, st: &mut State) {
                 small,
                 p.muted,
                 RECT {
-                    left: (48.0 * s) as i32 + (54.0 * s) as i32,
+                    left: (48.0 * s) as i32 + ((40.0 + vimora_ui::logo_gap(40.0)) * s) as i32,
                     top: (40.0 * s) as i32,
                     right: w / 2,
                     bottom: (80.0 * s) as i32,
@@ -422,7 +422,7 @@ unsafe fn paint(hwnd: HWND, st: &mut State) {
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE,
             );
             DeleteObject(small as HGDIOBJ);
-            let clock = font(36.0 * s, true, "Geist Mono");
+            let clock = font(26.0 * s, true, "Geist Mono");
             let nowc = chrono::Local::now();
             text(
                 dc,

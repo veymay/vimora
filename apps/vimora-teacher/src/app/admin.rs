@@ -37,18 +37,6 @@ fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-/// Settings → "Kirish": set or remove the administrator password.
-pub(super) fn set_password(c: &mut crate::config::TeacherConfig, pw: &str) {
-    if pw.is_empty() {
-        c.admin_salt.clear();
-        c.admin_hash.clear();
-        return;
-    }
-    let salt = vimora_core::auth::nonce();
-    c.admin_hash = hex(&vimora_core::pin::hash(&salt, pw));
-    c.admin_salt = hex(&salt);
-}
-
 pub(super) fn check_password(c: &crate::config::TeacherConfig, pw: &str) -> bool {
     let salt: Vec<u8> = (0..c.admin_salt.len() / 2)
         .filter_map(|i| u8::from_str_radix(&c.admin_salt[i * 2..i * 2 + 2], 16).ok())
@@ -394,13 +382,8 @@ pub(super) fn reports_page(ui: &mut egui::Ui, p: &Palette, out: &mut SettingsOut
     }
 }
 
-/// "Kirish": the administrator password.
-pub(super) fn access_page(
-    ui: &mut egui::Ui,
-    p: &Palette,
-    c: &mut crate::config::TeacherConfig,
-    out: &mut SettingsOut,
-) {
+/// "Kirish": the program code.
+pub(super) fn access_page(ui: &mut egui::Ui, p: &Palette, c: &mut crate::config::TeacherConfig) {
     ui.add_space(4.0);
     // Two protections, each one row: its state and one button. The button opens the field
     // under the row (type, save).
@@ -446,25 +429,6 @@ pub(super) fn access_page(
                 );
             },
         );
-    }
-    let admin_set = !c.admin_hash.is_empty();
-    match secret_row(
-        ui,
-        p,
-        "admin",
-        icons::SHIELD,
-        tr("Administrator paroli"),
-        Some(tr("Parol qo'yilsa, Muzlatish, Yangilanish, Quvvat, Sozlamalar va IT bo'limlari parol so'raydi. Pastdagi qulf belgisi orqali kirasiz yoki chiqasiz.")),
-        admin_set,
-        false,
-        |s| s.chars().count() >= 4,
-    ) {
-        Secret::Save(v) => {
-            set_password(c, &v);
-            out.password_set = true;
-        }
-        Secret::Remove => set_password(c, ""),
-        Secret::None => {}
     }
 }
 

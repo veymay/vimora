@@ -56,16 +56,23 @@ fn setup(cc: &eframe::CreationContext<'_>) {
 // ---------------------------------------------------------------------------------------------
 // Poll
 
+/// The panel's width (the same as the chat's).
+const POLL_W: f32 = 380.0;
+
 pub fn run_poll() -> anyhow::Result<()> {
     let (first, rx) = stdin_lines();
     let input: PollIn = serde_json::from_str(first.trim())?;
-    let h = 210.0 + 46.0 * input.options.len().max(2) as f32;
+    // A drawer on the right edge, like the chat: no title bar, always on top, and it stays until
+    // the question is answered (it has no close button). Hidden until it sits on the edge.
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Vimora — savol")
-            .with_inner_size([460.0, h])
+            .with_decorations(false)
             .with_always_on_top()
-            .with_resizable(false),
+            .with_taskbar(false)
+            .with_resizable(false)
+            .with_inner_size([POLL_W, 640.0])
+            .with_visible(false),
         renderer: crate::ui_renderer(),
         ..Default::default()
     };
@@ -78,6 +85,7 @@ pub fn run_poll() -> anyhow::Result<()> {
                 input,
                 text: String::new(),
                 rx,
+                placed: false,
             }))
         }),
     )
@@ -88,6 +96,33 @@ struct Poll {
     input: PollIn,
     text: String,
     rx: mpsc::Receiver<String>,
+    placed: bool,
+}
+
+impl Poll {
+    /// Full height of the usable screen, against the right edge.
+    fn place(&mut self, ctx: &egui::Context) {
+        if self.placed {
+            return;
+        }
+        let monitor = ctx
+            .input(|i| i.viewport().monitor_size)
+            .unwrap_or(egui::vec2(1920.0, 1080.0));
+        let ppp = ctx.pixels_per_point().max(0.5);
+        let (_, top, right, bottom) = crate::chat::work_area()
+            .map(|(l, t, r, b)| (l / ppp, t / ppp, r / ppp, b / ppp))
+            .unwrap_or((0.0, 0.0, monitor.x, monitor.y));
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(vec2(
+            POLL_W,
+            (bottom - top).round(),
+        )));
+        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(
+            (right - POLL_W).round(),
+            top.round(),
+        )));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        self.placed = true;
+    }
 }
 
 impl eframe::App for Poll {
@@ -95,45 +130,63 @@ impl eframe::App for Poll {
         if self.rx.try_recv().is_ok_and(|l| l.trim() == "end") {
             std::process::exit(0);
         }
+        // Alt+F4 does not close it: only an answer (or the teacher) does.
+        if ctx.input(|i| i.viewport().close_requested()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        }
+        self.place(ctx);
         ctx.request_repaint_after(Duration::from_millis(300));
         let p = vimora_ui::DARK;
         let mut answer: Option<PollOut> = None;
         egui::CentralPanel::default()
-            .frame(egui::Frame::none().fill(p.card).inner_margin(24.0))
+            .frame(
+                egui::Frame::none()
+                    .fill(p.card)
+                    .stroke(egui::Stroke::new(1.0_f32, p.accent))
+                    .inner_margin(22.0),
+            )
             .show(ctx, |ui| {
-                ui.label(
-                    RichText::new(icons::MESSAGE_SQUARE_TEXT)
-                        .size(26.0)
-                        .color(p.accent),
-                );
-                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(icons::MESSAGE_SQUARE_TEXT)
+                            .size(20.0)
+                            .color(p.accent),
+                    );
+                    ui.label(
+                        RichText::new("SAVOL")
+                            .family(vimora_ui::mono_bold())
+                            .size(12.0)
+                            .color(p.muted),
+                    );
+                });
+                ui.add_space(14.0);
                 ui.label(
                     RichText::new(&self.input.question)
                         .family(vimora_ui::bold())
-                        .size(18.0)
+                        .size(19.0)
                         .color(p.strong),
                 );
-                ui.add_space(16.0);
+                ui.add_space(18.0);
                 if self.input.options.is_empty() {
                     ui.add(
                         vimora_ui::text_area(&mut self.text)
                             .hint_text("Javobingiz…")
-                            .desired_rows(3)
+                            .desired_rows(5)
                             .desired_width(f32::INFINITY),
                     );
                     ui.add_space(12.0);
-                    if vimora_ui::primary_button(ui, icons::SEND, "Yuborish").clicked()
-                        && !self.text.trim().is_empty()
-                    {
-                        answer = Some(PollOut {
-                            choice: None,
-                            text: self.text.trim().to_string(),
-                        });
-                    }
+                    ui.add_enabled_ui(!self.text.trim().is_empty(), |ui| {
+                        if vimora_ui::primary_button(ui, icons::SEND, "Yuborish").clicked() {
+                            answer = Some(PollOut {
+                                choice: None,
+                                text: self.text.trim().to_string(),
+                            });
+                        }
+                    });
                 } else {
                     for (i, o) in self.input.options.iter().enumerate() {
                         let b = egui::Button::new(RichText::new(o).size(15.0).color(p.strong))
-                            .min_size(vec2(ui.available_width(), 38.0))
+                            .min_size(vec2(ui.available_width(), 42.0))
                             .rounding(0.0);
                         if ui.add(b).clicked() {
                             answer = Some(PollOut {
@@ -141,7 +194,7 @@ impl eframe::App for Poll {
                                 text: o.clone(),
                             });
                         }
-                        ui.add_space(6.0);
+                        ui.add_space(8.0);
                     }
                 }
             });
@@ -164,8 +217,6 @@ pub fn run_banner(goal: String, end_unix: u64) -> anyhow::Result<()> {
             .with_transparent(true)
             .with_always_on_top()
             .with_taskbar(false)
-            .with_mouse_passthrough(true)
-            .with_active(false)
             .with_resizable(false)
             .with_inner_size([W, 52.0])
             .with_position([0.0, 0.0]),

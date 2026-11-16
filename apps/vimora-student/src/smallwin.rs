@@ -57,7 +57,7 @@ pub fn title_bar(ctx: &egui::Context, title: &str) -> bool {
                 Rect::from_min_size(pos2(r.left() + 12.0, r.center().y - 10.0), vec2(20.0, 20.0));
             vimora_ui::logo(ui.painter(), logo);
             ui.painter().text(
-                pos2(logo.right() + 9.0, r.center().y),
+                pos2(logo.right() + vimora_ui::logo_gap(20.0), r.center().y),
                 Align2::LEFT_CENTER,
                 title,
                 FontId::new(14.0, vimora_ui::bold()),

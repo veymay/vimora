@@ -348,7 +348,7 @@ pub(super) async fn handle_command(
             None
         }
         Command::LessonBanner { goal, end_unix } => {
-            lesson_supervisor::banner(goal, end_unix);
+            lesson_supervisor::banner(ctx, goal, end_unix);
             None
         }
         Command::StartTest(def) => {

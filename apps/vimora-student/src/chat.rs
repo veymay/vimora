@@ -219,7 +219,7 @@ impl ChatApp {
 /// The part of the primary screen not taken by the taskbar, in physical pixels
 /// (left, top, right, bottom). Windows only.
 #[cfg(windows)]
-fn work_area() -> Option<(f32, f32, f32, f32)> {
+pub(crate) fn work_area() -> Option<(f32, f32, f32, f32)> {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETWORKAREA};
     let mut r = RECT {
@@ -238,7 +238,7 @@ fn work_area() -> Option<(f32, f32, f32, f32)> {
 }
 
 #[cfg(not(windows))]
-fn work_area() -> Option<(f32, f32, f32, f32)> {
+pub(crate) fn work_area() -> Option<(f32, f32, f32, f32)> {
     None
 }
 

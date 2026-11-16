@@ -621,6 +621,8 @@ pub static ROWS: &[Row] = &[
     ("Qo'llash", "Apply", "Применить"),
     ("Tasdiqlash", "Confirm", "Подтвердить"),
     ("Saqlash", "Save", "Сохранить"),
+    ("Asl holiga", "Revert", "Вернуть"),
+    ("Saqlangan sozlamalarga qaytarish", "Go back to the saved settings", "Вернуть сохранённые настройки"),
     ("Siyosatni saqlash", "Save policy", "Сохранить политику"),
     ("Bekor qilish", "Cancel", "Отмена"),
     // --- journal -------------------------------------------------------------------------------

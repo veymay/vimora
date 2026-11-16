@@ -37,6 +37,16 @@ pub fn open_url(url: &str) -> Result<()> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         bail!("only http(s) links are allowed");
     }
+    open_target(&url)
+}
+
+/// Opens a file (or a link) the way a double click does: the default program for it. The
+/// teacher's "open after sending" and "Ochish" use this for files under the Files folder.
+pub fn open_path(path: &std::path::Path) -> Result<()> {
+    open_target(&path.to_string_lossy())
+}
+
+fn open_target(url: &str) -> Result<()> {
     #[cfg(windows)]
     {
         // The system's own "open" (what a double click does) first, then helpers: the first
@@ -76,9 +86,9 @@ pub fn open_url(url: &str) -> Result<()> {
         }
         const NO_WINDOW: u32 = 0x0800_0000;
         let tries: [(&str, Vec<&str>); 3] = [
-            ("rundll32", vec!["url.dll,FileProtocolHandler", &url]),
-            ("explorer.exe", vec![&url]),
-            ("cmd.exe", vec!["/c", "start", "", &url]),
+            ("rundll32", vec!["url.dll,FileProtocolHandler", url]),
+            ("explorer.exe", vec![url]),
+            ("cmd.exe", vec!["/c", "start", "", url]),
         ];
         let mut last = None;
         for (prog, args) in tries {
@@ -96,9 +106,9 @@ pub fn open_url(url: &str) -> Result<()> {
         }
     }
     #[cfg(target_os = "macos")]
-    Command::new("open").arg(&url).spawn()?;
+    Command::new("open").arg(url).spawn()?;
     #[cfg(all(unix, not(target_os = "macos")))]
-    Command::new("xdg-open").arg(&url).spawn()?;
+    Command::new("xdg-open").arg(url).spawn()?;
     Ok(())
 }
 
@@ -346,7 +356,7 @@ pub fn open_received(name: &str) -> Result<String> {
     if !path.exists() {
         anyhow::bail!("fayl topilmadi: {name}");
     }
-    open_url(&path.to_string_lossy())?;
+    open_path(&path)?;
     Ok(format!("ochildi: {}", path.display()))
 }
 

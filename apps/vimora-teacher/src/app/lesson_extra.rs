@@ -194,30 +194,32 @@ pub(super) fn poll(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
         }
         let mut remove = None;
         for (i, o) in l.poll_opts.iter_mut().enumerate() {
-            // From the right edge: the remove cell (an empty place for the first two, so every
-            // field is as wide), the field, and the letter at the left.
+            // Letter cell (fixed), field (the rest), remove cell (fixed, empty for the first two):
+            // every row has the same widths, so the fields line up.
             let w = ui.available_width();
             ui.allocate_ui_with_layout(
                 vec2(w, ui_kit::CONTROL_H),
-                Layout::right_to_left(Align::Center),
+                Layout::left_to_right(Align::Center),
                 |ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
-                    if i >= 2 {
-                        if ui_kit::icon_cell(ui, icons::X, ui_kit::CONTROL_H, false)
+                    let (r, _) =
+                        ui.allocate_exact_size(vec2(18.0, ui_kit::CONTROL_H), egui::Sense::hover());
+                    ui.painter().text(
+                        r.center(),
+                        egui::Align2::CENTER_CENTER,
+                        format!("{}", (b'A' + i as u8) as char),
+                        egui::FontId::new(14.0, ui_kit::bold()),
+                        p.muted,
+                    );
+                    let fw = (ui.available_width() - ui_kit::CONTROL_H - 6.0).max(40.0);
+                    ui.add(ui_kit::text_field(o).desired_width(fw));
+                    if i >= 2
+                        && ui_kit::icon_cell(ui, icons::X, ui_kit::CONTROL_H, false)
                             .tip(tr("Olib tashlash"))
                             .clicked()
-                        {
-                            remove = Some(i);
-                        }
-                    } else {
-                        ui.add_space(ui_kit::CONTROL_H);
+                    {
+                        remove = Some(i);
                     }
-                    ui.add(ui_kit::text_field(o).desired_width(ui.available_width() - 24.0));
-                    ui.label(
-                        RichText::new(format!("{}", (b'A' + i as u8) as char))
-                            .family(ui_kit::bold())
-                            .color(p.muted),
-                    );
                 },
             );
             ui.add_space(6.0);
@@ -529,7 +531,7 @@ pub(super) fn test(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
         let correct = &mut t.correct[qi];
         Frame::none()
             .stroke(Stroke::new(1.0_f32, p.line))
-            .inner_margin(Margin::same(12.0))
+            .inner_margin(Margin::same(10.0))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
@@ -568,32 +570,39 @@ pub(super) fn test(ui: &mut egui::Ui, p: &Palette, l: &mut Lesson, cx: &FormCtx<
                 } else {
                     let mut remove_o = None;
                     for (oi, o) in q.options.iter_mut().enumerate() {
-                        ui.horizontal(|ui| {
-                            let right = correct.trim() == oi.to_string();
-                            if ui_kit::icon_cell(
-                                ui,
-                                if right {
+                        let w = ui.available_width();
+                        ui.allocate_ui_with_layout(
+                            vec2(w, ui_kit::CONTROL_H),
+                            Layout::left_to_right(Align::Center),
+                            |ui| {
+                                ui.spacing_mut().item_spacing.x = 6.0;
+                                let right = correct.trim() == oi.to_string();
+                                let icon = if right {
                                     icons::CIRCLE_CHECK
                                 } else {
                                     icons::CIRCLE
-                                },
-                                30.0,
-                                right,
-                            )
-                            .tip(tr("To'g'ri javob deb belgilash"))
-                            .clicked()
-                            {
-                                *correct = oi.to_string();
-                            }
-                            ui.add(
-                                ui_kit::text_field(o)
-                                    .hint_text(tr("Variant"))
-                                    .desired_width(ui.available_width() - 40.0),
-                            );
-                            if oi >= 2 && ui_kit::icon_cell(ui, icons::X, 30.0, false).clicked() {
-                                remove_o = Some(oi);
-                            }
-                        });
+                                };
+                                if ui_kit::icon_cell(ui, icon, ui_kit::CONTROL_H, right)
+                                    .tip(tr("To'g'ri javob deb belgilash"))
+                                    .clicked()
+                                {
+                                    *correct = oi.to_string();
+                                }
+                                let fw = (ui.available_width() - ui_kit::CONTROL_H - 6.0).max(40.0);
+                                ui.add(
+                                    ui_kit::text_field(o)
+                                        .hint_text(tr("Variant"))
+                                        .desired_width(fw),
+                                );
+                                if oi >= 2
+                                    && ui_kit::icon_cell(ui, icons::X, ui_kit::CONTROL_H, false)
+                                        .clicked()
+                                {
+                                    remove_o = Some(oi);
+                                }
+                            },
+                        );
+                        ui.add_space(4.0);
                     }
                     if let Some(oi) = remove_o {
                         q.options.remove(oi);

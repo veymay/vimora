@@ -505,7 +505,7 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
     let logo = Rect::from_min_size(rect.left_top() + vec2(48.0, 40.0), vec2(40.0, 40.0));
     vimora_ui::logo(painter, logo);
     painter.text(
-        pos2(logo.right() + 14.0, logo.center().y),
+        pos2(logo.right() + vimora_ui::logo_gap(40.0), logo.center().y),
         Align2::LEFT_CENTER,
         "VIMORA",
         FontId::new(22.0, vimora_ui::brand()),
@@ -516,7 +516,8 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
         pos2(rect.right() - 48.0, logo.center().y),
         Align2::RIGHT_CENTER,
         now.format("%H:%M").to_string(),
-        FontId::new(36.0, vimora_ui::mono_bold()),
+        // 5 characters as wide as the 10 of the date (13 pt) under it: the same width.
+        FontId::new(26.0, vimora_ui::mono_bold()),
         p.text.gamma_multiply(fade),
     );
     painter.text(

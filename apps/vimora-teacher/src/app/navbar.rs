@@ -228,7 +228,7 @@ impl TeacherApp {
                     // Brand
                     let (lr, _) = ui.allocate_exact_size(vec2(28.0, 28.0), Sense::hover());
                     ui_kit::logo(ui.painter(), lr);
-                    ui.add_space(6.0);
+                    ui.add_space(ui_kit::logo_gap(28.0) - BTN_GAP);
                     let g = ui.painter().layout_no_wrap(
                         "VIMORA".into(),
                         FontId::new(18.0, ui_kit::brand()),
@@ -514,29 +514,6 @@ impl TeacherApp {
                                 self.applock.lock_now();
                             }
                         }
-                        // With an administrator password: who is at the teacher.
-                        if !self.cfg.read().unwrap().admin_hash.is_empty() {
-                            let (ic, tip) = if self.admin {
-                                (
-                                    icons::LOCK_OPEN,
-                                    tr("Administrator rejimi — bosib o'qituvchi rejimiga qaytish"),
-                                )
-                            } else {
-                                (
-                                    icons::LOCK,
-                                    tr("O'qituvchi rejimi — bosib administrator bo'lib kirish"),
-                                )
-                            };
-                            let r = btn(ic, "", self.admin).show(ui, p).tip(tip);
-                            if r.clicked() {
-                                if self.admin {
-                                    self.admin = false;
-                                } else {
-                                    self.ask_admin(None);
-                                }
-                            }
-                        }
-
                         let (ic, tip) = match self.theme {
                             ThemeMode::Dark => (icons::SUN, tr("Yorug' rejim")),
                             ThemeMode::Light => (icons::MOON, tr("Qorong'i rejim")),

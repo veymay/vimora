@@ -1662,6 +1662,13 @@ impl TeacherApp {
                 .unwrap()
                 .toast(true, tr("Administrator paroli saqlandi"));
         }
+        if out.revert || out.cancel {
+            *self.cfg.write().unwrap() = config::load();
+            self.settings_dirty = None;
+            if out.cancel {
+                self.dialog = None;
+            }
+        }
         if out.save_now {
             self.settings_dirty = None;
             config::save(&self.cfg.read().unwrap());

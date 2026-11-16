@@ -60,6 +60,9 @@ pub(super) struct SettingsOut {
     pub(super) check_update: bool,
     /// The "Saqlash" button (autosave off): write the settings now.
     pub(super) save_now: bool,
+    /// Autosave off: put back what is on disk (stay open) / put it back and close.
+    pub(super) revert: bool,
+    pub(super) cancel: bool,
     pub(super) install_update: bool,
     pub(super) restart: bool,
     /// Export a report: 0 computers, 1 activity log, 2 attendance.
@@ -183,30 +186,6 @@ pub(super) fn settings_page(
                 nav.bottom() - FOOT_H,
                 Stroke::new(1.0_f32, p.line),
             );
-            if !c.autosave {
-                let mut btn = ui.new_child(
-                    egui::UiBuilder::new()
-                        .max_rect(Rect::from_min_size(
-                            pos2(line.left(), line.top() - 50.0),
-                            vec2(line.width(), 34.0),
-                        ))
-                        .layout(Layout::left_to_right(Align::Center)),
-                );
-                if ui_kit::button(
-                    &mut btn,
-                    Some(icons::CHECK),
-                    tr("Saqlash"),
-                    if cx.dirty {
-                        Kind::Primary
-                    } else {
-                        Kind::Outline
-                    },
-                )
-                .clicked()
-                {
-                    out.save_now = true;
-                }
-            }
             let mut f = ui.new_child(
                 egui::UiBuilder::new()
                     .max_rect(line)
@@ -232,9 +211,12 @@ pub(super) fn settings_page(
             vec2(SETTINGS_W - NAV_W, body_h),
             Layout::top_down(Align::Min),
             |ui| {
+                // With autosave off a bar sits fixed at the bottom of this column.
+                let bar_h = if c.autosave { 0.0 } else { SAVE_BAR_H };
+                let scroll_h = body_h - bar_h;
                 egui::ScrollArea::vertical()
                     .id_salt(("settings", *tab as u8))
-                    .max_height(body_h)
+                    .max_height(scroll_h)
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         Frame::none()
@@ -247,7 +229,7 @@ pub(super) fn settings_page(
                                     SettingsTab::LockScreen => lock_screen(ui, p, c),
                                     SettingsTab::Schedule => super::admin::schedule_page(ui, p, c),
                                     SettingsTab::Reports => super::admin::reports_page(ui, p, out),
-                                    SettingsTab::Access => super::admin::access_page(ui, p, c, out),
+                                    SettingsTab::Access => super::admin::access_page(ui, p, c),
                                     SettingsTab::Author => {
                                         ui_kit::author::page(ui, c.language.code())
                                     }
@@ -259,8 +241,49 @@ pub(super) fn settings_page(
                                 }
                             });
                     });
+                if bar_h > 0.0 {
+                    save_bar(ui, p, cx.dirty, out);
+                }
             },
         );
+    });
+}
+
+const SAVE_BAR_H: f32 = 60.0;
+
+/// Revert / cancel / save, fixed at the bottom of the content column while autosave is off.
+fn save_bar(ui: &mut egui::Ui, p: &Palette, dirty: bool, out: &mut SettingsOut) {
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(vec2(w, SAVE_BAR_H), Sense::hover());
+    ui.painter().rect_filled(rect, Rounding::ZERO, p.card);
+    ui.painter()
+        .hline(rect.x_range(), rect.top(), Stroke::new(1.0_f32, p.line));
+    let mut b = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink2(vec2(26.0, 0.0)))
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    b.spacing_mut().item_spacing.x = 8.0;
+    if ui_kit::button(
+        &mut b,
+        Some(icons::ROTATE_CCW),
+        tr("Asl holiga"),
+        Kind::Ghost,
+    )
+    .tip(tr("Saqlangan sozlamalarga qaytarish"))
+    .clicked()
+    {
+        out.revert = true;
+    }
+    b.with_layout(Layout::right_to_left(Align::Center), |r| {
+        r.spacing_mut().item_spacing.x = 8.0;
+        let kind = if dirty { Kind::Primary } else { Kind::Outline };
+        if ui_kit::button(r, Some(icons::CHECK), tr("Saqlash"), kind).clicked() {
+            out.save_now = true;
+        }
+        if ui_kit::button(r, Some(icons::X), tr("Bekor qilish"), Kind::Outline).clicked() {
+            out.cancel = true;
+        }
     });
 }
 
