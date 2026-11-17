@@ -572,12 +572,22 @@ async fn handle(
             }
         }
         IpcReq::Status => {
+            // The write filter's own tools can be slow (or stuck) around a restart: the answer
+            // never waits for them longer than a few seconds, the last known status is given
+            // instead, so the agent keeps seeing the service as alive.
+            static LAST: Mutex<Option<crate::privileged::PrivStatus>> = Mutex::new(None);
             let e = engine.clone();
-            IpcResp::Status(
-                tokio::task::spawn_blocking(move || e.status())
-                    .await
-                    .unwrap_or_default(),
-            )
+            let job = tokio::task::spawn_blocking(move || e.status());
+            match tokio::time::timeout(Duration::from_secs(4), job).await {
+                Ok(Ok(st)) => {
+                    *LAST.lock().unwrap() = Some(st.clone());
+                    IpcResp::Status(st)
+                }
+                _ => {
+                    tracing::warn!("status: the write filter did not answer in time");
+                    IpcResp::Status(LAST.lock().unwrap().clone().unwrap_or_default())
+                }
+            }
         }
     }
 }

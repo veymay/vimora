@@ -460,14 +460,23 @@ pub(super) async fn privileged(
         return Ok("seansdan chiqarilmoqda".into());
     }
     let student_nonce = ctx.session.lock().unwrap().0.clone();
-    let res = match service::call(IpcReq::Privileged {
-        student_nonce,
-        counter,
-        payload: payload.clone(),
-        sig: sig.clone(),
-    })
-    .await
-    {
+    // The service may be starting again (it is restarted within a second or two when it was
+    // ended): a few tries before the command is run here without its rights.
+    let mut reply = Err(anyhow::anyhow!("no try"));
+    for _ in 0..4 {
+        reply = service::call(IpcReq::Privileged {
+            student_nonce: student_nonce.clone(),
+            counter,
+            payload: payload.clone(),
+            sig: sig.clone(),
+        })
+        .await;
+        if reply.is_ok() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    let res = match reply {
         Ok(IpcResp::Done { ok: true, message }) => Ok(message),
         Ok(IpcResp::Done { ok: false, message }) => Err(anyhow::anyhow!(message)),
         Ok(_) => Err(anyhow::anyhow!("VIMORA xizmati noto'g'ri javob berdi")),
@@ -477,7 +486,10 @@ pub(super) async fn privileged(
             let (engine, c) = (ctx.engine.clone(), cmd.clone());
             tokio::task::spawn_blocking(move || engine.execute(c))
                 .await?
-                .map_err(|err| anyhow::anyhow!("{err:#} (VIMORA xizmati o'rnatilmagan: {e:#})"))
+                .map_err(|err| {
+                    // The service's problem first (the list in the teacher cuts long lines).
+                    anyhow::anyhow!("VIMORA xizmatiga ulanib bo'lmadi: {e:#} — bu kompyuterda bajarilganda: {err:#}")
+                })
         }
     };
     if cmd == PrivCommand::Unpair {
