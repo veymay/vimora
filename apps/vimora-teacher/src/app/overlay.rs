@@ -10,8 +10,10 @@ const OVERLAY_ANIM_SECS: f32 = 0.26;
 /// Overlay header and footer bar heights.
 /// Width of every right-side drawer.
 pub(super) const DRAWER_W: f32 = 680.0;
-const HEADER_H: f32 = 52.0;
-const FOOTER_H: f32 = 62.0;
+/// The same space on every side of the header, the content and the footer of a modal.
+const PAD: f32 = 16.0;
+const HEADER_H: f32 = 24.0 + 2.0 * PAD;
+const FOOTER_H: f32 = 34.0 + 2.0 * PAD;
 
 /// Current system hostname of a connected computer.
 fn all_hostname(hub: &SharedHub, id: u64) -> Option<String> {
@@ -82,6 +84,8 @@ pub(super) fn blur(img: &egui::ColorImage) -> egui::ColorImage {
 impl TeacherApp {
     /// Opens a modal/drawer after grabbing a snapshot of the teacher for the blurred backdrop.
     pub(super) fn open_dialog(&mut self, d: Dialog) {
+        // A menu that led here is gone (it must not stay above the window).
+        self.ctx_menu = None;
         if self.dialog.is_some() {
             let leaving_chat = matches!(self.dialog, Some(Dialog::Message { .. }))
                 && !matches!(d, Dialog::Message { .. });
@@ -501,7 +505,7 @@ impl TeacherApp {
                     Layout::left_to_right(Align::Center),
                     |ui| {
                         ui.spacing_mut().item_spacing.x = 0.0;
-                        ui.add_space(20.0);
+                        ui.add_space(PAD);
                         ui.label(RichText::new(header_icon).size(17.0).color(p.accent_ink));
                         ui.add_space(10.0);
                         ui.label(
@@ -571,9 +575,9 @@ impl TeacherApp {
                     // The same space on the left and the right: the width actually left inside
                     // (the scroll bar's strip is not taken from the right margin).
                     Frame::none()
-                        .inner_margin(Margin::symmetric(18.0, 12.0))
+                        .inner_margin(Margin::same(PAD))
                         .show(ui, |ui| {
-                            let w = ui.available_width().min(width - 44.0);
+                            let w = ui.available_width().min(width - 2.0 * PAD - 8.0);
                             ui.set_width(w);
                             dialog_body(
                                 ui,
@@ -661,68 +665,58 @@ impl TeacherApp {
                     ui.painter().rect_filled(footer_rect, Rounding::ZERO, p.bg);
                     ui.painter()
                         .hline(footer_rect.x_range(), top, Stroke::new(1.0_f32, p.line));
-                    Frame::none()
-                        .inner_margin(Margin::symmetric(16.0, 10.0))
-                        .show(ui, |ui| {
-                            ui.set_width(width - 36.0);
-                            ui.horizontal(|ui| {
-                                if matches!(dialog, Dialog::Net { .. })
-                                    && ui_kit::button(
-                                        ui,
-                                        Some(icons::TRASH_2),
-                                        tr("Tozalash"),
-                                        Kind::Outline,
-                                    )
-                                    .on_hover_text(tr("Barcha cheklovlarni olib tashlash"))
-                                    .clicked()
-                                {
-                                    clear = true;
-                                }
-                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    let (pi, pl) = match dialog {
-                                        Dialog::Message { .. } | Dialog::File(_) => {
-                                            (icons::SEND, tr("Yuborish"))
-                                        }
-                                        Dialog::Launch { web: true, .. } => {
-                                            (icons::GLOBE, tr("Ochish"))
-                                        }
-                                        Dialog::Launch { .. } => {
-                                            (icons::PLAY, tr("Ishga tushirish"))
-                                        }
-                                        Dialog::Net { .. } => (icons::SHIELD_CHECK, tr("Qo'llash")),
-                                        Dialog::Power(_) => (icons::POWER, tr("Tasdiqlash")),
-                                        Dialog::Settings(_)
-                                        | Dialog::Room { .. }
-                                        | Dialog::Activity => (icons::CHECK, tr("Saqlash")),
-                                        Dialog::Freeze { .. } => (icons::CHECK, tr("Saqlash")),
-                                        Dialog::Rename { .. } => (icons::CHECK, tr("Saqlash")),
-                                        Dialog::Updates { .. }
-                                        | Dialog::Machine { .. }
-                                        | Dialog::Lesson(_)
-                                        | Dialog::FreePcs { .. } => (icons::CHECK, tr("Saqlash")),
-                                    };
-                                    let kind = if matches!(dialog, Dialog::Power(_)) {
-                                        Kind::Danger
-                                    } else {
-                                        Kind::Primary
-                                    };
-                                    if ui_kit::button(ui, Some(pi), pl, kind).clicked() {
-                                        confirm = true;
-                                    }
-                                    ui.add_space(6.0);
-                                    if ui_kit::button(
-                                        ui,
-                                        Some(icons::X),
-                                        tr("Bekor qilish"),
-                                        Kind::Cancel,
-                                    )
-                                    .clicked()
-                                    {
-                                        cancel = true;
-                                    }
-                                });
-                            });
-                        });
+                    ui.allocate_rect(footer_rect, Sense::hover());
+                    let mut fui = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(footer_rect.shrink(PAD))
+                            .layout(Layout::left_to_right(Align::Center)),
+                    );
+                    fui.spacing_mut().item_spacing.x = 8.0;
+                    let (pi, pl) = match dialog {
+                        Dialog::Message { .. } | Dialog::File(_) => (icons::SEND, tr("Yuborish")),
+                        Dialog::Launch { web: true, .. } => (icons::GLOBE, tr("Ochish")),
+                        Dialog::Launch { .. } => (icons::PLAY, tr("Ishga tushirish")),
+                        Dialog::Net { .. } => (icons::SHIELD_CHECK, tr("Qo'llash")),
+                        Dialog::Power(_) => (icons::POWER, tr("Tasdiqlash")),
+                        _ => (icons::CHECK, tr("Saqlash")),
+                    };
+                    let kind = if matches!(dialog, Dialog::Power(_)) {
+                        Kind::Danger
+                    } else {
+                        Kind::Primary
+                    };
+                    // Every button the same width: one fills the footer, two share it, three
+                    // share it in thirds.
+                    let with_clear = matches!(dialog, Dialog::Net { .. });
+                    let n = if with_clear { 3.0 } else { 2.0 };
+                    let bw = ((footer_rect.width() - 2.0 * PAD - 8.0 * (n - 1.0)) / n).floor();
+                    if with_clear
+                        && ui_kit::button_w(
+                            &mut fui,
+                            Some(icons::TRASH_2),
+                            tr("Tozalash"),
+                            Kind::Outline,
+                            bw,
+                        )
+                        .on_hover_text(tr("Barcha cheklovlarni olib tashlash"))
+                        .clicked()
+                    {
+                        clear = true;
+                    }
+                    if ui_kit::button_w(
+                        &mut fui,
+                        Some(icons::X),
+                        tr("Bekor qilish"),
+                        Kind::Cancel,
+                        bw,
+                    )
+                    .clicked()
+                    {
+                        cancel = true;
+                    }
+                    if ui_kit::button_w(&mut fui, Some(pi), pl, kind, bw).clicked() {
+                        confirm = true;
+                    }
                 }
                 if !drawer {
                     let used = ui.min_rect().height();
@@ -964,37 +958,68 @@ impl TeacherApp {
                 Frame::none()
                     .fill(p.card)
                     .stroke(Stroke::new(1.0_f32, p.line_strong))
-                    .inner_margin(Margin::same(22.0))
                     .show(ui, |ui| {
-                        ui.set_width(w - 44.0);
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                RichText::new(icons::TRIANGLE_ALERT)
-                                    .size(20.0)
-                                    .color(p.danger),
-                            );
-                            ui.add_space(4.0);
-                            ui.label(
-                                RichText::new(c.title.to_uppercase())
-                                    .family(ui_kit::mono_bold())
-                                    .size(13.5)
-                                    .color(p.strong),
-                            );
-                        });
-                        ui.add_space(10.0);
-                        ui.label(RichText::new(&c.text).size(13.5).color(p.text));
-                        ui.add_space(18.0);
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if ui_kit::button(ui, Some(icons::CHECK), &c.yes, Kind::Danger)
-                                .clicked()
-                            {
-                                answer = Some(true);
-                            }
-                            ui.add_space(6.0);
-                            if ui_kit::button(ui, Some(icons::X), &c.no, Kind::Cancel).clicked() {
+                        ui.set_width(w);
+                        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                        // Header: icon, title, close; the same as every window.
+                        let (hr, _) = ui.allocate_exact_size(vec2(w, HEADER_H), Sense::hover());
+                        ui.painter().hline(
+                            hr.x_range(),
+                            hr.bottom() - 0.5,
+                            Stroke::new(1.0_f32, p.line),
+                        );
+                        let mut head = ui.new_child(
+                            egui::UiBuilder::new()
+                                .max_rect(hr)
+                                .layout(Layout::left_to_right(Align::Center)),
+                        );
+                        head.add_space(PAD);
+                        head.label(
+                            RichText::new(icons::TRIANGLE_ALERT)
+                                .size(17.0)
+                                .color(p.danger),
+                        );
+                        head.add_space(10.0);
+                        head.label(
+                            RichText::new(c.title.to_uppercase())
+                                .family(ui_kit::mono_bold())
+                                .size(13.5)
+                                .color(p.strong),
+                        );
+                        head.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if ui_kit::icon_cell(ui, icons::X, HEADER_H, false).clicked() {
                                 answer = Some(false);
                             }
                         });
+                        // Content.
+                        Frame::none()
+                            .inner_margin(Margin::same(PAD))
+                            .show(ui, |ui| {
+                                ui.set_width(w - 2.0 * PAD);
+                                ui.label(RichText::new(&c.text).size(13.5).color(p.text));
+                            });
+                        // Footer: two buttons of the same width.
+                        let (fr, _) = ui.allocate_exact_size(vec2(w, FOOTER_H), Sense::hover());
+                        ui.painter().rect_filled(fr, Rounding::ZERO, p.bg);
+                        ui.painter()
+                            .hline(fr.x_range(), fr.top(), Stroke::new(1.0_f32, p.line));
+                        let mut foot = ui.new_child(
+                            egui::UiBuilder::new()
+                                .max_rect(fr.shrink(PAD))
+                                .layout(Layout::left_to_right(Align::Center)),
+                        );
+                        foot.spacing_mut().item_spacing.x = 8.0;
+                        let bw = ((w - 2.0 * PAD - 8.0) / 2.0).floor();
+                        if ui_kit::button_w(&mut foot, Some(icons::X), &c.no, Kind::Cancel, bw)
+                            .clicked()
+                        {
+                            answer = Some(false);
+                        }
+                        if ui_kit::button_w(&mut foot, Some(icons::CHECK), &c.yes, Kind::Danger, bw)
+                            .clicked()
+                        {
+                            answer = Some(true);
+                        }
                     });
             });
         if ctx.input(|i| i.key_pressed(Key::Enter)) {
