@@ -14,7 +14,7 @@ use eframe::egui::{self, pos2, vec2, Align2, FontId, Rect, Stroke};
 use std::sync::{Arc, Mutex};
 use vimora_ui::{icons, Kind, Progress};
 
-const SIZE: [f32; 2] = [400.0, 430.0];
+const SIZE: [f32; 2] = [400.0, 470.0];
 
 fn t(lang: &str, key: &str) -> &'static str {
     match (key, lang) {
@@ -63,6 +63,8 @@ struct Shared {
     no_service: bool,
     /// Another version is installed than the one this window runs from.
     installed: Option<String>,
+    /// Why the service cannot be reached right now (shown in red; nothing when it answers).
+    service_err: Option<String>,
 }
 
 struct About {
@@ -112,14 +114,24 @@ fn watch(shared: Arc<Mutex<Shared>>, ctx: egui::Context) {
         };
         let mut round = 0u32;
         loop {
-            if let Ok(IpcResp::UpdateState(busy, last)) =
-                rt.block_on(crate::service::call(IpcReq::UpdateState))
-            {
-                let mut s = shared.lock().unwrap();
-                if s.busy != busy || s.last != last {
-                    s.busy = busy;
-                    s.last = last;
-                    ctx.request_repaint();
+            match rt.block_on(crate::service::call(IpcReq::UpdateState)) {
+                Ok(IpcResp::UpdateState(busy, last)) => {
+                    let mut s = shared.lock().unwrap();
+                    if s.busy != busy || s.last != last || s.service_err.is_some() {
+                        s.busy = busy;
+                        s.last = last;
+                        s.service_err = None;
+                        ctx.request_repaint();
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    let mut s = shared.lock().unwrap();
+                    let text = format!("{e:#}");
+                    if s.service_err.as_deref() != Some(text.as_str()) {
+                        s.service_err = Some(text);
+                        ctx.request_repaint();
+                    }
                 }
             }
             if round % 5 == 4 {
@@ -342,6 +354,18 @@ impl About {
             }
         });
         y += vimora_ui::CONTROL_H + 14.0;
+        if let Some(err) = &state.service_err {
+            // The service is not reachable: the reason, in red, right here.
+            let g = ui.painter().layout(
+                format!("{}: {err}", t(l, "noservice")),
+                FontId::proportional(12.0),
+                p.danger,
+                r.width() - 60.0,
+            );
+            ui.painter()
+                .galley(pos2(cx - g.size().x / 2.0, y), g, p.danger);
+            return;
+        }
         let progress = self.progress_of(state, installed);
         if show_state && !matches!(progress, Progress::Idle(..)) {
             let row = Rect::from_min_size(pos2(r.left() + 40.0, y), vec2(r.width() - 80.0, 24.0));

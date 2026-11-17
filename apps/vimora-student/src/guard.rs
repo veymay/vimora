@@ -47,9 +47,12 @@ fn spawn_detached(arg: &str) {
 /// `vimora-student guard`: the service's watcher (Windows). Holds a port so there is only one,
 /// and starts the service again at once when its port stops answering.
 pub fn run_guard() -> anyhow::Result<()> {
-    let Ok(_lock) = std::net::TcpListener::bind(("127.0.0.1", guard_port())) else {
+    let Ok(lock) = std::net::TcpListener::bind(("127.0.0.1", guard_port())) else {
         return Ok(()); // another watcher is running
     };
+    // The service only knocks to see that this port answers: the knocks are taken and dropped
+    // (unaccepted ones would fill the queue and the port would look dead).
+    std::thread::spawn(move || for _ in lock.incoming() {});
     // A new version was installed: this copy leaves, the new service starts a new watcher.
     crate::selfcheck::watch("guard", |_exe| std::process::exit(0));
     let mut down = 0u32;
