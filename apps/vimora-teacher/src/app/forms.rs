@@ -1308,6 +1308,28 @@ pub(super) fn updates_form(
         .collect();
 
     ui.add_space(7.0);
+    // VIMORA: one button for every computer that is behind and not being updated right now.
+    if *tab == UpdateTab::Vimora {
+        let todo: Vec<u64> = views
+            .iter()
+            .filter(|v| behind.contains(&v.id))
+            .filter(|v| !matches!(vimora_state(v, cx), Some(VimoraState::Waiting)))
+            .map(|v| v.id)
+            .collect();
+        if !todo.is_empty()
+            && ui_kit::button_w(
+                ui,
+                Some(icons::CLOUD_DOWNLOAD),
+                &tf!("Hammasini yangilash ({n})", n = todo.len()),
+                Kind::Primary,
+                ui.available_width(),
+            )
+            .clicked()
+        {
+            *request = Some(UpdateRequest::Vimora(todo));
+        }
+        ui.add_space(8.0);
+    }
     if views.is_empty() {
         ui.label(
             RichText::new(tr("Onlayn kompyuter yo'q"))
@@ -1398,40 +1420,42 @@ pub(super) fn updates_form(
                 };
                 let is_open = *open == Some(v.id);
                 // The one thing to do on this computer, as a button in the title.
-                let (action_label, action_req): (Option<&str>, Option<UpdateRequest>) = if busy
-                    .is_some()
-                {
-                    (None, None)
-                } else {
-                    match *tab {
-                        UpdateTab::Apps if !app_updates.is_empty() => (
-                            Some(tr("Hammasini yangilash")),
-                            Some(UpdateRequest::UpgradeApps {
-                                id: v.id,
-                                ids: app_updates.iter().map(|a| a.id.clone()).collect(),
-                            }),
-                        ),
-                        UpdateTab::System
-                            if !reboot && info.as_ref().is_some_and(|u| !u.items.is_empty()) =>
-                        {
-                            (
-                                Some(tr("Hammasini o'rnatish")),
-                                Some(UpdateRequest::InstallIds {
+                let installing_vimora =
+                    *tab == UpdateTab::Vimora && matches!(vimora, Some(VimoraState::Waiting));
+                let (action_label, action_req): (Option<&str>, Option<UpdateRequest>) =
+                    if busy.is_some() || installing_vimora {
+                        (None, None)
+                    } else {
+                        match *tab {
+                            UpdateTab::Apps if !app_updates.is_empty() => (
+                                Some(tr("Hammasini yangilash")),
+                                Some(UpdateRequest::UpgradeApps {
                                     id: v.id,
-                                    ids: info
-                                        .iter()
-                                        .flat_map(|u| u.items.iter().map(|i| i.id.clone()))
-                                        .collect(),
+                                    ids: app_updates.iter().map(|a| a.id.clone()).collect(),
                                 }),
-                            )
+                            ),
+                            UpdateTab::System
+                                if !reboot
+                                    && info.as_ref().is_some_and(|u| !u.items.is_empty()) =>
+                            {
+                                (
+                                    Some(tr("Hammasini o'rnatish")),
+                                    Some(UpdateRequest::InstallIds {
+                                        id: v.id,
+                                        ids: info
+                                            .iter()
+                                            .flat_map(|u| u.items.iter().map(|i| i.id.clone()))
+                                            .collect(),
+                                    }),
+                                )
+                            }
+                            UpdateTab::Vimora if behind.contains(&v.id) => (
+                                Some(tr("Yangilash")),
+                                Some(UpdateRequest::Vimora(vec![v.id])),
+                            ),
+                            _ => (None, None),
                         }
-                        UpdateTab::Vimora if behind.contains(&v.id) => (
-                            Some(tr("Yangilash")),
-                            Some(UpdateRequest::Vimora(vec![v.id])),
-                        ),
-                        _ => (None, None),
-                    }
-                };
+                    };
                 let head = AccHead {
                     first: i == 0,
                     open: is_open,

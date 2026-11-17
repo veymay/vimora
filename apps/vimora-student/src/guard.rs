@@ -248,7 +248,7 @@ mod imp {
                 std::thread::sleep(std::time::Duration::from_secs(10));
                 let mut missing = 0u32;
                 loop {
-                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    std::thread::sleep(std::time::Duration::from_millis(500));
                     unsafe {
                         let session = WTSGetActiveConsoleSessionId();
                         if session == u32::MAX || session == 0 {

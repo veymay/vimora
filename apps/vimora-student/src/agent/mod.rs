@@ -301,7 +301,13 @@ pub async fn run(cfg: Config) -> Result<()> {
                 if let Ok(found) = tokio::time::timeout(
                     // A teacher that turned this PC away is skipped only for a while: look again
                     // every minute (an hour-long wait kept removed PCs out of sight).
-                    Duration::from_secs(if targets.is_empty() { 60 } else { 6 }),
+                    // With a known teacher the address is tried at once (a beacon is waited for
+                    // only a moment): a restarted teacher gets its computers back quickly.
+                    if targets.is_empty() {
+                        Duration::from_secs(60)
+                    } else {
+                        Duration::from_millis(800)
+                    },
                     discover(pin, skip.clone(), my_info(cfg.name.clone()).key()),
                 )
                 .await
@@ -344,7 +350,7 @@ pub async fn run(cfg: Config) -> Result<()> {
         // Retry quickly after a real session (the teacher may just have restarted), a little
         // slower when nothing could be reached.
         failures = if connected { 0 } else { (failures + 1).min(5) };
-        tokio::time::sleep(Duration::from_secs(2 + failures as u64)).await;
+        tokio::time::sleep(Duration::from_millis(800 + 600 * failures.min(4) as u64)).await;
     }
 }
 

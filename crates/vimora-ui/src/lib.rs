@@ -1569,8 +1569,8 @@ pub fn progress_right(ui: &Ui, rect: Rect, state: Progress<'_>) {
     let content = match state {
         Progress::Waiting(t) => 24.0 + text_w(t) + 6.0,
         Progress::Percent(_) => bar_w + 46.0,
-        Progress::Done("") => bar_w + 24.0,
-        Progress::Done(t) => bar_w + 28.0 + text_w(t) + 6.0,
+        Progress::Done("") => 24.0,
+        Progress::Done(t) => 22.0 + text_w(t) + 6.0,
         Progress::Failed(t) => 20.0 + text_w(t) + 6.0,
         Progress::Idle(t, _) => text_w(t) + 6.0,
     }
@@ -1623,17 +1623,17 @@ fn progress_with(ui: &Ui, rect: Rect, state: Progress<'_>, bar_w: f32) {
                 p.accent_ink,
             );
         }
+        // Finished: a check and the word, no bar (a full bar for "up to date" says nothing).
         Progress::Done(text) => {
-            ui.painter().rect_filled(bar, Rounding::ZERO, p.accent);
             ui.painter().text(
-                egui::pos2(bar.right() + 10.0, y),
+                egui::pos2(rect.left(), y),
                 Align2::LEFT_CENTER,
-                crate::icons::CHECK,
-                FontId::proportional(13.0),
-                p.accent_ink,
+                crate::icons::CIRCLE_CHECK,
+                FontId::proportional(14.0),
+                p.success,
             );
             if !text.is_empty() {
-                label(text, p.success, bar.right() + 28.0);
+                label(text, p.success, rect.left() + 22.0);
             }
         }
         Progress::Failed(text) => {

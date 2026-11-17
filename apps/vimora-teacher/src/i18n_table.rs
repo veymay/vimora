@@ -658,6 +658,7 @@ pub static ROWS: &[Row] = &[
     ("Administrator so'rovi yana chiqadi. Kompyuter qayta yuklangach kuchga kiradi.", "The administrator prompt comes back. Takes effect after a restart.", "Запрос администратора снова появится. Вступит в силу после перезагрузки."),
     ("Administrator so'rovi chiqmaydi. Kompyuter qayta yuklangach kuchga kiradi.", "No administrator prompt. Takes effect after a restart.", "Запроса администратора не будет. Вступит в силу после перезагрузки."),
     ("UAC", "UAC", "UAC"),
+    ("Hammasini yangilash ({n})", "Update all ({n})", "Обновить все ({n})"),
     ("Saqlash", "Save", "Сохранить"),
     ("Asl holiga", "Revert", "Вернуть"),
     ("Saqlangan sozlamalarga qaytarish", "Go back to the saved settings", "Вернуть сохранённые настройки"),
