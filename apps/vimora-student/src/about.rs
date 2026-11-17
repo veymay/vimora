@@ -70,6 +70,8 @@ struct Shared {
 struct About {
     /// When the update state last changed (a result stays on the screen for a few seconds).
     changed: Option<std::time::Instant>,
+    /// When installing began (the window closes itself shortly after).
+    closing_at: Option<std::time::Instant>,
     seen: (bool, Option<(bool, String)>, bool),
     lang: &'static str,
     teacher: Option<String>,
@@ -92,6 +94,7 @@ pub fn run() -> anyhow::Result<()> {
             watch(shared.clone(), cc.egui_ctx.clone());
             Ok(Box::new(About {
                 changed: None,
+                closing_at: None,
                 seen: (false, None, false),
                 lang,
                 teacher,
@@ -166,6 +169,22 @@ impl eframe::App for About {
             self.progress_of(&state, &installed),
             Progress::Waiting(_) | Progress::Percent(_)
         );
+
+        // While the new version goes in (and once it is in) this window is not kept open: the
+        // old program must be free to be replaced, the new one starts clean.
+        let installing = state
+            .busy
+            .as_deref()
+            .is_some_and(|b| b.contains("o'rnatilmoqda"));
+        if installing || state.installed.is_some() {
+            let since = *self.closing_at.get_or_insert_with(std::time::Instant::now);
+            if since.elapsed() > std::time::Duration::from_millis(1500) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                std::process::exit(0);
+            }
+        } else {
+            self.closing_at = None;
+        }
 
         // A result (done / failed) is shown for a few seconds, then the bar goes away.
         let key = (
@@ -276,7 +295,9 @@ impl About {
         let l = self.lang;
         let r = ui.max_rect();
         let cx = r.center().x;
-        let mut y = r.top() + 26.0;
+        // The whole block sits in the middle of the area (the same room above and below).
+        const BLOCK_H: f32 = 330.0;
+        let mut y = r.top() + ((r.height() - BLOCK_H) / 2.0).max(8.0);
         // Logo, then the name under it (the brand face, capitals).
         let logo = Rect::from_center_size(pos2(cx, y + 44.0), vec2(88.0, 88.0));
         vimora_ui::logo(ui.painter(), logo);
@@ -353,23 +374,90 @@ impl About {
                 self.start_check(ctx);
             }
         });
-        y += vimora_ui::CONTROL_H + 14.0;
-        if let Some(err) = &state.service_err {
-            // The service is not reachable: the reason, in red, right here.
-            let g = ui.painter().layout(
+        y += vimora_ui::CONTROL_H + 18.0;
+        if let (Some(err), None) = (&state.service_err, std::env::var_os("VIMORA_ABOUT_STATE")) {
+            // The service is not reachable: the reason, in red, centred under the button.
+            let mut job = egui::text::LayoutJob::simple(
                 format!("{}: {err}", t(l, "noservice")),
                 FontId::proportional(12.0),
                 p.danger,
                 r.width() - 60.0,
             );
-            ui.painter()
-                .galley(pos2(cx - g.size().x / 2.0, y), g, p.danger);
+            job.halign = egui::Align::Center;
+            let g = ui.painter().layout_job(job);
+            ui.painter().galley(pos2(cx, y), g, p.danger);
             return;
         }
-        let progress = self.progress_of(state, installed);
-        if show_state && !matches!(progress, Progress::Idle(..)) {
-            let row = Rect::from_min_size(pos2(r.left() + 40.0, y), vec2(r.width() - 80.0, 24.0));
-            vimora_ui::progress(ui, row, progress);
+        let mut progress = self.progress_of(state, installed);
+        let mut show_state = show_state;
+        // Dev aid: VIMORA_ABOUT_STATE=percent|wait|done|fail (for screenshots).
+        match std::env::var("VIMORA_ABOUT_STATE").as_deref() {
+            Ok("percent") => progress = Progress::Percent(45.0),
+            Ok("wait") => progress = Progress::Waiting(t(l, "installing")),
+            Ok("done") => progress = Progress::Done(t(l, "latest")),
+            Ok("fail") => progress = Progress::Failed("o'rnatuvchi xatosi (1603)"),
+            _ => {}
+        }
+        if std::env::var_os("VIMORA_ABOUT_STATE").is_some() {
+            show_state = true;
+        }
+        if show_state {
+            status_block(ui, cx, y, r.width() - 80.0, progress);
+        }
+    }
+}
+
+/// The update state in the middle, under the button: a spinner and its words, a bar with the
+/// percent, or a result with its icon. Nothing when there is nothing to say.
+fn status_block(ui: &mut egui::Ui, cx: f32, y: f32, width: f32, state: Progress<'_>) {
+    let p = vimora_ui::palette(ui.ctx());
+    let line_y = y + 11.0;
+    // An icon (or spinner) and a text as one group, centred.
+    let group = |ui: &egui::Ui, icon: Option<&str>, text: &str, col: egui::Color32, spin: bool| {
+        let g = vimora_ui::truncated(ui, text, FontId::proportional(13.0), col, width - 30.0);
+        let total = 22.0 + g.size().x;
+        let x0 = cx - total / 2.0;
+        if spin {
+            let s = Rect::from_center_size(pos2(x0 + 7.0, line_y), vec2(14.0, 14.0));
+            egui::Spinner::new()
+                .size(14.0)
+                .color(p.accent)
+                .paint_at(ui, s);
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(60));
+        } else if let Some(ic) = icon {
+            ui.painter().text(
+                pos2(x0 + 7.0, line_y),
+                Align2::CENTER_CENTER,
+                ic,
+                FontId::proportional(15.0),
+                col,
+            );
+        }
+        ui.painter()
+            .galley(pos2(x0 + 22.0, line_y - g.size().y / 2.0), g, col);
+    };
+    match state {
+        Progress::Idle(..) => {}
+        Progress::Waiting(text) => group(ui, None, text, p.text, true),
+        Progress::Done(text) => group(ui, Some(icons::CIRCLE_CHECK), text, p.success, false),
+        Progress::Failed(text) => group(ui, Some(icons::TRIANGLE_ALERT), text, p.danger, false),
+        Progress::Percent(pct) => {
+            let bw = width.min(260.0);
+            let bar = Rect::from_center_size(pos2(cx, y + 4.0), vec2(bw, 6.0));
+            ui.painter().rect_filled(bar, 0.0, p.sunken);
+            ui.painter().rect_filled(
+                Rect::from_min_size(bar.min, vec2(bw * pct.clamp(0.0, 100.0) / 100.0, 6.0)),
+                0.0,
+                p.accent,
+            );
+            ui.painter().text(
+                pos2(cx, y + 22.0),
+                Align2::CENTER_CENTER,
+                format!("{pct:.0}%"),
+                FontId::new(12.5, vimora_ui::mono()),
+                p.muted,
+            );
         }
     }
 }
