@@ -193,6 +193,11 @@ pub(crate) enum ConfirmAction {
         id: u64,
         app: String,
     },
+    /// UAC on / off on a student PC.
+    SetUac {
+        id: u64,
+        on: bool,
+    },
     /// Start / stop a service on a student PC.
     ServiceControl {
         id: u64,

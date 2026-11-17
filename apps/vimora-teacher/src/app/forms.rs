@@ -321,7 +321,7 @@ pub(super) fn dialog_body(
                     if r.clicked() {
                         *a = act;
                     }
-                    // No confirm button: a double click is the confirmation.
+                    // A double click confirms too (the button below does the same).
                     if r.double_clicked() {
                         *a = act;
                         *confirm = true;

@@ -543,7 +543,6 @@ impl TeacherApp {
                 let has_footer = !matches!(
                     dialog,
                     Dialog::Activity
-                        | Dialog::Power(_)
                         | Dialog::Message { .. }
                         | Dialog::Settings(_)
                         | Dialog::Freeze { .. }
@@ -945,7 +944,8 @@ impl TeacherApp {
         let screen = ctx.screen_rect();
         let mut answer: Option<bool> = None;
         egui::Area::new(egui::Id::new("confirm-dim"))
-            .order(egui::Order::Tooltip)
+            // Above everything, popups and menus included.
+            .order(egui::Order::Debug)
             .fixed_pos(screen.min)
             .show(ctx, |ui| {
                 let (r, resp) = ui.allocate_exact_size(screen.size(), Sense::click());
@@ -957,7 +957,8 @@ impl TeacherApp {
             });
         let w = 420.0_f32.min(screen.width() - 32.0);
         egui::Area::new(egui::Id::new("confirm"))
-            .order(egui::Order::Tooltip)
+            // Above everything, popups and menus included.
+            .order(egui::Order::Debug)
             .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
                 Frame::none()
@@ -1215,6 +1216,25 @@ impl TeacherApp {
                         tr("To'xtatish")
                     },
                     ConfirmAction::ServiceControl { id, name, start },
+                );
+                return;
+            }
+            Some(MachineRequest::Uac(on)) => {
+                self.ask(
+                    if on {
+                        tr("UAC yoqilsinmi?")
+                    } else {
+                        tr("UAC o'chirilsinmi?")
+                    },
+                    if on {
+                        tr("Administrator so'rovi yana chiqadi. Kompyuter qayta yuklangach kuchga kiradi.")
+                            .to_string()
+                    } else {
+                        tr("Administrator so'rovi chiqmaydi. Kompyuter qayta yuklangach kuchga kiradi.")
+                            .to_string()
+                    },
+                    if on { tr("Yoqish") } else { tr("O'chirish") },
+                    ConfirmAction::SetUac { id, on },
                 );
                 return;
             }

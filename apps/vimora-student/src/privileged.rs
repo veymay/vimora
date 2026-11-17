@@ -690,6 +690,7 @@ impl Engine {
                     report
                 })?
             }
+            PrivCommand::SetUac(on) => set_uac(on)?,
             PrivCommand::UninstallVimora => {
                 remove_vimora()?;
                 "VIMORA o'chirilmoqda".into()
@@ -1132,5 +1133,46 @@ impl PendingUpdate {
 
     fn clear() {
         let _ = std::fs::remove_file(Self::file());
+    }
+}
+
+/// Windows: UAC on or off through the policy values (the same ones Group Policy sets). `EnableLUA`
+/// takes effect after a restart; the prompt values at once. The key is kept through the write
+/// filter (see the UWF exclusions).
+fn set_uac(on: bool) -> Result<String> {
+    #[cfg(windows)]
+    {
+        const KEY: &str = r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System";
+        let (lua, admin, secure) = if on { (1, 5, 1) } else { (0, 0, 0) };
+        for (name, v) in [
+            ("EnableLUA", lua),
+            ("ConsentPromptBehaviorAdmin", admin),
+            ("PromptOnSecureDesktop", secure),
+        ] {
+            sh::run_ok(
+                "reg",
+                &[
+                    "add",
+                    KEY,
+                    "/v",
+                    name,
+                    "/t",
+                    "REG_DWORD",
+                    "/d",
+                    &v.to_string(),
+                    "/f",
+                ],
+            )?;
+        }
+        Ok(if on {
+            "UAC yoqildi — kompyuter qayta yuklangach kuchga kiradi".into()
+        } else {
+            "UAC o'chirildi — kompyuter qayta yuklangach kuchga kiradi".into()
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = on;
+        bail!("UAC faqat Windowsda bor")
     }
 }

@@ -234,6 +234,17 @@ impl TeacherApp {
         match std::env::var("VIMORA_OPEN").as_deref() {
             Ok("scan") => app.dev_open = Some(Dialog::scan()),
             Ok("net") => app.dev_open = Some(app.net_dialog(NetTab::Domains)),
+            Ok("confirm") => {
+                // Dev aid: a confirmation over an open drawer (stacking test).
+                app.dev_open = Some(app.net_dialog(NetTab::Domains));
+                app.confirm = Some(Confirm {
+                    title: "VIMORA o'chirilsinmi?".into(),
+                    text: "VIMORA \"PC-1\" kompyuteridan butunlay o'chiriladi.".into(),
+                    yes: "O'chirish".into(),
+                    no: tr("Bekor qilish").to_string(),
+                    action: ConfirmAction::DeleteRoom(String::new()),
+                });
+            }
             Ok("net:import") => {
                 // Dev aid: opens the block window and presses "import from file" (see
                 // VIMORA_IMPORT_FILE).
@@ -870,6 +881,12 @@ impl TeacherApp {
                     );
                 }
             }
+            ConfirmAction::SetUac { id, on } => {
+                self.send_priv(&[id], PrivCommand::SetUac(on), tr("UAC"));
+                // The list shows the new state, and the computer is offered a restart.
+                self.send(&[id], Command::GetSecurityInfo, "");
+                self.ask_restart(vec![id]);
+            }
             ConfirmAction::ServiceControl { id, name, start } => {
                 self.send_priv(
                     &[id],
@@ -1476,6 +1493,43 @@ impl TeacherApp {
 }
 
 impl eframe::App for TeacherApp {
+    /// Dev aid: `VIMORA_CLICK=x,y` presses the mouse there once, ~1.2 s after start (tests).
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        let hover_at: u64 = std::env::var("VIMORA_CLICK_AT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(40);
+        // The pointer arrives a few frames before it presses (like a real hand).
+        if self.now_frame + 5 == hover_at {
+            if let Some(pos) = std::env::var("VIMORA_CLICK").ok().and_then(|v| {
+                let (x, y) = v.split_once(',')?;
+                Some(egui::pos2(x.trim().parse().ok()?, y.trim().parse().ok()?))
+            }) {
+                raw.events.push(egui::Event::PointerMoved(pos));
+            }
+            return;
+        }
+        if self.now_frame != hover_at {
+            return;
+        }
+        let Some(pos) = std::env::var("VIMORA_CLICK").ok().and_then(|v| {
+            let (x, y) = v.split_once(',')?;
+            Some(egui::pos2(x.trim().parse().ok()?, y.trim().parse().ok()?))
+        }) else {
+            return;
+        };
+        let mods = egui::Modifiers::NONE;
+        raw.events.push(egui::Event::PointerMoved(pos));
+        for pressed in [true, false] {
+            raw.events.push(egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: mods,
+            });
+        }
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.now_frame += 1;
         {

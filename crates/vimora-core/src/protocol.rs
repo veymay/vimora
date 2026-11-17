@@ -263,6 +263,9 @@ pub enum PrivCommand {
     InstallUpdateIds(Vec<String>),
     /// Update these applications now (ids as in [`AppInfo::id`]); kept on a frozen computer.
     UpgradeApps(Vec<String>),
+    /// Windows: UAC (the administrator prompt) on (true) or off (false); takes effect after a
+    /// restart.
+    SetUac(bool),
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -794,6 +797,7 @@ mod wire_tests {
         assert_eq!(tag(&PrivCommand::UninstallVimora), 21);
         assert_eq!(tag(&PrivCommand::InstallUpdateIds(vec![])), 22);
         assert_eq!(tag(&PrivCommand::UpgradeApps(vec![])), 23);
+        assert_eq!(tag(&PrivCommand::SetUac(true)), 24);
         assert_eq!(tag(&StudentMsg::Updates(Default::default())), 20);
         assert_eq!(
             tag(&StudentMsg::Clipboard(ClipData::Text(String::new()))),

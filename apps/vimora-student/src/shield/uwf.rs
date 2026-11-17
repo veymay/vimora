@@ -316,6 +316,8 @@ impl Uwf {
             r"HKLM\SYSTEM\CurrentControlSet\Services\bthserv",
             r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore",
             r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Vimora",
+            // UAC set by the teacher.
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
         ] {
             if let Err(e) = uwf(&["registry", "add-exclusion", k]) {
                 tracing::debug!("uwf exclusion {k}: {e:#}");

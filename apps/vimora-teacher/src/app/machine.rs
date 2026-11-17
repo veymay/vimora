@@ -31,6 +31,8 @@ pub(super) enum MachineRequest {
     RefreshApps,
     /// Uninstall a program: (id, name), confirmed first.
     Uninstall(String, String),
+    /// UAC on / off on this computer (asked about first).
+    Uac(bool),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -213,7 +215,11 @@ pub(super) fn machine_form(ui: &mut egui::Ui, p: &Palette, f: MachineForm<'_>, c
             };
             let mut refresh = false;
             if *f.tab == MachineTab::Security {
-                security(ui, p, &sec, &mut refresh);
+                let mut uac_ask = None;
+                security(ui, p, &sec, &mut refresh, &mut uac_ask);
+                if let Some(on) = uac_ask {
+                    *f.request = Some(MachineRequest::Uac(on));
+                }
                 if refresh {
                     *f.request = Some(MachineRequest::RefreshSecurity);
                 }
@@ -633,7 +639,13 @@ fn sec_group(
         });
 }
 
-fn security(ui: &mut egui::Ui, p: &Palette, s: &vimora_core::SecurityInfo, refresh: &mut bool) {
+fn security(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    s: &vimora_core::SecurityInfo,
+    refresh: &mut bool,
+    uac_ask: &mut Option<bool>,
+) {
     let av: Vec<(String, Vec<(String, Color32)>)> = s
         .antivirus
         .iter()
@@ -672,6 +684,22 @@ fn security(ui: &mut egui::Ui, p: &Palette, s: &vimora_core::SecurityInfo, refre
         ));
     }
     sec_group(ui, p, icons::SHIELD, "Firewall", None, &fw);
+    if let Some(uac) = s.uac {
+        ui.add_space(6.0);
+        let (icon, label) = if uac {
+            (icons::LOCK_OPEN, tr("UAC'ni o'chirish"))
+        } else {
+            (icons::LOCK, tr("UAC'ni yoqish"))
+        };
+        if ui_kit::button(ui, Some(icon), label, Kind::Outline)
+            .tip(tr(
+                "Administrator so'rovi. O'zgarish kompyuter qayta yuklangach kuchga kiradi.",
+            ))
+            .clicked()
+        {
+            *uac_ask = Some(!uac);
+        }
+    }
     let mut hw: Vec<(String, Vec<(String, Color32)>)> = s
         .hardware
         .iter()
