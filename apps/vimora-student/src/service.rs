@@ -237,8 +237,15 @@ async fn serve(pairing: Pairing) -> Result<()> {
     crate::guard::keep_agent_running();
     #[cfg(windows)]
     {
-        crate::guard::keep_guard_running();
-        std::thread::spawn(harden_install_dir);
+        // Not on a computer under the write filter (see `main`): it stays as it was.
+        std::thread::spawn(|| {
+            if crate::shield::Shield::new().protected_now() {
+                tracing::info!("write filter is on: no watcher, no folder permissions");
+                return;
+            }
+            crate::guard::keep_guard_running();
+            harden_install_dir();
+        });
     }
     std::thread::spawn(ensure_updater_tasks);
     crate::power::keep_awake();

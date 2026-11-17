@@ -181,7 +181,15 @@ fn main() -> anyhow::Result<()> {
                 | Cmd::IsFrozen
         )
     ) {
-        guard::protect_self();
+        // A computer under the write filter (UWF) is left exactly as it was before the extra
+        // hardening: the service and the watcher are not locked down there.
+        let hands_off = matches!(cli.cmd, Some(Cmd::Service | Cmd::Guard))
+            && shield::Shield::new().protected_now();
+        if hands_off {
+            tracing::info!("write filter is on: the service keeps its default permissions");
+        } else {
+            guard::protect_self();
+        }
     }
     match cli.cmd {
         Some(Cmd::Overlay) => overlay::run(),
