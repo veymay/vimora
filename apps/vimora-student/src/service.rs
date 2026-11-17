@@ -376,6 +376,13 @@ fn harden_install_dir() {
     if std::env::var_os("VIMORA_SERVICE_PORT").is_some() {
         return; // a test copy
     }
+    // A frozen computer (the write filter is on) forgets every change at the next start: the
+    // permissions are not rewritten there at every boot (they are set when it is thawed).
+    if crate::shield::Shield::new().protected_now() {
+        tracing::info!("install folder permissions: skipped (the volume is frozen)");
+        return;
+    }
+    tracing::info!("install folder permissions: setting");
     let d = dir.to_string_lossy().into_owned();
     let all = format!("{d}\\*");
     let files = dir.join("Files").to_string_lossy().into_owned();

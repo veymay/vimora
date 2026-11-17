@@ -14,7 +14,7 @@ use eframe::egui::{self, pos2, vec2, Align2, FontId, Rect, Stroke};
 use std::sync::{Arc, Mutex};
 use vimora_ui::{icons, Kind, Progress};
 
-const SIZE: [f32; 2] = [400.0, 410.0];
+const SIZE: [f32; 2] = [400.0, 430.0];
 
 fn t(lang: &str, key: &str) -> &'static str {
     match (key, lang) {
@@ -277,41 +277,45 @@ impl About {
             p.strong,
         );
         y += 40.0;
-        // The teacher this computer is connected to.
+        // The teacher this computer is connected to: the name, and under it the state.
         let (dot, word) = if self.connected {
             (p.success, t(l, "connected"))
         } else {
             (p.faint, t(l, "waiting"))
         };
         let (name, ink) = match &self.teacher {
-            Some(n) => (n.clone(), p.text),
+            Some(n) => (n.clone(), p.strong),
             None => (t(l, "none").to_string(), p.muted),
-        };
-        let line = if self.teacher.is_some() {
-            format!("{name} · {word}")
-        } else {
-            name
         };
         let g = vimora_ui::truncated(
             ui,
-            &line,
-            FontId::new(13.5, vimora_ui::medium()),
+            &name,
+            FontId::new(15.0, vimora_ui::bold()),
             ink,
-            r.width() - 90.0,
+            r.width() - 100.0,
         );
-        let total = 22.0 + g.size().x;
+        let total = 26.0 + g.size().x;
         let x0 = cx - total / 2.0;
         ui.painter().text(
-            pos2(x0 + 7.0, y + 10.0),
+            pos2(x0 + 9.0, y + 11.0),
             Align2::CENTER_CENTER,
             icons::GRADUATION_CAP,
-            FontId::proportional(15.0),
+            FontId::proportional(18.0),
             if self.connected { p.accent } else { p.faint },
         );
         ui.painter()
-            .galley(pos2(x0 + 22.0, y + 10.0 - g.size().y / 2.0), g, ink);
-        ui.painter()
-            .circle_filled(pos2(x0 + total + 10.0, y + 10.0), 3.5, dot);
+            .galley(pos2(x0 + 26.0, y + 11.0 - g.size().y / 2.0), g, ink);
+        y += 28.0;
+        if self.teacher.is_some() {
+            let wg =
+                ui.painter()
+                    .layout_no_wrap(word.to_string(), FontId::proportional(12.5), p.muted);
+            let wx = cx - (14.0 + wg.size().x) / 2.0;
+            ui.painter()
+                .circle_filled(pos2(wx + 3.5, y + 8.0), 3.5, dot);
+            ui.painter()
+                .galley(pos2(wx + 14.0, y + 8.0 - wg.size().y / 2.0), wg, p.muted);
+        }
         y += 34.0;
         // The version.
         ui.painter().text(
@@ -321,7 +325,7 @@ impl About {
             FontId::new(13.0, vimora_ui::mono()),
             p.accent_ink,
         );
-        y += 34.0;
+        y += 36.0;
         // Under the version: the update check, and what it is doing (checking, downloading with
         // a percent, installing, done).
         let label = t(l, "check");

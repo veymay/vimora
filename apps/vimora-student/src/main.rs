@@ -129,14 +129,41 @@ enum Cmd {
     Purge,
 }
 
+/// The service and its watcher have no console: they write `service.log` next to the service's
+/// settings (kept small), so a failure leaves a trace to read.
+fn log_file() -> Option<std::fs::File> {
+    let dir = service::config_path().parent()?.to_path_buf();
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("service.log");
+    if std::fs::metadata(&path).is_ok_and(|m| m.len() > 512 * 1024) {
+        let _ = std::fs::rename(&path, dir.join("service.old.log"));
+    }
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .ok()
+}
+
 fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,wgpu=warn,eframe=warn".into()),
-        )
-        .with_writer(std::io::stderr)
-        .init();
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "info,wgpu=warn,eframe=warn".into());
+    let background = matches!(
+        std::env::args().nth(1).as_deref(),
+        Some("service" | "guard")
+    );
+    match background.then(log_file).flatten() {
+        Some(f) => tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_ansi(false)
+            .with_writer(std::sync::Mutex::new(f))
+            .init(),
+        None => tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_writer(std::io::stderr)
+            .init(),
+    }
+    std::panic::set_hook(Box::new(|info| tracing::error!("panic: {info}")));
 
     let cli = Cli::parse();
     // The agent, its windows (lock screen, chat, …) and the service can't be ended by the
