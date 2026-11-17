@@ -892,6 +892,15 @@ impl TeacherApp {
                     )
                 }
             }
+            UpdateRequest::AppAuto { id, app, on } => {
+                self.send_priv(
+                    &[id],
+                    PrivCommand::SetAppUpdates(vec![(app, on)]),
+                    tr("Dastur yangilanishi"),
+                );
+                // The list shows the new state.
+                self.send_priv(&[id], PrivCommand::ListApps, "");
+            }
             UpdateRequest::Vimora(ids) => {
                 // Remembered per computer: the drawer follows it to "o'rnatildi" or an error.
                 {

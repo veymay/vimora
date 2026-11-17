@@ -438,21 +438,28 @@ impl Backend for Uwf {
             return self.commit_file(path);
         }
         let (mut ok, mut failed) = (0, 0);
+        let mut why = String::new();
         let mut stack = vec![path.to_path_buf()];
         while let Some(d) = stack.pop() {
             for e in std::fs::read_dir(&d)?.flatten() {
                 let p = e.path();
                 if p.is_dir() {
                     stack.push(p);
-                } else if self.commit_file(&p).is_ok() {
-                    ok += 1;
                 } else {
-                    failed += 1;
+                    match self.commit_file(&p) {
+                        Ok(()) => ok += 1,
+                        Err(e) => {
+                            failed += 1;
+                            if why.is_empty() {
+                                why = format!("{e:#}");
+                            }
+                        }
+                    }
                 }
             }
         }
         if ok == 0 && failed > 0 {
-            bail!("{} dagi fayllarni saqlab bo'lmadi", path.display());
+            bail!("{} dagi fayllarni saqlab bo'lmadi: {why}", path.display());
         }
         Ok(())
     }
@@ -470,6 +477,7 @@ impl Backend for Uwf {
             let _ = uwf(&["file", "remove-exclusion", f]);
         }
         let mut failed = 0;
+        let mut why = String::new();
         for f in new.iter().filter(|f| !old.contains(f)) {
             // A folder is created if missing; for a file only its folder.
             let path = Path::new(f);
@@ -482,10 +490,13 @@ impl Backend for Uwf {
             if let Err(e) = uwf(&["file", "add-exclusion", f]) {
                 tracing::warn!("uwf exclusion {f}: {e:#}");
                 failed += 1;
+                if why.is_empty() {
+                    why = format!("{f}: {e:#}");
+                }
             }
         }
         if failed > 0 {
-            bail!("{failed} ta yo'lni saqlanadiganlar ro'yxatiga qo'shib bo'lmadi");
+            bail!("{failed} ta yo'lni saqlanadiganlar ro'yxatiga qo'shib bo'lmadi ({why})");
         }
         Ok(format!("{} ta fayl/papka doim saqlanadi", new.len()))
     }

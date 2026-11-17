@@ -27,7 +27,7 @@ mod uwf;
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use vimora_core::{ChangeInfo, FreezeAction, FreezeState, ShieldUsage};
@@ -215,8 +215,12 @@ pub struct Shield {
     last_capacity_alert: Mutex<Option<(u32, Instant)>>,
     /// Last automatic re-arm attempt (retried at most every 10 minutes).
     last_heal: Mutex<Option<Instant>>,
-    /// Last commit of the "always kept" paths (every 5 minutes while protected).
+    /// Last commit of the "always kept" paths (every minute while protected).
     last_keep: Mutex<Option<Instant>>,
+    /// The kept files as they were when last committed (only what changed is committed again).
+    kept_seen: Mutex<std::collections::HashMap<PathBuf, (std::time::SystemTime, u64)>>,
+    /// The last failure told to the teacher (the same one is not repeated every minute).
+    kept_failure: Mutex<String>,
 }
 
 impl Default for Shield {
@@ -243,6 +247,8 @@ impl Shield {
             last_capacity_alert: Mutex::new(None),
             last_heal: Mutex::new(None),
             last_keep: Mutex::new(None),
+            kept_seen: Mutex::new(Default::default()),
+            kept_failure: Mutex::new(String::new()),
         }
     }
 
@@ -319,6 +325,41 @@ impl Shield {
     }
 
     /// Writes changed files through the filter (no-op when unprotected).
+    /// Commits what is new or changed under `path` (a file, or a folder with everything in it).
+    fn keep_walk(&self, path: &Path, done: &mut usize, failed: &mut usize, why: &mut String) {
+        let Ok(meta) = std::fs::metadata(path) else {
+            return;
+        };
+        if meta.is_dir() {
+            let Ok(rd) = std::fs::read_dir(path) else {
+                return;
+            };
+            for e in rd.flatten() {
+                self.keep_walk(&e.path(), done, failed, why);
+            }
+            return;
+        }
+        let stamp = (meta.modified().unwrap_or(std::time::UNIX_EPOCH), meta.len());
+        if self.kept_seen.lock().unwrap().get(path) == Some(&stamp) {
+            return;
+        }
+        match self.backend.commit_file(path) {
+            Ok(()) => {
+                *done += 1;
+                self.kept_seen
+                    .lock()
+                    .unwrap()
+                    .insert(path.to_path_buf(), stamp);
+            }
+            Err(e) => {
+                *failed += 1;
+                if why.is_empty() {
+                    *why = format!("{e:#}").chars().take(100).collect();
+                }
+            }
+        }
+    }
+
     pub fn commit_files(&self, paths: &[&Path]) {
         if !self.protected_now() {
             return;
@@ -546,26 +587,36 @@ impl Shield {
             }
         }
 
-        // 2. "Doim saqlanadigan" files and folders: committed every 5 minutes while protected
-        //    (Shadow Defender has no exclusion list we can set; on UWF they are excluded and
-        //    the commit is a harmless no-op).
+        // 2. "Doim saqlanadigan" files and folders: while protected, every file in them that is
+        //    new or changed is written through the filter within a minute — whatever the
+        //    exclusion list says (an exclusion only works from the next restart, and some paths
+        //    are refused). A failure is told to the teacher once.
         let keep_due = self
             .last_keep
             .lock()
             .unwrap()
-            .is_none_or(|t| t.elapsed() > Duration::from_secs(300));
+            .is_none_or(|t| t.elapsed() > Duration::from_secs(60));
         if keep_due
             && !store.persistent.is_empty()
             && matches!(p.state, FreezeState::Frozen | FreezeState::ThawPending)
         {
             *self.last_keep.lock().unwrap() = Some(Instant::now());
+            let (mut done, mut failed, mut why) = (0usize, 0usize, String::new());
             for path in &store.persistent {
-                let path = Path::new(path);
-                if path.exists() {
-                    if let Err(e) = self.backend.commit_path(path) {
-                        tracing::debug!("keep {}: {e:#}", path.display());
-                    }
+                self.keep_walk(Path::new(path), &mut done, &mut failed, &mut why);
+            }
+            if failed > 0 {
+                let msg = format!("Doim saqlanadigan: {failed} ta fayl saqlanmadi ({why})");
+                let mut last = self.kept_failure.lock().unwrap();
+                if *last != msg {
+                    *last = msg.clone();
+                    events.push((false, msg));
                 }
+            } else {
+                self.kept_failure.lock().unwrap().clear();
+            }
+            if done > 0 {
+                tracing::info!("kept files committed: {done}");
             }
         }
 

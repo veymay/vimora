@@ -1655,6 +1655,23 @@ pub(super) fn updates_form(
                                             &a.name,
                                             Some((&sub, col)),
                                             |ui| {
+                                                // At the right end: this program's updates on
+                                                // / off (off: held back on that computer).
+                                                let mut keep = a.updates;
+                                                if ui_kit::toggle(ui, &mut keep)
+                                                    .tip(if a.updates {
+                                                        tr("Yangilanish yoniq")
+                                                    } else {
+                                                        tr("Yangilanish o'chiq")
+                                                    })
+                                                    .changed()
+                                                {
+                                                    *request = Some(UpdateRequest::AppAuto {
+                                                        id: v.id,
+                                                        app: a.id.clone(),
+                                                        on: keep,
+                                                    });
+                                                }
                                                 // The one being updated right now: a spinner.
                                                 // "Dasturlar yangilanmoqda: <id> (1/2) 0%": the id as a whole
                                                 // (one id can be part of another: Edge, Edge WebView2).

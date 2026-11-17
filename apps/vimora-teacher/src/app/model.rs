@@ -240,6 +240,8 @@ pub(super) enum UpdateRequest {
     InstallIds { id: u64, ids: Vec<String> },
     /// Update these programs on one computer.
     UpgradeApps { id: u64, ids: Vec<String> },
+    /// One program's updates on / off on one computer (held back where they are off).
+    AppAuto { id: u64, app: String, on: bool },
     /// Update Vimora now on these computers.
     Vimora(Vec<u64>),
     /// Look for updates (Windows and programs) on these computers.

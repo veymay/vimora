@@ -81,6 +81,14 @@ pub(super) async fn session(
         *ctx.pin.lock().unwrap() = Some(teacher_key);
     }
     *ctx.session.lock().unwrap() = (student_nonce.clone(), 0);
+    // Kept so the service can be told about this session again if it was restarted meanwhile
+    // (a restarted service knows no sessions: the commands would be turned away).
+    *HANDSHAKE.lock().unwrap() = Some((
+        teacher_key,
+        student_nonce.clone(),
+        teacher_nonce.clone(),
+        sig.clone(),
+    ));
     info!("authenticated with teacher {addr}");
     crate::config::save_last_teacher(addr);
     {
@@ -238,6 +246,12 @@ pub(super) async fn session(
 }
 
 /// Executes a command. Returns `Some(result)` for commands whose outcome is reported back.
+/// The accepted handshake of the running session: (teacher key, student nonce, teacher nonce,
+/// signature).
+static HANDSHAKE: Mutex<Option<Handshake>> = Mutex::new(None);
+
+type Handshake = (vimora_core::auth::TeacherKey, Vec<u8>, Vec<u8>, Vec<u8>);
+
 pub(super) async fn handle_command(
     cmd: Command,
     ctx: &Ctx,
@@ -471,6 +485,22 @@ pub(super) async fn privileged(
             sig: sig.clone(),
         })
         .await;
+        // The service restarted and forgot this session: tell it again and go on.
+        if matches!(&reply, Ok(IpcResp::Done { ok: false, message }) if message == "o'qituvchi sessiyasi yo'q")
+        {
+            let saved = HANDSHAKE.lock().unwrap().clone();
+            if let Some((teacher_key, student_nonce, teacher_nonce, sig)) = saved {
+                let _ = service::call(IpcReq::VerifyServer {
+                    teacher_key,
+                    student_nonce,
+                    teacher_nonce,
+                    sig,
+                })
+                .await;
+                // The counter of the new session starts again: ours must still be higher.
+                continue;
+            }
+        }
         if reply.is_ok() {
             break;
         }
