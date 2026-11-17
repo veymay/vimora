@@ -924,9 +924,35 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
                         }
                         (t, freeze_color(p, v.status.freeze))
                     };
+                    // The row opens to the kept files of this computer (a click anywhere but
+                    // on the switch).
+                    let open_id = egui::Id::new(("kept-open", v.id));
+                    // Dev aid: VIMORA_KEPT_OPEN=1 starts with every row open (screenshots).
+                    let is_open: bool = ui
+                        .data(|d| d.get_temp(open_id))
+                        .unwrap_or_else(|| std::env::var_os("VIMORA_KEPT_OPEN").is_some());
+                    let row_resp = ui.interact(rect, open_id.with("row"), Sense::click());
+                    if row_resp.hovered() {
+                        ui.painter().rect_filled(rect, Rounding::ZERO, p.hover);
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+                    if row_resp.clicked() {
+                        ui.data_mut(|d| d.insert_temp(open_id, !is_open));
+                    }
+                    ui.painter().text(
+                        pos2(rect.left() + 14.0, rect.center().y),
+                        Align2::CENTER_CENTER,
+                        if is_open {
+                            icons::CHEVRON_DOWN
+                        } else {
+                            icons::CHEVRON_RIGHT
+                        },
+                        FontId::proportional(14.0),
+                        p.muted,
+                    );
                     let mut child = ui.new_child(
                         egui::UiBuilder::new()
-                            .max_rect(rect.shrink2(vec2(10.0, 0.0)))
+                            .max_rect(rect.shrink2(vec2(10.0, 0.0)).with_min_x(rect.left() + 28.0))
                             .layout(Layout::left_to_right(Align::Center)),
                     );
                     child.spacing_mut().item_spacing.x = 10.0;
@@ -968,6 +994,89 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
                         });
                         ui_kit::chip(ui, &status.to_uppercase(), col);
                     });
+                    // The kept files / folders, as this computer has them.
+                    let kept: Vec<String> = f
+                        .folders
+                        .lines()
+                        .map(|l| l.trim().to_string())
+                        .filter(|l| !l.is_empty())
+                        .collect();
+                    let reason = if !v.online {
+                        Some(tr("oflayn"))
+                    } else if !v.status.service {
+                        Some(tr("xizmat yo'q"))
+                    } else if !mine(v) {
+                        Some(if engine == 2 {
+                            "Shadow Defender"
+                        } else {
+                            "UWF"
+                        })
+                    } else {
+                        None
+                    };
+                    ui_kit::accordion_body(ui, open_id.with("body"), is_open, |ui| {
+                        Frame::none()
+                            .fill(p.sunken)
+                            .inner_margin(Margin::symmetric(14.0, 6.0))
+                            .show(ui, |ui| {
+                                ui.set_width(rw - 28.0);
+                                if kept.is_empty() {
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        RichText::new(tr("Saqlanadigan fayl yo'q"))
+                                            .size(12.5)
+                                            .color(p.faint),
+                                    );
+                                    ui.add_space(4.0);
+                                }
+                                for path in &kept {
+                                    let folder = !path
+                                        .rsplit(['\\', '/'])
+                                        .next()
+                                        .unwrap_or("")
+                                        .contains('.');
+                                    let (rr, _) = ui
+                                        .allocate_exact_size(vec2(rw - 28.0, 32.0), Sense::hover());
+                                    let ink = if reason.is_some() { p.faint } else { p.text };
+                                    ui.painter().text(
+                                        pos2(rr.left() + 8.0, rr.center().y),
+                                        Align2::CENTER_CENTER,
+                                        if folder {
+                                            icons::FOLDER
+                                        } else {
+                                            icons::FILE_TEXT
+                                        },
+                                        FontId::proportional(15.0),
+                                        if reason.is_some() { p.faint } else { p.accent },
+                                    );
+                                    let g = ui_kit::truncated(
+                                        ui,
+                                        path,
+                                        FontId::new(13.0, ui_kit::mono()),
+                                        ink,
+                                        rr.width() - 120.0,
+                                    );
+                                    ui.painter().galley(
+                                        pos2(rr.left() + 26.0, rr.center().y - g.size().y / 2.0),
+                                        g,
+                                        ink,
+                                    );
+                                    // On the right: whether it applies here.
+                                    let (txt, tc) = match reason {
+                                        Some(r) => (r.to_string(), p.faint),
+                                        None if frozen => (tr("saqlanadi").to_string(), p.success),
+                                        None => (tr("muzlatilganda").to_string(), p.muted),
+                                    };
+                                    ui.painter().text(
+                                        pos2(rr.right() - 8.0, rr.center().y),
+                                        Align2::RIGHT_CENTER,
+                                        txt,
+                                        FontId::proportional(12.0),
+                                        tc,
+                                    );
+                                }
+                            });
+                    });
                 }
             });
     }
@@ -979,7 +1088,6 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
         tr("Doim saqlanadigan fayllar"),
         tr("Ro'yxatdagi fayl va papkalar qayta yuklangandan keyin ham qoladi."),
     );
-    kept_scope(ui, p, &views, &mine, engine);
     commit_section(ui, p, &mut f, cx);
 
     // Settings of this filter (Shadow Defender only: UWF has none).
@@ -998,94 +1106,6 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
             );
         });
     }
-}
-
-/// Which computers the kept files / folders list applies to, and why the others are left out.
-fn kept_scope(
-    ui: &mut egui::Ui,
-    p: &Palette,
-    views: &[&View],
-    mine: &dyn Fn(&View) -> bool,
-    engine: u8,
-) {
-    let mut applies: Vec<(&str, bool)> = vec![];
-    let mut skipped: Vec<String> = vec![];
-    for v in views {
-        let frozen = matches!(
-            v.status.freeze,
-            FreezeState::Frozen | FreezeState::FreezePending | FreezeState::Maintenance
-        );
-        if !v.online {
-            skipped.push(format!("{} ({})", v.label, tr("oflayn")));
-        } else if !v.status.service {
-            skipped.push(format!("{} ({})", v.label, tr("xizmat yo'q")));
-        } else if !mine(v) {
-            let other = if engine == 2 {
-                "Shadow Defender"
-            } else {
-                "UWF"
-            };
-            skipped.push(format!("{} ({other})", v.label));
-        } else {
-            applies.push((v.label.as_str(), frozen));
-        }
-    }
-    ui.add_space(6.0);
-    let line = |ui: &mut egui::Ui, icon: &str, col: Color32, text: String| {
-        ui.horizontal_top(|ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            ui.label(RichText::new(icon).size(14.0).color(col));
-            ui.add(egui::Label::new(RichText::new(text).size(12.5).color(col)).wrap());
-        });
-    };
-    if applies.is_empty() {
-        line(
-            ui,
-            icons::TRIANGLE_ALERT,
-            p.warning,
-            tr("Ro'yxat hech bir kompyuterga ta'sir qilmaydi").to_string(),
-        );
-    } else {
-        let names = applies
-            .iter()
-            .map(|(n, f)| {
-                if *f {
-                    format!("{n} ❄")
-                } else {
-                    (*n).to_string()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        line(
-            ui,
-            icons::CIRCLE_CHECK,
-            p.success,
-            tf!(
-                "Ta'sir qiladi: {n} ta kompyuter — {names}",
-                n = applies.len(),
-                names = names
-            ),
-        );
-        if applies.iter().any(|(_, f)| !*f) {
-            line(
-                ui,
-                icons::INFO,
-                p.muted,
-                tr("Muzlatilmagan kompyuterda ro'yxat saqlanadi va muzlatilganda kuchga kiradi.")
-                    .to_string(),
-            );
-        }
-    }
-    if !skipped.is_empty() {
-        line(
-            ui,
-            icons::BAN,
-            p.faint,
-            tf!("Ta'sir qilmaydi: {names}", names = skipped.join(", ")),
-        );
-    }
-    ui.add_space(8.0);
 }
 
 /// A section heading inside the Muzlatish page: a rule, the title and a "?".
