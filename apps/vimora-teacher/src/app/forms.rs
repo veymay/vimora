@@ -979,6 +979,7 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
         tr("Doim saqlanadigan fayllar"),
         tr("Ro'yxatdagi fayl va papkalar qayta yuklangandan keyin ham qoladi."),
     );
+    kept_scope(ui, p, &views, &mine, engine);
     commit_section(ui, p, &mut f, cx);
 
     // Settings of this filter (Shadow Defender only: UWF has none).
@@ -997,6 +998,94 @@ pub(super) fn shadow_form(ui: &mut egui::Ui, p: &Palette, mut f: ShadowForm<'_>,
             );
         });
     }
+}
+
+/// Which computers the kept files / folders list applies to, and why the others are left out.
+fn kept_scope(
+    ui: &mut egui::Ui,
+    p: &Palette,
+    views: &[&View],
+    mine: &dyn Fn(&View) -> bool,
+    engine: u8,
+) {
+    let mut applies: Vec<(&str, bool)> = vec![];
+    let mut skipped: Vec<String> = vec![];
+    for v in views {
+        let frozen = matches!(
+            v.status.freeze,
+            FreezeState::Frozen | FreezeState::FreezePending | FreezeState::Maintenance
+        );
+        if !v.online {
+            skipped.push(format!("{} ({})", v.label, tr("oflayn")));
+        } else if !v.status.service {
+            skipped.push(format!("{} ({})", v.label, tr("xizmat yo'q")));
+        } else if !mine(v) {
+            let other = if engine == 2 {
+                "Shadow Defender"
+            } else {
+                "UWF"
+            };
+            skipped.push(format!("{} ({other})", v.label));
+        } else {
+            applies.push((v.label.as_str(), frozen));
+        }
+    }
+    ui.add_space(6.0);
+    let line = |ui: &mut egui::Ui, icon: &str, col: Color32, text: String| {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            ui.label(RichText::new(icon).size(14.0).color(col));
+            ui.add(egui::Label::new(RichText::new(text).size(12.5).color(col)).wrap());
+        });
+    };
+    if applies.is_empty() {
+        line(
+            ui,
+            icons::TRIANGLE_ALERT,
+            p.warning,
+            tr("Ro'yxat hech bir kompyuterga ta'sir qilmaydi").to_string(),
+        );
+    } else {
+        let names = applies
+            .iter()
+            .map(|(n, f)| {
+                if *f {
+                    format!("{n} ❄")
+                } else {
+                    (*n).to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        line(
+            ui,
+            icons::CIRCLE_CHECK,
+            p.success,
+            tf!(
+                "Ta'sir qiladi: {n} ta kompyuter — {names}",
+                n = applies.len(),
+                names = names
+            ),
+        );
+        if applies.iter().any(|(_, f)| !*f) {
+            line(
+                ui,
+                icons::INFO,
+                p.muted,
+                tr("Muzlatilmagan kompyuterda ro'yxat saqlanadi va muzlatilganda kuchga kiradi.")
+                    .to_string(),
+            );
+        }
+    }
+    if !skipped.is_empty() {
+        line(
+            ui,
+            icons::BAN,
+            p.faint,
+            tf!("Ta'sir qilmaydi: {names}", names = skipped.join(", ")),
+        );
+    }
+    ui.add_space(8.0);
 }
 
 /// A section heading inside the Muzlatish page: a rule, the title and a "?".
