@@ -4,7 +4,12 @@
 use eframe::egui::{self, pos2, vec2, Align2, FontId, Rect, Sense, Stroke};
 use vimora_ui::icons;
 
-pub const TITLE_H: f32 = 40.0;
+/// The same space on every side of the header, the content and the footer (as in the
+/// teacher's windows).
+pub const PAD: f32 = 16.0;
+pub const TITLE_H: f32 = 24.0 + 2.0 * PAD;
+/// A footer holding one row of buttons.
+pub const FOOTER_H: f32 = 34.0 + 2.0 * PAD;
 
 /// The window / taskbar icon: the app icon (the dark tile with the mark), not egui's default.
 pub fn icon() -> std::sync::Arc<egui::IconData> {
@@ -65,17 +70,20 @@ pub fn title_bar(ctx: &egui::Context, title: &str) -> bool {
             ui.painter()
                 .hline(r.x_range(), r.bottom(), Stroke::new(1.0_f32, p.line));
             let logo =
-                Rect::from_min_size(pos2(r.left() + 12.0, r.center().y - 10.0), vec2(20.0, 20.0));
+                Rect::from_min_size(pos2(r.left() + PAD, r.center().y - 12.0), vec2(24.0, 24.0));
             vimora_ui::logo(ui.painter(), logo);
             ui.painter().text(
-                pos2(logo.right() + vimora_ui::logo_gap(20.0), r.center().y),
+                pos2(logo.right() + 10.0, r.center().y),
                 Align2::LEFT_CENTER,
                 title,
-                FontId::new(14.0, vimora_ui::brand()),
+                FontId::new(15.0, vimora_ui::brand()),
                 p.strong,
             );
             let x = Rect::from_min_max(pos2(r.right() - TITLE_H, r.top()), r.max);
             let resp = ui.interact(x, egui::Id::new("title-x"), Sense::click());
+            // The close cell is flush with the header's right and bottom edges, a rule to its left.
+            ui.painter()
+                .vline(x.left(), r.y_range(), Stroke::new(1.0_f32, p.line));
             if resp.hovered() {
                 ui.painter().rect_filled(x, 0.0, p.danger);
             }

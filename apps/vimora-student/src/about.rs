@@ -14,7 +14,7 @@ use eframe::egui::{self, pos2, vec2, Align2, FontId, Rect, Stroke};
 use std::sync::{Arc, Mutex};
 use vimora_ui::{icons, Kind, Progress};
 
-const SIZE: [f32; 2] = [400.0, 470.0];
+const SIZE: [f32; 2] = [400.0, 480.0];
 
 fn t(lang: &str, key: &str) -> &'static str {
     match (key, lang) {
@@ -208,19 +208,19 @@ impl eframe::App for About {
 
         // The bar at the bottom, like a status bar: a line above it and "Chiqish" at the right.
         egui::TopBottomPanel::bottom("bar")
-            .exact_height(64.0)
+            .exact_height(smallwin::FOOTER_H)
             .frame(egui::Frame::none().fill(p.panel))
             .show(ctx, |ui| {
                 let r = ui.max_rect();
                 ui.painter()
                     .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
-                let w = r.width() - 40.0;
+                // One button: the whole width inside the same padding on every side.
+                let w = r.width() - 2.0 * smallwin::PAD;
                 let mut inner = ui.new_child(
                     egui::UiBuilder::new()
-                        .max_rect(r.shrink2(vec2(20.0, 0.0)))
+                        .max_rect(r.shrink(smallwin::PAD))
                         .layout(egui::Layout::top_down(egui::Align::Center)),
                 );
-                inner.add_space((r.height() - vimora_ui::CONTROL_H) / 2.0);
                 if vimora_ui::button_w(&mut inner, Some(icons::X), t(l, "exit"), Kind::Cancel, w)
                     .clicked()
                 {
