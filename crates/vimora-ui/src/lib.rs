@@ -454,6 +454,11 @@ pub enum Kind {
 
 /// Square mono-caps button, `CONTROL_H` tall.
 pub fn button(ui: &mut Ui, icon: Option<&str>, label: &str, kind: Kind) -> Response {
+    button_w(ui, icon, label, kind, 0.0)
+}
+
+/// [`button`] at least `min_w` wide (0 = as wide as its content needs).
+pub fn button_w(ui: &mut Ui, icon: Option<&str>, label: &str, kind: Kind, min_w: f32) -> Response {
     let p = palette(ui.ctx());
     let (fill, ink, stroke) = match kind {
         Kind::Primary => (p.invert_bg, p.invert_fg, Stroke::NONE),
@@ -472,7 +477,7 @@ pub fn button(ui: &mut Ui, icon: Option<&str>, label: &str, kind: Kind) -> Respo
     let w = if label.is_empty() {
         CONTROL_H
     } else {
-        (g.size().x + icon_w + 32.0).max(BUTTON_MIN_W)
+        (g.size().x + icon_w + 32.0).max(BUTTON_MIN_W).max(min_w)
     };
     let (rect, resp) = ui.allocate_exact_size(vec2(w, CONTROL_H), Sense::click());
     let hovered = resp.hovered();

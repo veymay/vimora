@@ -14,7 +14,7 @@ use eframe::egui::{self, pos2, vec2, Align2, FontId, Rect, Stroke};
 use std::sync::{Arc, Mutex};
 use vimora_ui::{icons, Kind, Progress};
 
-const SIZE: [f32; 2] = [460.0, 500.0];
+const SIZE: [f32; 2] = [400.0, 410.0];
 
 fn t(lang: &str, key: &str) -> &'static str {
     match (key, lang) {
@@ -66,6 +66,9 @@ struct Shared {
 }
 
 struct About {
+    /// When the update state last changed (a result stays on the screen for a few seconds).
+    changed: Option<std::time::Instant>,
+    seen: (bool, Option<(bool, String)>, bool),
     lang: &'static str,
     teacher: Option<String>,
     connected: bool,
@@ -86,6 +89,8 @@ pub fn run() -> anyhow::Result<()> {
             let shared: Arc<Mutex<Shared>> = Arc::default();
             watch(shared.clone(), cc.egui_ctx.clone());
             Ok(Box::new(About {
+                changed: None,
+                seen: (false, None, false),
                 lang,
                 teacher,
                 connected,
@@ -150,6 +155,26 @@ impl eframe::App for About {
             Progress::Waiting(_) | Progress::Percent(_)
         );
 
+        // A result (done / failed) is shown for a few seconds, then the bar goes away.
+        let key = (
+            state.busy.is_some(),
+            state.last.clone(),
+            state.installed.is_some(),
+        );
+        if key != self.seen {
+            // Only a run that happened while this window was open (or is running) is news;
+            // an old result left by the service is not shown again.
+            if key.0 || self.seen.0 || key.2 {
+                self.changed = Some(std::time::Instant::now());
+            }
+            self.seen = key;
+        }
+        let show_state = running
+            || self
+                .changed
+                .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(8));
+        ctx.request_repaint_after(std::time::Duration::from_millis(500));
+
         // The bar at the bottom, like a status bar: a line above it and "Chiqish" at the right.
         egui::TopBottomPanel::bottom("bar")
             .exact_height(64.0)
@@ -158,12 +183,14 @@ impl eframe::App for About {
                 let r = ui.max_rect();
                 ui.painter()
                     .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
+                let w = r.width() - 40.0;
                 let mut inner = ui.new_child(
                     egui::UiBuilder::new()
                         .max_rect(r.shrink2(vec2(20.0, 0.0)))
-                        .layout(egui::Layout::right_to_left(egui::Align::Center)),
+                        .layout(egui::Layout::top_down(egui::Align::Center)),
                 );
-                if vimora_ui::button(&mut inner, Some(icons::X), t(l, "exit"), Kind::Cancel)
+                inner.add_space((r.height() - vimora_ui::CONTROL_H) / 2.0);
+                if vimora_ui::button_w(&mut inner, Some(icons::X), t(l, "exit"), Kind::Cancel, w)
                     .clicked()
                 {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -172,7 +199,9 @@ impl eframe::App for About {
 
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(p.bg))
-            .show(ctx, |ui| self.home(ui, ctx, &state, &installed, running));
+            .show(ctx, |ui| {
+                self.home(ui, ctx, &state, &installed, running, show_state)
+            });
     }
 }
 
@@ -229,6 +258,7 @@ impl About {
         state: &Shared,
         installed: &str,
         running: bool,
+        show_state: bool,
     ) {
         let p = vimora_ui::palette(ui.ctx());
         let l = self.lang;
@@ -309,7 +339,7 @@ impl About {
         });
         y += vimora_ui::CONTROL_H + 14.0;
         let progress = self.progress_of(state, installed);
-        if !matches!(progress, Progress::Idle(..)) {
+        if show_state && !matches!(progress, Progress::Idle(..)) {
             let row = Rect::from_min_size(pos2(r.left() + 40.0, y), vec2(r.width() - 80.0, 24.0));
             vimora_ui::progress(ui, row, progress);
         }

@@ -1523,9 +1523,14 @@ pub(super) fn updates_form(
                                             Some((&sub, col)),
                                             |ui| {
                                                 // The one being updated right now: a spinner.
+                                                // "Dasturlar yangilanmoqda: <id> (1/2) 0%": the id as a whole
+                                                // (one id can be part of another: Edge, Edge WebView2).
                                                 let working = busy.is_some_and(|b| {
-                                                    b.starts_with("Dasturlar yangilanmoqda")
-                                                        && b.contains(a.id.as_str())
+                                                    b.strip_prefix("Dasturlar yangilanmoqda: ")
+                                                        .and_then(|r| r.split(" (").next())
+                                                        .is_some_and(|cur| {
+                                                            cur.trim().eq_ignore_ascii_case(&a.id)
+                                                        })
                                                 });
                                                 if working {
                                                     ui.add(
