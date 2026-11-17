@@ -48,6 +48,8 @@ pub struct TeacherConfig {
     /// Look for a new teacher version on GitHub at start-up (and every few hours).
     pub check_updates: bool,
     pub thumb_interval_ms: u32,
+    /// Cards show the computers' screens live (off: a plain icon, no pictures are sent).
+    pub live_screens: bool,
     /// Computers per row in the grid (zoom).
     pub grid_columns: u32,
     pub view: ViewMode,
@@ -185,6 +187,7 @@ impl Default for TeacherConfig {
             autosave: true,
             check_updates: true,
             thumb_interval_ms: 2000,
+            live_screens: true,
             grid_columns: 6,
             view: ViewMode::Grid,
             rooms: vec![],

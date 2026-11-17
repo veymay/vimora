@@ -659,6 +659,8 @@ pub static ROWS: &[Row] = &[
     ("Administrator so'rovi chiqmaydi. Kompyuter qayta yuklangach kuchga kiradi.", "No administrator prompt. Takes effect after a restart.", "Запроса администратора не будет. Вступит в силу после перезагрузки."),
     ("UAC", "UAC", "UAC"),
     ("Hammasini yangilash ({n})", "Update all ({n})", "Обновить все ({n})"),
+    ("Jonli ekranlar yoniq — bosib o'chiring", "Live screens are on — click to turn off", "Живые экраны включены — нажмите, чтобы выключить"),
+    ("Jonli ekranlar o'chiq — bosib yoqing", "Live screens are off — click to turn on", "Живые экраны выключены — нажмите, чтобы включить"),
     ("Saqlash", "Save", "Сохранить"),
     ("Asl holiga", "Revert", "Вернуть"),
     ("Saqlangan sozlamalarga qaytarish", "Go back to the saved settings", "Вернуть сохранённые настройки"),

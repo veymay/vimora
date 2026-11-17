@@ -348,7 +348,12 @@ pub struct Show {
 
 pub fn thumb_stream(cfg: &TeacherConfig) -> StreamConfig {
     StreamConfig {
-        interval_ms: cfg.thumb_interval_ms.max(250),
+        // 0 = the computers send no pictures at all (the live screens are switched off).
+        interval_ms: if cfg.live_screens {
+            cfg.thumb_interval_ms.max(250)
+        } else {
+            0
+        },
         ..StreamConfig::THUMBNAIL
     }
 }

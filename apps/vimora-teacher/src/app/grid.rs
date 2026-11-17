@@ -616,7 +616,11 @@ impl TeacherApp {
                     let thumb =
                         Rect::from_min_size(pos2(inner.left(), cy - 14.0), vec2(50.0, 28.0));
                     painter.rect_filled(thumb, Rounding::ZERO, p.sunken);
-                    if let Some((_, tex)) = self.textures.get(&v.id) {
+                    if let Some((_, tex)) = self
+                        .textures
+                        .get(&v.id)
+                        .filter(|_| self.cfg.read().unwrap().live_screens)
+                    {
                         let s = tex.size_vec2();
                         let scale = (thumb.width() / s.x).min(thumb.height() / s.y);
                         painter.image(
@@ -927,7 +931,11 @@ impl TeacherApp {
         let thumb_round = Rounding::ZERO;
         painter.rect_filled(thumb, thumb_round, p.sunken);
 
-        if let Some((_, tex)) = self.textures.get(&v.id) {
+        if let Some((_, tex)) = self
+            .textures
+            .get(&v.id)
+            .filter(|_| self.cfg.read().unwrap().live_screens)
+        {
             let s = tex.size_vec2();
             let scale = (thumb.width() / s.x).min(thumb.height() / s.y);
             let tr_ = Rect::from_center_size(thumb.center(), s * scale);

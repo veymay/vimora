@@ -1260,6 +1260,17 @@ impl TeacherApp {
         });
     }
 
+    /// Live screens on / off: the cards change at once and the computers are told.
+    pub(super) fn set_live_screens(&mut self, on: bool) {
+        self.cfg.write().unwrap().live_screens = on;
+        self.settings_dirty = Some(Instant::now());
+        let ids: Vec<u64> = self.hub.lock().unwrap().students.keys().copied().collect();
+        let watching = self.viewer.as_ref().map(|v| v.id);
+        let ids: Vec<u64> = ids.into_iter().filter(|i| Some(*i) != watching).collect();
+        let s = thumb_stream(&self.cfg.read().unwrap());
+        self.send(&ids, Command::SetStream(s), "");
+    }
+
     fn close_viewer(&mut self) {
         if let Some(v) = self.viewer.take() {
             if self.relaying == Some(v.id) {

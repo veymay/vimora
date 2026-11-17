@@ -600,6 +600,26 @@ impl TeacherApp {
                             self.cfg.write().unwrap().view = ViewMode::Grid;
                         }
 
+                        // Live screens on / off: with it off the cards show a plain icon and the
+                        // computers send no pictures.
+                        {
+                            divider(ui, p, h);
+                            let live = self.cfg.read().unwrap().live_screens;
+                            let (ic, tip) = if live {
+                                (
+                                    icons::MONITOR_PLAY,
+                                    tr("Jonli ekranlar yoniq — bosib o'chiring"),
+                                )
+                            } else {
+                                (
+                                    icons::MONITOR_OFF,
+                                    tr("Jonli ekranlar o'chiq — bosib yoqing"),
+                                )
+                            };
+                            if btn(ic, "", live).show(ui, p).tip(tip).clicked() {
+                                self.set_live_screens(!live);
+                            }
+                        }
                         // Zoom (cards only; right to left: + , 100 % , -)
                         if view == ViewMode::Grid {
                             divider(ui, p, h);
