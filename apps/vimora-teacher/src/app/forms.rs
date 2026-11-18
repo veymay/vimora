@@ -116,6 +116,8 @@ pub(super) fn activity_body(
 /// One unfinished process on one computer.
 pub(super) struct Job {
     pub(super) computer: String,
+    /// What tells computers with the same name apart (the address).
+    pub(super) detail: String,
     pub(super) text: String,
     pub(super) pct: Option<f32>,
     pub(super) icon: &'static str,
@@ -130,6 +132,7 @@ pub(super) fn collect_jobs(all: &[View], hub: &SharedHub, latest: &str) -> Vec<J
         if let Some(b) = &v.status.busy {
             out.push(Job {
                 computer: v.label.clone(),
+                detail: v.ip.clone(),
                 text: b.clone(),
                 pct: percent_of(b),
                 icon: icons::DOWNLOAD,
@@ -140,6 +143,7 @@ pub(super) fn collect_jobs(all: &[View], hub: &SharedHub, latest: &str) -> Vec<J
             {
                 out.push(Job {
                     computer: v.label.clone(),
+                    detail: v.ip.clone(),
                     text: tr("VIMORA yangilanmoqda").to_string(),
                     pct: None,
                     icon: icons::CLOUD_DOWNLOAD,
@@ -149,12 +153,14 @@ pub(super) fn collect_jobs(all: &[View], hub: &SharedHub, latest: &str) -> Vec<J
         match v.status.freeze {
             FreezeState::FreezePending => out.push(Job {
                 computer: v.label.clone(),
+                detail: v.ip.clone(),
                 text: tr("Muzlatish yoqilmoqda").to_string(),
                 pct: None,
                 icon: icons::SNOWFLAKE,
             }),
             FreezeState::ThawPending => out.push(Job {
                 computer: v.label.clone(),
+                detail: v.ip.clone(),
                 text: tr("Muzlatish o'chmoqda").to_string(),
                 pct: None,
                 icon: icons::SUN_SNOW,
@@ -164,87 +170,162 @@ pub(super) fn collect_jobs(all: &[View], hub: &SharedHub, latest: &str) -> Vec<J
         if v.status.queued > 0 {
             out.push(Job {
                 computer: v.label.clone(),
+                detail: v.ip.clone(),
                 text: tf!("Navbatda: {n} ta vazifa", n = v.status.queued),
                 pct: None,
                 icon: icons::LIST,
             });
         }
     }
+    // Dev aid: VIMORA_JOBS_DEMO=1 shows made-up jobs (screenshots).
+    if std::env::var_os("VIMORA_JOBS_DEMO").is_some() {
+        for (i, (text, pct)) in [
+            ("VIMORA 0.3.61 yuklanmoqda 32%", Some(32.0)),
+            (
+                "Dasturlar yangilanmoqda: Google.Chrome (1/3) 45%",
+                Some(45.0),
+            ),
+            ("Windows yangilanishlari o'rnatilmoqda", None),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            out.push(Job {
+                computer: format!("AL-XORAZMIY-{}", i + 1),
+                detail: format!("192.168.1.{}", 30 + i),
+                text: text.to_string(),
+                pct,
+                icon: icons::DOWNLOAD,
+            });
+        }
+    }
     out
 }
 
-/// The Jobs drawer: one row per unfinished process, with its spinner or bar.
+/// The Jobs drawer: one card per unfinished process — an icon, the computer (and its address),
+/// what is going on, the percent at the right and a bar under it.
 fn jobs_body(ui: &mut egui::Ui, p: &Palette, all: &[View], hub: &SharedHub, latest: &str) {
     let jobs = collect_jobs(all, hub, latest);
     if jobs.is_empty() {
-        ui.add_space(12.0);
+        ui.add_space(24.0);
         ui.vertical_centered(|ui| {
             ui.label(
                 RichText::new(icons::CIRCLE_CHECK)
-                    .size(30.0)
+                    .size(34.0)
                     .color(p.success),
             );
-            ui.add_space(6.0);
-            ui_kit::hud(ui, tr("Tugallanmagan jarayon yo'q"), p.faint);
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new(tr("Tugallanmagan jarayon yo'q"))
+                    .size(13.5)
+                    .color(p.muted),
+            );
         });
         return;
     }
     ui.ctx()
-        .request_repaint_after(std::time::Duration::from_millis(500));
+        .request_repaint_after(std::time::Duration::from_millis(60));
+    let time = ui.input(|i| i.time) as f32;
+    ui_kit::hud(ui, &tf!("{n} ta jarayon", n = jobs.len()), p.muted);
+    ui.add_space(8.0);
     let w = ui.available_width();
-    Frame::none()
-        .stroke(Stroke::new(1.0_f32, p.line))
-        .show(ui, |ui| {
-            ui.set_width(w);
-            ui.spacing_mut().item_spacing.y = 0.0;
-            for (i, j) in jobs.iter().enumerate() {
-                let (r, _) =
-                    ui.allocate_exact_size(vec2(ui.available_width(), 58.0), Sense::hover());
-                if i > 0 {
-                    ui.painter()
-                        .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
-                }
-                ui.painter().text(
-                    pos2(r.left() + 22.0, r.center().y),
-                    Align2::CENTER_CENTER,
-                    j.icon,
-                    FontId::proportional(18.0),
+    ui.spacing_mut().item_spacing.y = 8.0;
+    for j in &jobs {
+        let (r, _) = ui.allocate_exact_size(vec2(w, 84.0), Sense::hover());
+        ui.painter()
+            .rect(r, Rounding::ZERO, p.bg, Stroke::new(1.0_f32, p.line));
+        // The icon in its own square.
+        let ib = Rect::from_min_size(r.min + vec2(14.0, 14.0), vec2(40.0, 40.0));
+        ui.painter().rect_filled(ib, Rounding::ZERO, p.sunken);
+        ui.painter().text(
+            ib.center(),
+            Align2::CENTER_CENTER,
+            j.icon,
+            FontId::proportional(19.0),
+            p.accent,
+        );
+        let x = ib.right() + 14.0;
+        let right = r.right() - 14.0;
+        // The percent at the right (a spinner for work of unknown length).
+        let pct_w = if let Some(pct) = j.pct {
+            let g = ui.painter().layout_no_wrap(
+                format!("{pct:.0}%"),
+                FontId::new(15.0, ui_kit::mono_bold()),
+                p.accent_ink,
+            );
+            let w = g.size().x;
+            ui.painter()
+                .galley(pos2(right - w, r.top() + 14.0), g, p.accent_ink);
+            w
+        } else {
+            egui::Spinner::new().size(16.0).color(p.accent).paint_at(
+                ui,
+                Rect::from_center_size(pos2(right - 8.0, r.top() + 24.0), vec2(16.0, 16.0)),
+            );
+            16.0
+        };
+        // Name and address.
+        let name = ui_kit::truncated(
+            ui,
+            &j.computer,
+            FontId::new(14.0, ui_kit::bold()),
+            p.strong,
+            right - pct_w - x - 12.0,
+        );
+        let nw = name.size().x;
+        ui.painter().galley(pos2(x, r.top() + 14.0), name, p.strong);
+        if !j.detail.is_empty() {
+            let g = ui_kit::truncated(
+                ui,
+                &j.detail,
+                FontId::new(11.5, ui_kit::mono()),
+                p.faint,
+                (right - pct_w - x - nw - 24.0).max(0.0),
+            );
+            ui.painter()
+                .galley(pos2(x + nw + 10.0, r.top() + 17.0), g, p.faint);
+        }
+        // What is going on (without the percent, it has its own place).
+        let words = j
+            .text
+            .trim_end_matches(|c: char| c == '%' || c.is_ascii_digit() || c == ' ')
+            .to_string();
+        let g = ui_kit::truncated(
+            ui,
+            if words.is_empty() { &j.text } else { &words },
+            FontId::proportional(12.5),
+            p.muted,
+            right - x,
+        );
+        ui.painter().galley(pos2(x, r.top() + 38.0), g, p.muted);
+        // The bar along the bottom; a moving piece when the length is unknown.
+        let bar = Rect::from_min_max(pos2(x, r.bottom() - 16.0), pos2(right, r.bottom() - 10.0));
+        ui.painter().rect_filled(bar, Rounding::ZERO, p.sunken);
+        match j.pct {
+            Some(pct) => {
+                ui.painter().rect_filled(
+                    Rect::from_min_size(
+                        bar.min,
+                        vec2(bar.width() * pct.clamp(0.0, 100.0) / 100.0, bar.height()),
+                    ),
+                    Rounding::ZERO,
                     p.accent,
                 );
-                let g = ui_kit::truncated(
-                    ui,
-                    &j.computer,
-                    FontId::new(13.5, ui_kit::bold()),
-                    p.strong,
-                    r.width() - 60.0,
+            }
+            None => {
+                let seg = bar.width() * 0.28;
+                let t = (time * 0.7).fract();
+                let x0 = bar.left() - seg + (bar.width() + seg) * t;
+                let piece = Rect::from_min_max(
+                    pos2(x0.max(bar.left()), bar.top()),
+                    pos2((x0 + seg).min(bar.right()), bar.bottom()),
                 );
-                ui.painter()
-                    .galley(pos2(r.left() + 44.0, r.top() + 10.0), g, p.strong);
-                let sub = Rect::from_min_max(
-                    pos2(r.left() + 44.0, r.top() + 30.0),
-                    pos2(r.right() - 12.0, r.bottom() - 4.0),
-                );
-                let state = match j.pct {
-                    Some(pct) => ui_kit::Progress::Percent(pct),
-                    None => ui_kit::Progress::Waiting(&j.text),
-                };
-                ui_kit::progress(ui, sub, state);
-                if let Some(pct) = j.pct {
-                    // The words next to the bar (which program, how many are left).
-                    let t = j.text.split(" (").next().unwrap_or(&j.text);
-                    let _ = pct;
-                    let g = ui_kit::truncated(
-                        ui,
-                        t,
-                        FontId::proportional(11.5),
-                        p.muted,
-                        r.width() - 60.0,
-                    );
-                    ui.painter()
-                        .galley(pos2(r.left() + 44.0 + 6.0, r.bottom() - 4.0), g, p.muted);
+                if piece.width() > 0.0 {
+                    ui.painter().rect_filled(piece, Rounding::ZERO, p.accent);
                 }
             }
-        });
+        }
+    }
 }
 
 /// Body of every modal / drawer.
