@@ -680,6 +680,8 @@ pub static ROWS: &[Row] = &[
     ("Tugallanmagan jarayon yo'q", "Nothing is running", "Нет незавершённых процессов"),
     ("{n} ta jarayon", "{n} processes", "Процессов: {n}"),
     ("Tugallanmagan jarayonlar: batafsil ko'rish uchun bosing", "Unfinished processes: click for details", "Незавершённые процессы: нажмите для подробностей"),
+    ("{n} ta kompyuter: {m}", "{n} computers: {m}", "{n} компьютеров: {m}"),
+    ("Ilova do'konlari", "App stores", "Магазины приложений"),
     ("Saqlash", "Save", "Сохранить"),
     ("Asl holiga", "Revert", "Вернуть"),
     ("Saqlangan sozlamalarga qaytarish", "Go back to the saved settings", "Вернуть сохранённые настройки"),

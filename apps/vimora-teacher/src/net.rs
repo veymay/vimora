@@ -82,6 +82,16 @@ pub enum Level {
 }
 
 /// A short result message shown over the teacher (command outcomes).
+/// Results of one command that arrived from several computers: shown as one notification.
+pub struct ResultGroup {
+    pub ok: bool,
+    pub message: String,
+    pub labels: Vec<String>,
+    pub at: Instant,
+    /// The notification text now on screen for this group.
+    pub shown: String,
+}
+
 pub struct Toast {
     pub ok: bool,
     pub text: String,
@@ -146,6 +156,7 @@ pub struct Hub {
     /// freeze restored its pairing) knocks only every minute or two.
     /// Vimora updates started from the Updates drawer: computer key → job.
     pub vimora_jobs: BTreeMap<String, VimoraJob>,
+    pub result_groups: Vec<ResultGroup>,
     pub free: BTreeMap<String, (vimora_core::StudentInfo, std::net::IpAddr, Instant, bool)>,
     /// Assignments collected in the current round: student id → number of files.
     pub collected: BTreeMap<u64, usize>,
@@ -171,6 +182,7 @@ impl Hub {
             collected: BTreeMap::new(),
             free: BTreeMap::new(),
             vimora_jobs: BTreeMap::new(),
+            result_groups: Vec::new(),
             attendance: Default::default(),
             poll: None,
             test: None,
@@ -178,6 +190,45 @@ impl Hub {
             recording: BTreeMap::new(),
             next_id: 0,
         }
+    }
+
+    /// A computer's answer to a command. The same answer from several computers within a few
+    /// seconds (a task given to the whole class) is one notification: "12 ta kompyuter: …".
+    pub fn toast_result(&mut self, ok: bool, label: &str, message: &str) {
+        let now = Instant::now();
+        self.result_groups
+            .retain(|g| now.duration_since(g.at) < std::time::Duration::from_secs(4));
+        let clip =
+            |t: String| -> String { t.lines().next().unwrap_or("").chars().take(200).collect() };
+        if let Some(g) = self
+            .result_groups
+            .iter_mut()
+            .find(|g| g.ok == ok && g.message == message && !g.labels.iter().any(|l| l == label))
+        {
+            g.labels.push(label.to_string());
+            let text = clip(vimora_ui::tf!(
+                "{n} ta kompyuter: {m}",
+                n = g.labels.len(),
+                m = message
+            ));
+            if let Some(t) = self.toasts.iter_mut().find(|t| t.text == g.shown) {
+                t.text = text.clone();
+                t.at = now;
+            }
+            g.shown = text;
+            g.at = now;
+            self.repaint();
+            return;
+        }
+        let text = format!("{label}: {message}");
+        self.result_groups.push(ResultGroup {
+            ok,
+            message: message.to_string(),
+            labels: vec![label.to_string()],
+            at: now,
+            shown: clip(text.clone()),
+        });
+        self.toast(ok, text);
     }
 
     pub fn toast(&mut self, ok: bool, text: impl Into<String>) {
@@ -752,7 +803,7 @@ async fn session(
                         if ok { Level::Info } else { Level::Warn },
                         format!("{label}: {message}"),
                     );
-                    h.toast(ok, format!("{label}: {message}"));
+                    h.toast_result(ok, &label, &message);
                 }
                 StudentMsg::HelpRequest { text } => {
                     let mut h = hub.lock().unwrap();

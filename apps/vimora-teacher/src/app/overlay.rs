@@ -176,13 +176,23 @@ impl TeacherApp {
         let w = 380.0_f32.min(screen.width() - 24.0);
         let mut dismiss: Option<usize> = None;
         let mut y = screen.bottom() - super::navbar::STATUS_H - 12.0;
+        // With a window open on the right, the notifications come up at the bottom left.
+        let left = self.dialog.is_some() || self.closing.is_some();
         for (i, (ok, text, age)) in items.iter().enumerate().rev() {
             let col = if *ok { p.accent } else { p.danger };
             let fade = (age.as_secs_f32() / 0.18).min(1.0);
             let r = egui::Area::new(egui::Id::new(("toast", i)))
                 .order(egui::Order::Tooltip)
-                .pivot(Align2::RIGHT_BOTTOM)
-                .fixed_pos(pos2(screen.right() - 12.0, y))
+                .pivot(if left {
+                    Align2::LEFT_BOTTOM
+                } else {
+                    Align2::RIGHT_BOTTOM
+                })
+                .fixed_pos(if left {
+                    pos2(screen.left() + 12.0, y)
+                } else {
+                    pos2(screen.right() - 12.0, y)
+                })
                 .show(ctx, |ui| {
                     ui.set_opacity(fade);
                     Frame::none()
