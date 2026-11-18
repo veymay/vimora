@@ -58,6 +58,9 @@ pub enum IpcReq {
     UpdatesInfo,
     /// The Vimora update state shared by the teacher's drawer and the student's window.
     UpdateState,
+    /// What the service keeps blocked (sites, words, internet): read from its saved policies, so
+    /// it is right straight after a restart, before the teacher says anything.
+    BlockState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +77,8 @@ pub enum IpcResp {
     UpdatesInfo(Option<(u64, vimora_core::UpdatesInfo)>),
     /// (what is running now, how the last attempt ended: ok + text).
     UpdateState(Option<String>, Option<(bool, String)>),
+    /// (blocked sites, blocked words, SafeSearch on, internet off or only listed sites allowed).
+    BlockState(usize, usize, bool, bool),
 }
 
 /// The service's persistent state: the teacher this PC obeys.
@@ -603,6 +608,10 @@ async fn handle(
             }
         }
         IpcReq::UpdatesInfo => IpcResp::UpdatesInfo(engine.updates_info()),
+        IpcReq::BlockState => {
+            let (d, k, s, i) = crate::privileged::block_summary();
+            IpcResp::BlockState(d, k, s, i)
+        }
         IpcReq::UpdateState => {
             let (busy, last) = engine.update_state();
             IpcResp::UpdateState(busy, last)

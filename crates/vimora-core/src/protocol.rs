@@ -502,6 +502,9 @@ pub enum Command {
     },
     /// How the lock screen looks besides its icon (sent before `Lock`).
     LockLook(LockLook),
+    /// Close every open program window of the signed-in user (a polite close: the programs may
+    /// still ask about unsaved work). VIMORA's own windows stay.
+    CloseWindows,
 }
 
 /// The lock screen's look. All zero / empty = the default look.
@@ -856,6 +859,7 @@ mod wire_tests {
             tag(&Command::ChatEnd) + 7
         );
         assert_eq!(tag(&Command::CollectFiles), tag(&Command::ChatEnd) + 8);
+        assert_eq!(tag(&Command::CloseWindows), tag(&Command::ChatEnd) + 18);
         assert_eq!(tag(&StudentMsg::Collected(vec![])), 14);
         assert_eq!(tag(&Command::EndTest), tag(&Command::ChatEnd) + 13);
         assert_eq!(

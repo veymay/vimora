@@ -985,6 +985,19 @@ fn save_policy<T: Serialize>(name: &str, value: &T) {
     }
 }
 
+/// What is kept blocked on this computer, from the saved policies: (sites, words, SafeSearch,
+/// internet off / only listed sites). The same files `resume` puts back at every start.
+pub fn block_summary() -> (usize, usize, bool, bool) {
+    let net: vimora_core::NetPolicy = load_policy("net-policy.json").unwrap_or_default();
+    let access: vimora_core::AccessPolicy = load_policy("access-policy.json").unwrap_or_default();
+    (
+        net.domains.len(),
+        net.keywords.len(),
+        net.safe_search,
+        access.internet_off || !access.allow_sites.is_empty() || !access.ports.is_empty(),
+    )
+}
+
 fn load_policy<T: serde::de::DeserializeOwned>(name: &str) -> Option<T> {
     serde_json::from_str(&std::fs::read_to_string(policy_path(name)).ok()?).ok()
 }

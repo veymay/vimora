@@ -84,6 +84,8 @@ struct State {
     busy: Option<String>,
     queued: u32,
     persistent_folders: Vec<String>,
+    /// What the service keeps blocked (its saved policies): sites, words, SafeSearch, internet.
+    svc_block: Option<(usize, usize, bool, bool)>,
 }
 
 impl State {
@@ -92,9 +94,17 @@ impl State {
             locked: self.lock.is_some(),
             showing_teacher: self.show,
             app_blocklist: self.apps.len(),
-            web_blocklist: self.net.domains.len(),
-            keywords: self.net.keywords.len(),
-            safe_search: self.net.safe_search,
+            // The service's saved policies say what is blocked, also right after a restart;
+            // "internet off" counts as one blocked item so the card shows its badge.
+            web_blocklist: self
+                .svc_block
+                .map_or(self.net.domains.len(), |(d, _, _, i)| d + usize::from(i)),
+            keywords: self
+                .svc_block
+                .map_or(self.net.keywords.len(), |(_, k, _, _)| k),
+            safe_search: self
+                .svc_block
+                .map_or(self.net.safe_search, |(_, _, s, _)| s),
             help_requested: self.help,
             service: self.service,
             freeze: self.freeze,

@@ -174,8 +174,16 @@ pub(super) async fn service_status_task(ctx: Ctx) {
                 )
             }
         };
+        // What the service keeps blocked (right after a restart too).
+        let block = match service::call(IpcReq::BlockState).await {
+            Ok(IpcResp::BlockState(d, k, s, i)) => Some((d, k, s, i)),
+            _ => None,
+        };
         let status = {
             let mut s = ctx.state.lock().unwrap();
+            if block.is_some() || !service {
+                s.svc_block = block;
+            }
             s.service = service;
             s.freeze = st.freeze;
             s.shield_usage = st.shield_usage;

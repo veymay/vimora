@@ -866,6 +866,9 @@ impl TeacherApp {
                     self.forget(&keys, &[]);
                 }
             }
+            ConfirmAction::CloseWindows(ids) => {
+                self.send(&ids, Command::CloseWindows, tr("Barcha oynalarni yopish"));
+            }
             ConfirmAction::Restart(ids) => {
                 self.send_priv(
                     &ids,

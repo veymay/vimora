@@ -600,6 +600,30 @@ impl TeacherApp {
                             self.cfg.write().unwrap().view = ViewMode::Grid;
                         }
 
+                        // Close every open program on the picked computers (all online ones when
+                        // none is picked).
+                        {
+                            divider(ui, p, h);
+                            if btn(icons::APP_WINDOW, "", false)
+                                .show(ui, p)
+                                .tip(tr("Barcha oynalarni yopish"))
+                                .clicked()
+                            {
+                                let ids = self.targets(all);
+                                if !ids.is_empty() {
+                                    let n = ids.len();
+                                    self.ask(
+                                        tr("Barcha oynalar yopilsinmi?"),
+                                        tf!(
+                                            "{n} ta kompyuterda ochiq dasturlarning hammasi yopiladi. Saqlanmagan ish bo'lsa, dastur o'zi so'raydi.",
+                                            n = n
+                                        ),
+                                        tr("Yopish"),
+                                        ConfirmAction::CloseWindows(ids),
+                                    );
+                                }
+                            }
+                        }
                         // Live screens on / off: with it off the cards show a plain icon and the
                         // computers send no pictures.
                         {

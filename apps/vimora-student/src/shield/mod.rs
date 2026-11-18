@@ -377,6 +377,13 @@ impl Shield {
             return;
         }
         for (k, v) in values {
+            // The policy keys are excluded from the filter altogether: nothing to commit (and
+            // thousands of per-value commits would take minutes).
+            if k.to_ascii_lowercase()
+                .starts_with(r"hklm\software\policies")
+            {
+                continue;
+            }
             if let Err(e) = self.backend.commit_registry(k, v) {
                 tracing::warn!("commit {k} {v}: {e:#}");
             }

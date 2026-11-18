@@ -155,19 +155,46 @@ pub(super) async fn session(
     send_status(&tx);
     let _ = tx.try_send(StudentMsg::AgentVersion(env!("CARGO_PKG_VERSION").into()));
 
+    // --- privileged commands: their own worker ---------------------------------------------
+    // They can take a while (a long block list, an installer): they run one after another, in
+    // order (the counters must not go backwards) but apart from the read loop, so everything
+    // else the teacher sends keeps being handled meanwhile.
+    let goodbye = Arc::new(tokio::sync::Notify::new());
+    let (ptx, mut prx) = mpsc::unbounded_channel::<(u64, Vec<u8>, Vec<u8>)>();
+    let worker = {
+        let (wctx, wtx, bye) = (Ctx::clone(ctx), tx.clone(), goodbye.clone());
+        tokio::spawn(async move {
+            while let Some((counter, payload, sig)) = prx.recv().await {
+                let (ok, message) = match privileged(&wctx, counter, payload, sig).await {
+                    Ok(m) => (true, m),
+                    Err(e) => (false, format!("{e:#}")),
+                };
+                let _ = wtx.send(StudentMsg::CommandResult { ok, message }).await;
+                let st = wctx.state.lock().unwrap().status();
+                let _ = wtx.try_send(StudentMsg::Status(st));
+                // Removed from this teacher: say goodbye (the result above still goes out).
+                if *UNPAIRED.lock().unwrap() {
+                    tokio::time::sleep(Duration::from_millis(400)).await;
+                    bye.notify_one();
+                }
+            }
+        })
+    };
+
     // --- main read loop ----------------------------------------------------------------------
     let result: Result<()> = async {
         loop {
-            let msg: TeacherMsg =
-                match tokio::time::timeout(Duration::from_secs(20), read_msg(&mut rd))
-                    .await
-                    .context("teacher timed out")?
-                {
-                    Ok(m) => m,
-                    // A newer teacher's message this agent doesn't know: skip it.
-                    Err(e) if vimora_core::net::is_undecodable(&e) => continue,
-                    Err(e) => return Err(e),
-                };
+            let msg: TeacherMsg = match tokio::select! {
+                r = tokio::time::timeout(Duration::from_secs(20), read_msg(&mut rd)) => {
+                    r.context("teacher timed out")?
+                }
+                _ = goodbye.notified() => bail!("o'qituvchidan ajratildi"),
+            } {
+                Ok(m) => m,
+                // A newer teacher's message this agent doesn't know: skip it.
+                Err(e) if vimora_core::net::is_undecodable(&e) => continue,
+                Err(e) => return Err(e),
+            };
             match msg {
                 TeacherMsg::Ping => {
                     let _ = tx.try_send(StudentMsg::Pong);
@@ -222,17 +249,7 @@ pub(super) async fn session(
                     payload,
                     sig,
                 } => {
-                    let (ok, message) = match privileged(ctx, counter, payload, sig).await {
-                        Ok(m) => (true, m),
-                        Err(e) => (false, format!("{e:#}")),
-                    };
-                    let _ = tx.send(StudentMsg::CommandResult { ok, message }).await;
-                    send_status(&tx);
-                    // Removed from this teacher: say goodbye (the result above still goes out).
-                    if *UNPAIRED.lock().unwrap() {
-                        tokio::time::sleep(Duration::from_millis(400)).await;
-                        bail!("o'qituvchidan ajratildi");
-                    }
+                    let _ = ptx.send((counter, payload, sig));
                 }
                 TeacherMsg::Hello { .. } | TeacherMsg::Welcome { .. } => {}
             }
@@ -242,6 +259,7 @@ pub(super) async fn session(
 
     stop.store(true, Ordering::Relaxed);
     writer.abort();
+    worker.abort();
     result
 }
 
@@ -354,6 +372,11 @@ pub(super) async fn handle_command(
         }
         Command::KillProcess(pid) => Some(crate::sysmon::kill(pid)),
         Command::OpenFile(name) => Some(system::open_received(&name)),
+        Command::CloseWindows => Some(
+            tokio::task::spawn_blocking(crate::closewin::close_all)
+                .await
+                .unwrap_or_else(|e| Err(anyhow::anyhow!("{e}"))),
+        ),
         Command::Poll {
             id,
             question,

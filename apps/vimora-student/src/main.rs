@@ -15,6 +15,7 @@ mod audio;
 mod blocked;
 mod chat;
 mod clip;
+mod closewin;
 mod config;
 mod desktop;
 mod devices;

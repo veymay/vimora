@@ -188,6 +188,8 @@ pub(crate) enum ConfirmAction {
     },
     /// Restart these computers now (a change takes effect after a restart).
     Restart(Vec<u64>),
+    /// Close every open program window on these computers.
+    CloseWindows(Vec<u64>),
     /// Uninstall a program on a student PC: (computer, program id).
     UninstallApp {
         id: u64,

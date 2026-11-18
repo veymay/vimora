@@ -379,99 +379,72 @@ fn set_browser_policies(p: &NetPolicy, allow: &[String]) -> Result<usize> {
     Ok(n)
 }
 
+/// The browser policies as one `.reg` file imported in a single step: a block list of thousands
+/// of sites used to take a `reg add` process per site and per browser (minutes), now it is one
+/// process (a second or two).
 #[cfg(windows)]
 fn set_browser_policies(p: &NetPolicy, allow: &[String]) -> Result<usize> {
-    let reg = |args: &[&str]| {
-        quiet(Command::new("reg").args(args))
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-    };
-    let mut n = 0;
+    let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+    let mut text = String::from("Windows Registry Editor Version 5.00\r\n\r\n");
     for key in KEYS {
-        let list = format!(r"{key}\URLBlocklist");
-        let allow_key = format!(r"{key}\URLAllowlist");
-        reg(&["delete", &list, "/f"]);
-        reg(&["delete", &allow_key, "/f"]);
-        // Allow-list mode: everything blocked except the listed sites.
-        for (i, d) in allow.iter().enumerate() {
-            reg(&[
-                "add",
-                &allow_key,
-                "/v",
-                &(i + 1).to_string(),
-                "/t",
-                "REG_SZ",
-                "/d",
-                d,
-                "/f",
-            ]);
-        }
-        if !allow.is_empty() {
-            reg(&["add", &list, "/v", "1000", "/t", "REG_SZ", "/d", "*", "/f"]);
-        }
+        let key = key.replacen("HKLM", "HKEY_LOCAL_MACHINE", 1);
+        // The lists start empty every time.
+        text.push_str(&format!(
+            "[-{key}\\URLBlocklist]\r\n[-{key}\\URLAllowlist]\r\n\r\n"
+        ));
+        text.push_str(&format!("[{key}]\r\n"));
         if p.is_empty() {
             for v in [
                 "ForceGoogleSafeSearch",
                 "ForceYouTubeRestrict",
                 "DnsOverHttpsMode",
             ] {
-                reg(&["delete", key, "/v", v, "/f"]);
+                text.push_str(&format!("\"{v}\"=-\r\n"));
             }
-            continue;
+        } else {
+            let safe = if p.safe_search { 1 } else { 0 };
+            text.push_str("\"DnsOverHttpsMode\"=\"off\"\r\n");
+            text.push_str(&format!("\"ForceGoogleSafeSearch\"=dword:{safe:08x}\r\n"));
+            text.push_str(&format!("\"ForceYouTubeRestrict\"=dword:{safe:08x}\r\n"));
         }
-        let mut ok = reg(&[
-            "add",
-            key,
-            "/v",
-            "DnsOverHttpsMode",
-            "/t",
-            "REG_SZ",
-            "/d",
-            "off",
-            "/f",
-        ]);
-        let safe = if p.safe_search { "1" } else { "0" };
-        ok &= reg(&[
-            "add",
-            key,
-            "/v",
-            "ForceGoogleSafeSearch",
-            "/t",
-            "REG_DWORD",
-            "/d",
-            safe,
-            "/f",
-        ]);
-        ok &= reg(&[
-            "add",
-            key,
-            "/v",
-            "ForceYouTubeRestrict",
-            "/t",
-            "REG_DWORD",
-            "/d",
-            safe,
-            "/f",
-        ]);
-        for (i, d) in p.domains.iter().enumerate() {
-            ok &= reg(&[
-                "add",
-                &list,
-                "/v",
-                &(i + 1).to_string(),
-                "/t",
-                "REG_SZ",
-                "/d",
-                d,
-                "/f",
-            ]);
+        text.push_str("\r\n");
+        if !allow.is_empty() || !p.is_empty() {
+            text.push_str(&format!("[{key}\\URLBlocklist]\r\n"));
+            if !allow.is_empty() {
+                text.push_str("\"1000\"=\"*\"\r\n");
+            }
+            if !p.is_empty() {
+                for (i, d) in p.domains.iter().enumerate() {
+                    text.push_str(&format!("\"{}\"=\"{}\"\r\n", i + 1, esc(d)));
+                }
+            }
+            text.push_str("\r\n");
         }
-        if ok {
-            n += 1;
+        if !allow.is_empty() {
+            text.push_str(&format!("[{key}\\URLAllowlist]\r\n"));
+            for (i, d) in allow.iter().enumerate() {
+                text.push_str(&format!("\"{}\"=\"{}\"\r\n", i + 1, esc(d)));
+            }
+            text.push_str("\r\n");
         }
     }
-    Ok(n)
+    // UTF-16 with a byte-order mark, as reg.exe reads it.
+    let mut bytes: Vec<u8> = vec![0xFF, 0xFE];
+    for u in text.encode_utf16() {
+        bytes.extend_from_slice(&u.to_le_bytes());
+    }
+    let file = hosts_path()
+        .parent()
+        .map(|_| std::env::temp_dir())
+        .unwrap_or_else(std::env::temp_dir)
+        .join("vimora-netpolicy.reg");
+    std::fs::write(&file, bytes)?;
+    let ok = quiet(Command::new("reg").arg("import").arg(&file))
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    let _ = std::fs::remove_file(&file);
+    Ok(if ok { KEYS.len() } else { 0 })
 }
 
 // ---------------------------------------------------------------------------------------------
