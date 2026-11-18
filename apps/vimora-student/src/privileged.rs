@@ -65,6 +65,12 @@ impl Engine {
         &self.shield
     }
 
+    /// Tells the teacher something (shown in its activity list).
+    #[cfg(windows)]
+    pub fn notify(&self, ok: bool, msg: String) {
+        self.push(ok, msg);
+    }
+
     fn push(&self, ok: bool, msg: String) {
         self.inner.lock().unwrap().events.push((ok, msg));
     }

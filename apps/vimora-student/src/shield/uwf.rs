@@ -293,6 +293,10 @@ impl Uwf {
                 }
             }
         }
+        // Crash dumps and the event logs survive a restart: after a blue screen the evidence
+        // is still there (the filter would otherwise throw it away at the next start).
+        files.push(r"C:\Windows\Minidump".to_string());
+        files.push(r"C:\Windows\System32\winevt\Logs".to_string());
         files.extend(persistent.iter().cloned());
         files.push(r"C:\Windows\System32\drivers\etc\hosts".to_string());
         for f in &files {

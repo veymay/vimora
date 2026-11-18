@@ -257,6 +257,11 @@ async fn serve(pairing: Pairing) -> Result<()> {
         }
     });
     let engine = Engine::new();
+    #[cfg(windows)]
+    {
+        let e = engine.clone();
+        std::thread::spawn(move || report_bugcheck(&e));
+    }
     // Updates and applications looked up in advance: the teacher's lists come at once.
     engine.prefetch();
     // A computer still in the old folder moves to the new one (only while not frozen).
@@ -409,6 +414,44 @@ fn harden_install_dir() {
     if std::path::Path::new(&files).is_dir() {
         run(&[&files, "/grant:r", "*S-1-5-32-545:(OI)(CI)M"]);
     }
+}
+
+/// Windows: after a blue screen the teacher is told which stop code it was (and the dump file),
+/// once per crash. The write filter excludes the dump folder and the event logs, so the trace
+/// is still there after the restart.
+#[cfg(windows)]
+fn report_bugcheck(engine: &Arc<Engine>) {
+    std::thread::sleep(Duration::from_secs(45));
+    let script = "$e = Get-WinEvent -FilterHashtable @{LogName='System'; \
+        ProviderName='Microsoft-Windows-WER-SystemErrorReporting'; Id=1001} -MaxEvents 1 \
+        -ErrorAction SilentlyContinue; if ($e) { $e.TimeCreated.ToString('o'); $e.Message }";
+    let Ok((true, out)) = crate::sh::script(script) else {
+        return;
+    };
+    let mut lines = out.lines();
+    let (Some(when), rest) = (
+        lines.next().map(str::trim),
+        lines.collect::<Vec<_>>().join(" "),
+    ) else {
+        return;
+    };
+    if when.is_empty() {
+        return;
+    }
+    let seen = config_path().with_file_name("bugcheck.seen");
+    if std::fs::read_to_string(&seen).is_ok_and(|s| s.trim() == when) {
+        return;
+    }
+    let _ = std::fs::write(&seen, when);
+    let text: String = rest.split_whitespace().collect::<Vec<_>>().join(" ");
+    engine.notify(
+        false,
+        format!(
+            "Kompyuter ko'k ekran (BSOD) bilan qayta yuklangan ({}): {}",
+            when.chars().take(19).collect::<String>().replace('T', " "),
+            text.chars().take(260).collect::<String>()
+        ),
+    );
 }
 
 /// An update installed a new version while this service kept running the old one (the
