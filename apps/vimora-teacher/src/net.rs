@@ -16,7 +16,7 @@ use tracing::{info, warn};
 use vimora_core::ClipData;
 use vimora_core::{
     auth, capture,
-    net::{read_msg, write_msg},
+    net::{read_msg, read_msg_max, write_msg},
     Beacon, StreamConfig, StudentInfo, StudentMsg, StudentStatus, TeacherMsg, DISCOVERY_PORT,
     MIN_PROTOCOL_VERSION, PROTOCOL_VERSION,
 };
@@ -490,6 +490,50 @@ async fn listen(hub: SharedHub, cfg: SharedConfig) -> Result<()> {
     }
 }
 
+/// The signed welcome and, when the student offered its half, the encrypted channel: from the
+/// message after `Secure` on, both directions are encrypted and tamper-proof.
+async fn welcome<R, W>(
+    rd: &mut vimora_core::secure::Reader<R>,
+    wr: &mut vimora_core::secure::Writer<W>,
+    identity: &vimora_core::auth::Identity,
+    student_nonce: &[u8],
+    teacher_nonce: &[u8],
+    stream: StreamConfig,
+    student_eph: Option<[u8; 32]>,
+) -> Result<()>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    write_msg(
+        wr,
+        &TeacherMsg::Welcome {
+            sig: identity.sign_welcome(student_nonce, teacher_nonce),
+            stream,
+        },
+    )
+    .await?;
+    if let Some(se) = student_eph {
+        let eph = vimora_core::secure::Ephemeral::new();
+        let tp = eph.public();
+        let sig = identity.sign_channel(student_nonce, teacher_nonce, &tp, &se);
+        write_msg(
+            wr,
+            &TeacherMsg::Secure {
+                eph: tp.to_vec(),
+                sig,
+            },
+        )
+        .await?;
+        let (send, recv) = eph
+            .finish(&se, &tp, &se, true)
+            .ok_or_else(|| anyhow::anyhow!("invalid channel key from student"))?;
+        wr.upgrade(send);
+        rd.upgrade(recv);
+    }
+    Ok(())
+}
+
 async fn session(
     stream: TcpStream,
     addr: SocketAddr,
@@ -497,7 +541,11 @@ async fn session(
     cfg: SharedConfig,
 ) -> Result<()> {
     stream.set_nodelay(true)?;
-    let (mut rd, mut wr) = stream.into_split();
+    let (rd, wr) = stream.into_split();
+    let (mut rd, mut wr) = (
+        vimora_core::secure::Reader::new(rd),
+        vimora_core::secure::Writer::new(wr),
+    );
 
     let identity = hub.lock().unwrap().identity.clone();
     let teacher_nonce = auth::nonce();
@@ -510,8 +558,11 @@ async fn session(
         },
     )
     .await?;
-    let first: StudentMsg =
-        tokio::time::timeout(Duration::from_secs(5), read_msg(&mut rd)).await??;
+    let first: StudentMsg = tokio::time::timeout(
+        Duration::from_secs(5),
+        read_msg_max(&mut rd, vimora_core::net::MAX_PRE_AUTH_FRAME),
+    )
+    .await??;
     // A computer removed from its teacher says "I am free": listed until a teacher adds it.
     if let StudentMsg::Free(info) = first {
         let mut h = hub.lock().unwrap();
@@ -543,6 +594,17 @@ async fn session(
         );
         bail!("version mismatch");
     }
+    // The student's half of the encrypted channel follows its hello at once. A student from
+    // before the channel existed sends nothing: it simply stays on the plain stream.
+    let student_eph: Option<[u8; 32]> = match tokio::time::timeout(
+        Duration::from_millis(1500),
+        read_msg_max::<_, StudentMsg>(&mut rd, vimora_core::net::MAX_PRE_AUTH_FRAME),
+    )
+    .await
+    {
+        Ok(Ok(StudentMsg::SecureOffer(e))) => e.try_into().ok(),
+        _ => None,
+    };
     // A computer the teacher removed from this teacher is not let back in (it stays free for
     // another teacher) until it is restored in the settings.
     let removed = cfg.read().unwrap().removed.contains(&info.key());
@@ -554,12 +616,14 @@ async fn session(
         {
             let payload = bincode::serialize(&vimora_core::PrivCommand::Unpair)?;
             let stream = thumb_stream(&cfg.read().unwrap());
-            write_msg(
+            welcome(
+                &mut rd,
                 &mut wr,
-                &TeacherMsg::Welcome {
-                    sig: identity.sign_welcome(&student_nonce, &teacher_nonce),
-                    stream,
-                },
+                &identity,
+                &student_nonce,
+                &teacher_nonce,
+                stream,
+                student_eph,
             )
             .await?;
             write_msg(
@@ -597,12 +661,14 @@ async fn session(
     // Any agent on the network may join; the agent checks *our* signature and refuses to
     // be controlled by a teacher other than the one it paired with.
     let stream_cfg = thumb_stream(&cfg.read().unwrap());
-    write_msg(
+    welcome(
+        &mut rd,
         &mut wr,
-        &TeacherMsg::Welcome {
-            sig: identity.sign_welcome(&student_nonce, &teacher_nonce),
-            stream: stream_cfg,
-        },
+        &identity,
+        &student_nonce,
+        &teacher_nonce,
+        stream_cfg,
+        student_eph,
     )
     .await?;
 
@@ -941,6 +1007,7 @@ async fn session(
                     }
                     h.repaint();
                 }
+                StudentMsg::SecureOffer(_) => {}
                 StudentMsg::Clipboard(data) => {
                     let label = info.label().to_string();
                     let res =

@@ -13,14 +13,22 @@ pub(super) async fn session(
         .await
         .context("connect timeout")??;
     stream.set_nodelay(true)?;
-    let (mut rd, mut wr) = stream.into_split();
+    let (rd, wr) = stream.into_split();
+    let (mut rd, mut wr) = (
+        vimora_core::secure::Reader::new(rd),
+        vimora_core::secure::Writer::new(wr),
+    );
 
     // --- handshake -------------------------------------------------------------------------
     let TeacherMsg::Hello {
         version,
         nonce: teacher_nonce,
         teacher_key,
-    } = tokio::time::timeout(Duration::from_secs(5), read_msg(&mut rd)).await??
+    } = tokio::time::timeout(
+        Duration::from_secs(5),
+        read_msg_max(&mut rd, vimora_core::net::MAX_PRE_AUTH_FRAME),
+    )
+    .await??
     else {
         bail!("unexpected first message");
     };
@@ -51,10 +59,18 @@ pub(super) async fn session(
         },
     )
     .await?;
+    // Our half of the encrypted channel. A teacher from before it existed skips this message.
+    let my_eph = vimora_core::secure::Ephemeral::new();
+    let my_pub = my_eph.public();
+    write_msg(&mut wr, &StudentMsg::SecureOffer(my_pub.to_vec())).await?;
     let TeacherMsg::Welcome {
         sig,
         stream: initial,
-    } = tokio::time::timeout(Duration::from_secs(5), read_msg(&mut rd)).await??
+    } = tokio::time::timeout(
+        Duration::from_secs(5),
+        read_msg_max(&mut rd, vimora_core::net::MAX_PRE_AUTH_FRAME),
+    )
+    .await??
     else {
         bail!("unexpected welcome");
     };
@@ -73,6 +89,44 @@ pub(super) async fn session(
     {
         Ok(IpcResp::Verified(true)) | Err(_) => {}
         Ok(_) => bail!("VIMORA xizmati bu o'qituvchini rad etdi (boshqa o'qituvchiga bog'langan)"),
+    }
+    // --- encrypted channel ---------------------------------------------------------------------
+    // The teacher's half arrives right after the welcome, signed over both halves.
+    let mut carry: Option<TeacherMsg> = None;
+    let mut secure = false;
+    match tokio::time::timeout(Duration::from_secs(3), read_msg::<_, TeacherMsg>(&mut rd)).await {
+        Ok(Ok(TeacherMsg::Secure { eph, sig })) => {
+            if !auth::verify_channel(
+                &teacher_key,
+                &student_nonce,
+                &teacher_nonce,
+                &eph,
+                &my_pub,
+                &sig,
+            ) {
+                bail!("kanal imzosi noto'g'ri — ulanish rad etildi");
+            }
+            let eph: [u8; 32] = eph
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("kanal kaliti noto'g'ri"))?;
+            let (send, recv) = my_eph
+                .finish(&eph, &eph, &my_pub, false)
+                .context("kanal kaliti yaroqsiz")?;
+            wr.upgrade(send);
+            rd.upgrade(recv);
+            secure = true;
+        }
+        // A teacher from before the channel existed: its first message is a normal one.
+        Ok(Ok(other)) => carry = Some(other),
+        Ok(Err(e)) if vimora_core::net::is_undecodable(&e) => {}
+        Ok(Err(e)) => return Err(e),
+        Err(_) => {}
+    }
+    if secure {
+        crate::config::set_secure_seen(&teacher_key);
+    } else if crate::config::secure_seen(&teacher_key) {
+        // This teacher spoke encrypted before: a plain session now means someone is in between.
+        bail!("shifrsiz ulanish rad etildi (o'qituvchi avval shifrlangan kanal ishlatgan)");
     }
     if pinned.is_none() {
         info!("paired with teacher {}", auth::fingerprint(&teacher_key));
@@ -184,11 +238,15 @@ pub(super) async fn session(
     // --- main read loop ----------------------------------------------------------------------
     let result: Result<()> = async {
         loop {
-            let msg: TeacherMsg = match tokio::select! {
-                r = tokio::time::timeout(Duration::from_secs(20), read_msg(&mut rd)) => {
-                    r.context("teacher timed out")?
+            let msg: TeacherMsg = match if let Some(m) = carry.take() {
+                Ok(m)
+            } else {
+                tokio::select! {
+                    r = tokio::time::timeout(Duration::from_secs(20), read_msg(&mut rd)) => {
+                        r.context("teacher timed out")?
+                    }
+                    _ = goodbye.notified() => bail!("o'qituvchidan ajratildi"),
                 }
-                _ = goodbye.notified() => bail!("o'qituvchidan ajratildi"),
             } {
                 Ok(m) => m,
                 // A newer teacher's message this agent doesn't know: skip it.
@@ -251,7 +309,9 @@ pub(super) async fn session(
                 } => {
                     let _ = ptx.send((counter, payload, sig));
                 }
-                TeacherMsg::Hello { .. } | TeacherMsg::Welcome { .. } => {}
+                TeacherMsg::Hello { .. }
+                | TeacherMsg::Welcome { .. }
+                | TeacherMsg::Secure { .. } => {}
             }
         }
     }

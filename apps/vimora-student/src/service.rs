@@ -313,7 +313,7 @@ async fn serve(pairing: Pairing) -> Result<()> {
         let (mut s, _) = listener.accept().await?;
         let (pairing, engine, session) = (pairing.clone(), engine.clone(), session.clone());
         tokio::spawn(async move {
-            let Ok(req) = read_msg::<_, IpcReq>(&mut s).await else {
+            let Ok(req) = vimora_core::net::read_msg_max::<_, IpcReq>(&mut s, 1 << 20).await else {
                 return;
             };
             let resp = handle(req, &pairing, &engine, &session).await;

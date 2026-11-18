@@ -64,6 +64,24 @@ impl Identity {
             payload,
         ])
     }
+
+    /// Signs the teacher's half of the channel key exchange together with the student's half
+    /// (see [`crate::secure`]): neither can be swapped by someone in the middle.
+    pub fn sign_channel(
+        &self,
+        student_nonce: &[u8],
+        teacher_nonce: &[u8],
+        teacher_eph: &[u8],
+        student_eph: &[u8],
+    ) -> Vec<u8> {
+        self.sign(&[
+            b"vimora-channel",
+            student_nonce,
+            teacher_nonce,
+            teacher_eph,
+            student_eph,
+        ])
+    }
 }
 
 fn message(parts: &[&[u8]]) -> Vec<u8> {
@@ -90,6 +108,27 @@ pub fn verify_welcome(
     sig: &[u8],
 ) -> bool {
     verify(key, &[b"vimora-welcome", student_nonce, teacher_nonce], sig)
+}
+
+pub fn verify_channel(
+    key: &TeacherKey,
+    student_nonce: &[u8],
+    teacher_nonce: &[u8],
+    teacher_eph: &[u8],
+    student_eph: &[u8],
+    sig: &[u8],
+) -> bool {
+    verify(
+        key,
+        &[
+            b"vimora-channel",
+            student_nonce,
+            teacher_nonce,
+            teacher_eph,
+            student_eph,
+        ],
+        sig,
+    )
 }
 
 pub fn verify_priv(

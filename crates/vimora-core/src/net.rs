@@ -46,13 +46,26 @@ pub fn is_undecodable(e: &anyhow::Error) -> bool {
     e.downcast_ref::<Undecodable>().is_some()
 }
 
+/// Largest frame accepted from a peer that has not proven who it is yet (handshake messages
+/// are tiny; the full limit would let anyone on the network make us allocate 128 MB).
+pub const MAX_PRE_AUTH_FRAME: usize = 64 * 1024;
+
 pub async fn read_msg<R, T>(r: &mut R) -> Result<T>
 where
     R: AsyncRead + Unpin,
     T: DeserializeOwned,
 {
+    read_msg_max(r, MAX_FRAME).await
+}
+
+/// [`read_msg`] with a smaller size limit (handshakes, local IPC).
+pub async fn read_msg_max<R, T>(r: &mut R, max: usize) -> Result<T>
+where
+    R: AsyncRead + Unpin,
+    T: DeserializeOwned,
+{
     let len = r.read_u32().await.context("connection closed")? as usize;
-    if len > MAX_FRAME {
+    if len > max.min(MAX_FRAME) {
         bail!("frame too large ({len} bytes)");
     }
     let mut buf = vec![0u8; len];

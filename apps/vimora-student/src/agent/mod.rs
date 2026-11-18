@@ -46,7 +46,7 @@ use session::*;
 use tasks::*;
 use vimora_core::{
     auth, capture, input,
-    net::{read_msg, write_msg},
+    net::{read_msg, read_msg_max, write_msg},
     Command, FreezeState, NetPolicy, PowerAction, PrivCommand, StreamConfig, StudentInfo,
     StudentMsg, StudentStatus, TeacherMsg, DISCOVERY_PORT, MIN_PROTOCOL_VERSION, PROTOCOL_VERSION,
 };
@@ -445,7 +445,7 @@ async fn free_mode(name: Option<String>) -> String {
 async fn say_free(addr: &str, info: StudentInfo) -> Result<()> {
     let stream = TcpStream::connect(addr).await?;
     let (mut rd, mut wr) = stream.into_split();
-    let _hello: TeacherMsg = read_msg(&mut rd).await?;
+    let _hello: TeacherMsg = read_msg_max(&mut rd, vimora_core::net::MAX_PRE_AUTH_FRAME).await?;
     write_msg(&mut wr, &StudentMsg::Free(info)).await?;
     Ok(())
 }

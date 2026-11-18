@@ -6,5 +6,6 @@ pub mod input;
 pub mod net;
 pub mod pin;
 pub mod protocol;
+pub mod secure;
 
 pub use protocol::*;

@@ -272,6 +272,12 @@ pub fn identity() -> vimora_core::auth::Identity {
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| Identity::from_hex(&s))
     {
+        // A key written by an older build may be readable by others: close it.
+        #[cfg(unix)]
+        if let Some(p) = &path {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o600));
+        }
         return id;
     }
     let id = Identity::generate();
@@ -279,12 +285,17 @@ pub fn identity() -> vimora_core::auth::Identity {
         if let Some(d) = p.parent() {
             let _ = std::fs::create_dir_all(d);
         }
-        if std::fs::write(p, id.to_hex()).is_ok() {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o600));
-            }
+        // Created private from the start (no moment when others could read it).
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        if let Ok(mut f) = opts.open(p) {
+            use std::io::Write;
+            let _ = f.write_all(id.to_hex().as_bytes());
         }
     }
     id

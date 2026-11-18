@@ -58,7 +58,32 @@ pub fn save_pin(key: &vimora_core::auth::TeacherKey) {
     }
 }
 
+/// Set once an encrypted session with the pinned teacher worked. From then on this PC refuses a
+/// plain session with it, so nobody in the middle can strip the encryption off (downgrade).
+fn secure_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join("vimora").join("secure-teacher"))
+}
+
+pub fn secure_seen(key: &vimora_core::auth::TeacherKey) -> bool {
+    secure_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| vimora_core::auth::key_from_hex(&s))
+        .is_some_and(|k| &k == key)
+}
+
+pub fn set_secure_seen(key: &vimora_core::auth::TeacherKey) {
+    if let Some(p) = secure_path() {
+        if let Some(d) = p.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        let _ = std::fs::write(p, vimora_core::auth::to_hex(key));
+    }
+}
+
 pub fn forget_pin() -> std::io::Result<()> {
+    if let Some(p) = secure_path() {
+        let _ = std::fs::remove_file(p);
+    }
     match pin_path() {
         Some(p) if p.exists() => std::fs::remove_file(p),
         _ => Ok(()),

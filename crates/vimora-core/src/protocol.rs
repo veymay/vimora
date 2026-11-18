@@ -649,6 +649,13 @@ pub enum TeacherMsg {
         sig: Vec<u8>,
     },
     Ping,
+    // Append-only.
+    /// The teacher's half of the encrypted channel (see [`crate::secure`]): its ephemeral key
+    /// and a signature over both halves and both nonces. Everything after it is encrypted.
+    Secure {
+        eph: Vec<u8>,
+        sig: Vec<u8>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -716,6 +723,9 @@ pub enum StudentMsg {
     Updates(UpdatesInfo),
     /// Something the student copied (only while the teacher watches this computer live).
     Clipboard(ClipData),
+    /// The student's half of the encrypted channel: its ephemeral public key, sent right after
+    /// `Hello`. A teacher that does not know it skips it and the session stays plain.
+    SecureOffer(Vec<u8>),
 }
 
 /// What is on a clipboard: text, a picture (PNG) or files (name, content).
@@ -779,6 +789,17 @@ mod wire_tests {
     /// New variants may only be appended.
     #[test]
     fn variant_indices_never_move() {
+        assert_eq!(
+            tag(&TeacherMsg::Secure {
+                eph: vec![],
+                sig: vec![]
+            }),
+            tag(&TeacherMsg::Ping) + 1
+        );
+        assert_eq!(
+            tag(&StudentMsg::SecureOffer(vec![])),
+            tag(&StudentMsg::Clipboard(ClipData::Text(String::new()))) + 1
+        );
         assert_eq!(tag(&PrivCommand::ListApps), 7);
         assert_eq!(tag(&PrivCommand::SetAppUpdates(vec![])), 8);
         assert_eq!(tag(&PrivCommand::SetPersistentFolders(vec![])), 9);
