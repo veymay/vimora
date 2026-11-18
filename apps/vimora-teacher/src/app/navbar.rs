@@ -487,6 +487,50 @@ impl TeacherApp {
                             .request_repaint_after(std::time::Duration::from_secs(5));
                     }
 
+                    // Unfinished processes: a spinner and how many; a click opens the details.
+                    let latest = match self.updater.phase() {
+                        crate::update::Phase::Available(r) => r.version,
+                        _ => vimora_update::current().to_string(),
+                    };
+                    let jobs = super::forms::collect_jobs(all, &self.hub, &latest);
+                    if !jobs.is_empty() {
+                        ui.add_space(12.0);
+                        let label = tf!("{n} ta jarayon", n = jobs.len());
+                        let g = ui.painter().layout_no_wrap(
+                            label,
+                            FontId::proportional(12.5),
+                            p.accent_ink,
+                        );
+                        let (jr, jresp) = ui.allocate_exact_size(
+                            vec2(g.size().x + 30.0, STATUS_H),
+                            Sense::click(),
+                        );
+                        if jresp.hovered() {
+                            ui.painter().rect_filled(jr, Rounding::ZERO, p.hover);
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        egui::Spinner::new().size(13.0).color(p.accent).paint_at(
+                            ui,
+                            Rect::from_center_size(
+                                pos2(jr.left() + 14.0, jr.center().y),
+                                vec2(13.0, 13.0),
+                            ),
+                        );
+                        ui.painter().galley(
+                            pos2(jr.left() + 26.0, jr.center().y - g.size().y / 2.0),
+                            g,
+                            p.accent_ink,
+                        );
+                        ui.ctx()
+                            .request_repaint_after(std::time::Duration::from_millis(100));
+                        if jresp
+                            .tip(tr("Tugallanmagan jarayonlar: batafsil ko'rish uchun bosing"))
+                            .clicked()
+                        {
+                            self.open_dialog(Dialog::Jobs);
+                        }
+                    }
+
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = BTN_GAP;
 

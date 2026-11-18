@@ -117,6 +117,8 @@ pub(super) enum Dialog {
     },
     /// Event log (drawer, no footer).
     Activity,
+    /// Unfinished processes (updates, installs, freezes) on the computers.
+    Jobs,
     Rename {
         id: u64,
         key: String,

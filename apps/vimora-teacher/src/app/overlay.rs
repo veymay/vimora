@@ -382,6 +382,7 @@ impl TeacherApp {
             Dialog::Room { rename: None, .. } => (tr("Yangi xona"), 440.0),
             Dialog::Room { .. } => (tr("Xona nomini o'zgartirish"), 440.0),
             Dialog::Activity => (tr("Faollik"), 440.0),
+            Dialog::Jobs => (tr("Jarayonlar"), 440.0),
             Dialog::Freeze { .. } => (tr("Muzlatish"), 520.0),
             Dialog::Rename { .. } => (tr("Nomini o'zgartirish"), 460.0),
             Dialog::Updates { .. } => (tr("Yangilanishlar"), 600.0),
@@ -401,6 +402,7 @@ impl TeacherApp {
             Dialog::Freeze { .. }
                 | Dialog::Room { .. }
                 | Dialog::Activity
+                | Dialog::Jobs
                 | Dialog::Rename { .. }
                 | Dialog::Message { .. }
                 | Dialog::Machine { .. }
@@ -424,6 +426,7 @@ impl TeacherApp {
             Dialog::Settings(_) => icons::SETTINGS,
             Dialog::Room { .. } => icons::LAYOUT_GRID,
             Dialog::Activity => icons::BELL,
+            Dialog::Jobs => icons::REFRESH_CW,
             Dialog::Freeze { .. } => icons::SNOWFLAKE,
             Dialog::Rename { .. } => icons::SETTINGS,
             Dialog::Updates { .. } => icons::DOWNLOAD,
@@ -547,6 +550,7 @@ impl TeacherApp {
                 let has_footer = !matches!(
                     dialog,
                     Dialog::Activity
+                        | Dialog::Jobs
                         | Dialog::Message { .. }
                         | Dialog::Settings(_)
                         | Dialog::Freeze { .. }
@@ -1608,7 +1612,7 @@ impl TeacherApp {
                 self.save_room(name, rename);
                 return;
             }
-            Dialog::Activity => return,
+            Dialog::Activity | Dialog::Jobs => return,
             Dialog::Freeze { .. }
             | Dialog::Machine { .. }
             | Dialog::Lesson(_)

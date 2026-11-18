@@ -113,6 +113,140 @@ pub(super) fn activity_body(
     }
 }
 
+/// One unfinished process on one computer.
+pub(super) struct Job {
+    pub(super) computer: String,
+    pub(super) text: String,
+    pub(super) pct: Option<f32>,
+    pub(super) icon: &'static str,
+}
+
+/// Everything still running on the computers: what they report as busy (updates, installs),
+/// the VIMORA update the teacher started, and a freeze being switched on or off.
+pub(super) fn collect_jobs(all: &[View], hub: &SharedHub, latest: &str) -> Vec<Job> {
+    let h = hub.lock().unwrap();
+    let mut out = vec![];
+    for v in all.iter().filter(|v| v.online) {
+        if let Some(b) = &v.status.busy {
+            out.push(Job {
+                computer: v.label.clone(),
+                text: b.clone(),
+                pct: percent_of(b),
+                icon: icons::DOWNLOAD,
+            });
+        } else if let Some(j) = h.vimora_jobs.get(&v.key) {
+            let behind = v.version.is_empty() || vimora_update::is_newer(latest, &v.version);
+            if j.failed.is_none() && behind && j.at.elapsed() < std::time::Duration::from_secs(150)
+            {
+                out.push(Job {
+                    computer: v.label.clone(),
+                    text: tr("VIMORA yangilanmoqda").to_string(),
+                    pct: None,
+                    icon: icons::CLOUD_DOWNLOAD,
+                });
+            }
+        }
+        match v.status.freeze {
+            FreezeState::FreezePending => out.push(Job {
+                computer: v.label.clone(),
+                text: tr("Muzlatish yoqilmoqda").to_string(),
+                pct: None,
+                icon: icons::SNOWFLAKE,
+            }),
+            FreezeState::ThawPending => out.push(Job {
+                computer: v.label.clone(),
+                text: tr("Muzlatish o'chmoqda").to_string(),
+                pct: None,
+                icon: icons::SUN_SNOW,
+            }),
+            _ => {}
+        }
+        if v.status.queued > 0 {
+            out.push(Job {
+                computer: v.label.clone(),
+                text: tf!("Navbatda: {n} ta vazifa", n = v.status.queued),
+                pct: None,
+                icon: icons::LIST,
+            });
+        }
+    }
+    out
+}
+
+/// The Jobs drawer: one row per unfinished process, with its spinner or bar.
+fn jobs_body(ui: &mut egui::Ui, p: &Palette, all: &[View], hub: &SharedHub, latest: &str) {
+    let jobs = collect_jobs(all, hub, latest);
+    if jobs.is_empty() {
+        ui.add_space(12.0);
+        ui.vertical_centered(|ui| {
+            ui.label(
+                RichText::new(icons::CIRCLE_CHECK)
+                    .size(30.0)
+                    .color(p.success),
+            );
+            ui.add_space(6.0);
+            ui_kit::hud(ui, tr("Tugallanmagan jarayon yo'q"), p.faint);
+        });
+        return;
+    }
+    ui.ctx()
+        .request_repaint_after(std::time::Duration::from_millis(500));
+    let w = ui.available_width();
+    Frame::none()
+        .stroke(Stroke::new(1.0_f32, p.line))
+        .show(ui, |ui| {
+            ui.set_width(w);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for (i, j) in jobs.iter().enumerate() {
+                let (r, _) =
+                    ui.allocate_exact_size(vec2(ui.available_width(), 58.0), Sense::hover());
+                if i > 0 {
+                    ui.painter()
+                        .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
+                }
+                ui.painter().text(
+                    pos2(r.left() + 22.0, r.center().y),
+                    Align2::CENTER_CENTER,
+                    j.icon,
+                    FontId::proportional(18.0),
+                    p.accent,
+                );
+                let g = ui_kit::truncated(
+                    ui,
+                    &j.computer,
+                    FontId::new(13.5, ui_kit::bold()),
+                    p.strong,
+                    r.width() - 60.0,
+                );
+                ui.painter()
+                    .galley(pos2(r.left() + 44.0, r.top() + 10.0), g, p.strong);
+                let sub = Rect::from_min_max(
+                    pos2(r.left() + 44.0, r.top() + 30.0),
+                    pos2(r.right() - 12.0, r.bottom() - 4.0),
+                );
+                let state = match j.pct {
+                    Some(pct) => ui_kit::Progress::Percent(pct),
+                    None => ui_kit::Progress::Waiting(&j.text),
+                };
+                ui_kit::progress(ui, sub, state);
+                if let Some(pct) = j.pct {
+                    // The words next to the bar (which program, how many are left).
+                    let t = j.text.split(" (").next().unwrap_or(&j.text);
+                    let _ = pct;
+                    let g = ui_kit::truncated(
+                        ui,
+                        t,
+                        FontId::proportional(11.5),
+                        p.muted,
+                        r.width() - 60.0,
+                    );
+                    ui.painter()
+                        .galley(pos2(r.left() + 44.0 + 6.0, r.bottom() - 4.0), g, p.muted);
+                }
+            }
+        });
+}
+
 /// Body of every modal / drawer.
 /// Read-only context the forms need besides the dialog itself.
 pub(super) struct FormCtx<'a> {
@@ -149,6 +283,7 @@ pub(super) fn dialog_body(
     };
     match dialog {
         Dialog::Activity => activity_body(ui, p, hub, all, clear_help),
+        Dialog::Jobs => jobs_body(ui, p, all, hub, cx.latest),
         Dialog::Freeze {
             tab,
             chosen,
@@ -1364,7 +1499,7 @@ fn sgroup(ui: &mut egui::Ui, p: &Palette, add: impl FnOnce(&mut egui::Ui)) {
 }
 
 /// "…45%" at the end of a status line → 45.
-fn percent_of(s: &str) -> Option<f32> {
+pub(super) fn percent_of(s: &str) -> Option<f32> {
     s.strip_suffix('%')
         .and_then(|s| s.rsplit(' ').next())
         .and_then(|n| n.parse::<f32>().ok())
