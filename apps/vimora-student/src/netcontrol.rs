@@ -79,18 +79,28 @@ pub struct NetControl {
 pub fn clean_domain(d: &str) -> Option<String> {
     let d = d.trim().to_lowercase();
     let d = d.split("://").last().unwrap_or(&d);
-    let d = d
-        .split(['/', '?', '#'])
-        .next()
-        .unwrap_or("")
-        .trim_start_matches("*.")
-        .trim_start_matches("www.")
-        .to_string();
-    (!d.is_empty()
-        && d.contains('.')
-        && d.chars()
+    // "host" or "host/path": a path rule ("yandex.com/games") blocks only that part of a site
+    // (browsers only: the hosts file cannot tell paths apart).
+    let d = d.split(['?', '#']).next().unwrap_or("");
+    let (host, path) = d.split_once('/').unwrap_or((d, ""));
+    let host = host.trim_start_matches("*.").trim_start_matches("www.");
+    let path = path.trim_matches('/');
+    let path_ok = path
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "-_./~%".contains(c));
+    (!host.is_empty()
+        && host.contains('.')
+        && path_ok
+        && host
+            .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-'))
-    .then_some(d)
+    .then(|| {
+        if path.is_empty() {
+            host.to_string()
+        } else {
+            format!("{host}/{path}")
+        }
+    })
 }
 
 /// Lower-cases and unifies apostrophes so "o‘zbek", "oʻzbek" and "o'zbek" match.
@@ -245,7 +255,8 @@ impl NetControl {
         }
         let mut out = format!("{BEGIN}\n");
         let mut blocked = std::collections::HashSet::new();
-        for d in &p.domains {
+        // Whole sites only: a path rule cannot be written to the hosts file.
+        for d in p.domains.iter().filter(|d| !d.contains('/')) {
             for h in [d.clone(), format!("www.{d}"), format!("m.{d}")] {
                 out.push_str(&format!("0.0.0.0 {h}\n"));
                 blocked.insert(h);
@@ -428,6 +439,24 @@ fn set_browser_policies(p: &NetPolicy, allow: &[String]) -> Result<usize> {
             text.push_str("\r\n");
         }
     }
+    // Firefox: its own website filter (match patterns), same lists.
+    {
+        let fx = r"HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Mozilla\Firefox\WebsiteFilter";
+        text.push_str(&format!("[-{fx}]\r\n\r\n"));
+        if !p.domains.is_empty() {
+            text.push_str(&format!("[{fx}\\Block]\r\n"));
+            let mut i = 0;
+            for d in &p.domains {
+                i += 1;
+                let pattern = match d.split_once('/') {
+                    Some((h, path)) => format!("*://*.{h}/{path}*"),
+                    None => format!("*://*.{d}/*"),
+                };
+                text.push_str(&format!("\"{i}\"=\"{}\"\r\n", esc(&pattern)));
+            }
+            text.push_str("\r\n");
+        }
+    }
     // UTF-16 with a byte-order mark, as reg.exe reads it.
     let mut bytes: Vec<u8> = vec![0xFF, 0xFE];
     for u in text.encode_utf16() {
@@ -605,9 +634,15 @@ mod tests {
     #[test]
     fn domains() {
         assert_eq!(
-            clean_domain("https://www.YouTube.com/watch?v=1").as_deref(),
+            clean_domain("https://www.YouTube.com/").as_deref(),
             Some("youtube.com")
         );
+        // A path is kept: only that part of the site is blocked (browsers).
+        assert_eq!(
+            clean_domain("https://yandex.com/games/?lang=uz").as_deref(),
+            Some("yandex.com/games")
+        );
+        assert_eq!(clean_domain("bad.com/pa th"), None);
         assert_eq!(clean_domain("*.tiktok.com").as_deref(), Some("tiktok.com"));
         assert_eq!(clean_domain("bad domain"), None);
         assert_eq!(clean_domain("localhost"), None);

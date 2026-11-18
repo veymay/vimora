@@ -2595,7 +2595,8 @@ fn categories(
             ui.spacing_mut().item_spacing.y = 0.0;
             for (i, cat) in cats.iter_mut().enumerate() {
                 let def = crate::blockcat::def(defs, &cat.id);
-                let name = def.map_or(cat.name.as_str(), |d| tr(d.name));
+                let name_owned: String = def.map_or(cat.name.as_str(), |d| tr(d.name)).to_string();
+                let name = name_owned.as_str();
                 let icon = def.map_or(icons::FILE_TEXT, |d| d.icon);
                 let n_on = cat.blocked().len();
                 let expanded = open.as_deref() == Some(cat.id.as_str());
@@ -2761,6 +2762,75 @@ fn categories(
                             });
                     },
                 );
+                // Sticky name: while this category's items scroll under the top edge, its row
+                // stays there (pushed away again when its last item leaves).
+                if expanded {
+                    let body_bottom = ui.cursor().top();
+                    let clip = ui.clip_rect();
+                    if rect.top() < clip.top() && body_bottom > clip.top() + 6.0 {
+                        let y = clip.top().min(body_bottom - row_h);
+                        let sticky = egui::Rect::from_min_size(
+                            pos2(rect.left(), y),
+                            vec2(rect.width(), row_h),
+                        );
+                        let hit = ui.interact(
+                            sticky,
+                            egui::Id::new(("cat-sticky", cat.id.clone())),
+                            Sense::click(),
+                        );
+                        let painter = ui.painter().with_clip_rect(clip);
+                        painter.rect_filled(sticky, egui::Rounding::ZERO, p.card);
+                        painter.hline(
+                            sticky.x_range(),
+                            sticky.bottom() - 0.5,
+                            Stroke::new(1.0_f32, p.line_strong),
+                        );
+                        painter.rect_filled(
+                            egui::Rect::from_min_size(sticky.min, vec2(3.0, row_h)),
+                            egui::Rounding::ZERO,
+                            p.accent,
+                        );
+                        painter.text(
+                            pos2(sticky.left() + 24.0, sticky.center().y),
+                            Align2::CENTER_CENTER,
+                            icons::CHEVRON_DOWN,
+                            FontId::proportional(15.0),
+                            p.muted,
+                        );
+                        painter.text(
+                            pos2(sticky.left() + 50.0, sticky.center().y),
+                            Align2::CENTER_CENTER,
+                            icon,
+                            FontId::proportional(17.0),
+                            p.accent,
+                        );
+                        let g = ui_kit::truncated(
+                            ui,
+                            &name_owned,
+                            FontId::new(14.0, ui_kit::bold()),
+                            p.strong,
+                            sticky.width() - 200.0,
+                        );
+                        painter.galley(
+                            pos2(sticky.left() + 66.0, sticky.center().y - g.size().y / 2.0),
+                            g,
+                            p.strong,
+                        );
+                        painter.text(
+                            pos2(sticky.right() - 16.0, sticky.center().y),
+                            Align2::RIGHT_CENTER,
+                            format!("{} / {}", cat.blocked().len(), cat.items.len()),
+                            FontId::new(12.0, ui_kit::mono()),
+                            p.muted,
+                        );
+                        if hit.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        if hit.clicked() {
+                            *open = None;
+                        }
+                    }
+                }
             }
         });
     if let Some(i) = remove {

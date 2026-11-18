@@ -656,13 +656,19 @@ impl TeacherApp {
                         0.0
                     };
                     ui.add_space(gap);
-                    egui::ScrollArea::vertical()
+                    let mut area = egui::ScrollArea::vertical()
                         .min_scrolled_height(body_max - gap)
-                        .max_height(body_max - gap)
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            body(ui, dialog, &mut confirm, &mut clear_help);
-                        });
+                        .max_height(body_max - gap);
+                    // Dev aid: VIMORA_SCROLL=<points> starts scrolled (screenshots).
+                    if let Some(off) = std::env::var("VIMORA_SCROLL")
+                        .ok()
+                        .and_then(|v| v.parse::<f32>().ok())
+                    {
+                        area = area.vertical_scroll_offset(off);
+                    }
+                    area.auto_shrink([false, false]).show(ui, |ui| {
+                        body(ui, dialog, &mut confirm, &mut clear_help);
+                    });
                 } else {
                     egui::ScrollArea::vertical()
                         .max_height(body_max)
