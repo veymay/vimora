@@ -217,6 +217,8 @@ impl NetControl {
                 "DnsOverHttpsMode",
                 "ForceGoogleSafeSearch",
                 "ForceYouTubeRestrict",
+                "GeminiSettings",
+                "AIModeSettings",
             ] {
                 t.registry.push((key.to_string(), v.to_string()));
             }
@@ -382,6 +384,8 @@ fn set_browser_policies(p: &NetPolicy, allow: &[String]) -> Result<usize> {
             "ForceGoogleSafeSearch": p.safe_search,
             "ForceYouTubeRestrict": if p.safe_search { 1 } else { 0 },
             "DnsOverHttpsMode": "off",
+            "GeminiSettings": 1,
+            "AIModeSettings": 1,
         });
         if std::fs::write(&file, serde_json::to_string_pretty(&json)?).is_ok() {
             n += 1;
@@ -409,12 +413,16 @@ fn set_browser_policies(p: &NetPolicy, allow: &[String]) -> Result<usize> {
                 "ForceGoogleSafeSearch",
                 "ForceYouTubeRestrict",
                 "DnsOverHttpsMode",
+                "GeminiSettings",
+                "AIModeSettings",
             ] {
                 text.push_str(&format!("\"{v}\"=-\r\n"));
             }
         } else {
             let safe = if p.safe_search { 1 } else { 0 };
             text.push_str("\"DnsOverHttpsMode\"=\"off\"\r\n");
+            text.push_str("\"GeminiSettings\"=dword:00000001\r\n");
+            text.push_str("\"AIModeSettings\"=dword:00000001\r\n");
             text.push_str(&format!("\"ForceGoogleSafeSearch\"=dword:{safe:08x}\r\n"));
             text.push_str(&format!("\"ForceYouTubeRestrict\"=dword:{safe:08x}\r\n"));
         }
