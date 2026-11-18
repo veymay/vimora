@@ -929,6 +929,50 @@ pub fn logo_rgba(size: u32) -> (u32, u32, Vec<u8>) {
     (img.width(), img.height(), img.into_raw())
 }
 
+/// The mark as one shape: white pixels whose opacity is how much of the mark's own green is there
+/// (the lighter and darker details inside it become holes). Tinted with any single colour it
+/// reads as a plain glyph next to text of that colour.
+pub fn logo_mono_rgba(size: u32) -> (u32, u32, Vec<u8>) {
+    let (w, h, mut px) = logo_rgba(size);
+    for p in px.as_chunks_mut::<4>().0 {
+        let green = ((p[1] as f32 - p[0] as f32) / 61.0).clamp(0.0, 1.0);
+        let a = (p[3] as f32 * green).round() as u8;
+        *p = [255, 255, 255, a];
+    }
+    (w, h, px)
+}
+
+/// The mark in one colour (the lock screens: the same colour as the name beside it).
+pub fn logo_mono(painter: &egui::Painter, rect: Rect, color: Color32) {
+    let ctx = painter.ctx();
+    let px = (rect.width() * ctx.pixels_per_point()).ceil().max(1.0) as u32;
+    let (n, _) = LOGOS
+        .iter()
+        .map(|(n, _)| (*n, ()))
+        .find(|(n, _)| *n >= px)
+        .unwrap_or((512, ()));
+    let id = egui::Id::new(("vimora-logo-mono-texture", n));
+    let tex: egui::TextureHandle = match ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
+        Some(t) => t,
+        None => {
+            let (w, h, pixels) = logo_mono_rgba(n);
+            let t = ctx.load_texture(
+                format!("vimora-logo-mono-{n}"),
+                egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &pixels),
+                egui::TextureOptions::LINEAR,
+            );
+            ctx.data_mut(|d| d.insert_temp(id, t.clone()));
+            t
+        }
+    };
+    painter.image(
+        tex.id(),
+        rect,
+        Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+        color,
+    );
+}
+
 /// Space between the brand mark and the name next to it: the same share of the mark's size
 /// everywhere (lock screen, teacher's top bar, windows).
 pub fn logo_gap(size: f32) -> f32 {

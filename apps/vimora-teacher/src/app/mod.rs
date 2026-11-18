@@ -157,6 +157,7 @@ impl TeacherApp {
             }
         };
         ui_kit::install_fonts(&cc.egui_ctx);
+        cc.egui_ctx.set_zoom_factor(crate::UI_SCALE);
         ui_kit::apply_theme(&cc.egui_ctx, theme);
         // We implement Ctrl +/-/0 and Ctrl+wheel ourselves (grid zoom, not UI scale).
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);

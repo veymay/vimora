@@ -18,7 +18,10 @@ mod wayland_cast;
 use std::sync::{Arc, Mutex, RwLock};
 
 /// The window has exactly this size and can't be resized; only fullscreen (F11) changes it.
-pub const MIN_WINDOW: [f32; 2] = [1120.0, 700.0];
+/// Everything in the teacher is drawn a little larger (this much); the window grows by the same
+/// factor, so the layout area stays 1120 × 700.
+pub const UI_SCALE: f32 = 1.06;
+pub const MIN_WINDOW: [f32; 2] = [1120.0 * UI_SCALE, 700.0 * UI_SCALE];
 
 fn main() -> eframe::Result<()> {
     // Ubuntu Wayland: a native Wayland window can't be un-minimized or focused by the app, so the

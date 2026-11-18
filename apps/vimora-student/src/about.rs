@@ -10,11 +10,11 @@
 
 use crate::service::{IpcReq, IpcResp};
 use crate::smallwin;
-use eframe::egui::{self, pos2, vec2, Align2, FontId, Rect, Stroke};
+use eframe::egui::{self, pos2, vec2, Align2, FontId, Rect};
 use std::sync::{Arc, Mutex};
 use vimora_ui::{icons, Kind, Progress};
 
-const SIZE: [f32; 2] = [400.0, 480.0];
+const SIZE: [f32; 2] = [400.0, 440.0];
 
 fn t(lang: &str, key: &str) -> &'static str {
     match (key, lang) {
@@ -206,28 +206,6 @@ impl eframe::App for About {
                 .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(8));
         ctx.request_repaint_after(std::time::Duration::from_millis(500));
 
-        // The bar at the bottom, like a status bar: a line above it and "Chiqish" at the right.
-        egui::TopBottomPanel::bottom("bar")
-            .exact_height(smallwin::FOOTER_H)
-            .frame(egui::Frame::none().fill(p.panel))
-            .show(ctx, |ui| {
-                let r = ui.max_rect();
-                ui.painter()
-                    .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
-                // One button: the whole width inside the same padding on every side.
-                let w = r.width() - 2.0 * smallwin::PAD;
-                let mut inner = ui.new_child(
-                    egui::UiBuilder::new()
-                        .max_rect(r.shrink(smallwin::PAD))
-                        .layout(egui::Layout::top_down(egui::Align::Center)),
-                );
-                if vimora_ui::button_w(&mut inner, Some(icons::X), t(l, "exit"), Kind::Cancel, w)
-                    .clicked()
-                {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-            });
-
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(p.bg))
             .show(ctx, |ui| {
@@ -296,7 +274,7 @@ impl About {
         let r = ui.max_rect();
         let cx = r.center().x;
         // The whole block sits in the middle of the area (the same room above and below).
-        const BLOCK_H: f32 = 330.0;
+        const BLOCK_H: f32 = 340.0;
         let mut y = r.top() + ((r.height() - BLOCK_H) / 2.0).max(8.0);
         // Logo, then the name under it (the brand face, capitals).
         let logo = Rect::from_center_size(pos2(cx, y + 44.0), vec2(88.0, 88.0));

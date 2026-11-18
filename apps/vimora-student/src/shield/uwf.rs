@@ -277,19 +277,22 @@ impl Uwf {
             files.push(dir);
         }
         // Each user's Vimora settings (%APPDATA%\vimora: pairing, program lists, sound) and the
-        // files the teacher sent (Downloads\Vimora).
+        // "Files" folder on their Desktop (what the teacher sent): the only thing on the Desktop
+        // that stays after a restart.
         if let Ok(users) = std::fs::read_dir(format!("{}\\Users", system_drive())) {
             for u in users.flatten() {
                 let roaming = u.path().join("AppData").join("Roaming");
                 if roaming.is_dir() {
                     files.push(roaming.join("vimora").to_string_lossy().into_owned());
-                    files.push(
-                        u.path()
-                            .join("Downloads")
-                            .join("Vimora")
-                            .to_string_lossy()
-                            .into_owned(),
-                    );
+                    // The Desktop may live in OneDrive.
+                    for desktop in [
+                        u.path().join("Desktop"),
+                        u.path().join("OneDrive").join("Desktop"),
+                    ] {
+                        if desktop.is_dir() {
+                            files.push(desktop.join("Files").to_string_lossy().into_owned());
+                        }
+                    }
                 }
             }
         }

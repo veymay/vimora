@@ -8,8 +8,6 @@ use vimora_ui::icons;
 /// teacher's windows).
 pub const PAD: f32 = 16.0;
 pub const TITLE_H: f32 = 24.0 + 2.0 * PAD;
-/// A footer holding one row of buttons.
-pub const FOOTER_H: f32 = 34.0 + 2.0 * PAD;
 
 /// The window / taskbar icon: the app icon (the dark tile with the mark), not egui's default.
 pub fn icon() -> std::sync::Arc<egui::IconData> {

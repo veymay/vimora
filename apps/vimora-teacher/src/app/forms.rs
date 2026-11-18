@@ -269,7 +269,7 @@ pub(super) fn dialog_body(
             );
             ui.label(
                 RichText::new(tr(
-                    "O'quvchi kompyuterida VIMORA papkasidagi Files ichiga saqlanadi.",
+                    "O'quvchi kompyuterida Ish stolidagi Files papkasiga saqlanadi.",
                 ))
                 .size(12.5)
                 .color(p.faint),

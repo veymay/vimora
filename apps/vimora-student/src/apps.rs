@@ -17,6 +17,10 @@ pub fn list(prefs: &BTreeMap<String, bool>) -> Result<Vec<AppInfo>> {
     let mut apps = imp::list()?;
     for a in &mut apps {
         a.updates = prefs.get(&a.id).copied().unwrap_or(true);
+        // Updates switched off: no "new version" is shown or counted for it any more.
+        if !a.updates {
+            a.available = None;
+        }
     }
     apps.sort_by_key(|a| a.name.to_lowercase());
     Ok(apps)

@@ -140,23 +140,25 @@ unsafe fn circle(hdc: HDC, x: i32, y: i32, r: i32, c: egui::Color32) {
 
 /// The brand mark (`vimora_ui::logo_rgba`) in the square starting at (x, y), blended with its
 /// own transparency. The scaled picture is kept for the next paint.
-unsafe fn logo(hdc: HDC, x: i32, y: i32, size: i32) {
+unsafe fn logo(hdc: HDC, x: i32, y: i32, size: i32, color: egui::Color32) {
     use std::sync::Mutex;
-    static CACHE: Mutex<Option<(u32, Vec<u8>)>> = Mutex::new(None);
+    type Cached = (u32, [u8; 3], Vec<u8>);
+    static CACHE: Mutex<Option<Cached>> = Mutex::new(None);
     let size = size.max(1) as u32;
+    let tint = [color.r(), color.g(), color.b()];
     let mut cache = CACHE.lock().unwrap();
-    if cache.as_ref().map(|c| c.0) != Some(size) {
-        let (_, _, rgba) = vimora_ui::logo_rgba(size);
-        // GDI wants premultiplied BGRA.
+    if cache.as_ref().map(|c| (c.0, c.1)) != Some((size, tint)) {
+        // One colour (the same as the name beside it); GDI wants premultiplied BGRA.
+        let (_, _, rgba) = vimora_ui::logo_mono_rgba(size);
         let mut bgra = Vec::with_capacity(rgba.len());
         for px in rgba.as_chunks::<4>().0 {
             let a = px[3] as u32;
             let m = |c: u8| ((c as u32 * a + 127) / 255) as u8;
-            bgra.extend_from_slice(&[m(px[2]), m(px[1]), m(px[0]), px[3]]);
+            bgra.extend_from_slice(&[m(tint[2]), m(tint[1]), m(tint[0]), px[3]]);
         }
-        *cache = Some((size, bgra));
+        *cache = Some((size, tint, bgra));
     }
-    let Some((_, bgra)) = cache.as_ref() else {
+    let Some((_, _, bgra)) = cache.as_ref() else {
         return;
     };
     let mut bi: BITMAPINFO = std::mem::zeroed();
@@ -407,7 +409,13 @@ unsafe fn paint(hwnd: HWND, st: &mut State) {
 
             // Brand and clock: always there, the logo and the clock the same height.
             let small = font(22.0 * s, false, "Days One");
-            logo(dc, (48.0 * s) as i32, (40.0 * s) as i32, (40.0 * s) as i32);
+            logo(
+                dc,
+                (48.0 * s) as i32,
+                (40.0 * s) as i32,
+                (40.0 * s) as i32,
+                p.muted,
+            );
             text(
                 dc,
                 "VIMORA",

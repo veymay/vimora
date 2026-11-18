@@ -275,6 +275,16 @@ impl TeacherApp {
                         g,
                         p.faint,
                     );
+                    // Waiting: a spinner under the words.
+                    egui::Spinner::new().size(18.0).color(p.accent).paint_at(
+                        ui,
+                        Rect::from_center_size(
+                            pos2(area.center().x, area.center().y + 48.0),
+                            vec2(18.0, 18.0),
+                        ),
+                    );
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(60));
                     return;
                 };
                 let s = tex.size_vec2();

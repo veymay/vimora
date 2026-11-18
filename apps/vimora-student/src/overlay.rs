@@ -504,7 +504,8 @@ fn lock_screen(ui: &mut egui::Ui, title: &str, message: &str, v: &LockView) {
     // Brand (top left) and clock (top right): always there, the logo and the clock the same
     // height.
     let logo = Rect::from_min_size(rect.left_top() + vec2(48.0, 40.0), vec2(40.0, 40.0));
-    vimora_ui::logo(painter, logo);
+    // The mark and the name in one colour.
+    vimora_ui::logo_mono(painter, logo, p.muted.gamma_multiply(fade));
     painter.text(
         pos2(logo.right() + vimora_ui::logo_gap(40.0), logo.center().y),
         Align2::LEFT_CENTER,

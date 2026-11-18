@@ -297,7 +297,7 @@ pub static ROWS: &[Row] = &[
     ("O'quvchi", "Student", "Ученик"),
     ("O'quvchi ekranining yuqori o'ng burchagida maqsad va qolgan vaqt ko'rinadi.", "The goal and the time left appear in the top right corner of the student's screen.", "Цель и оставшееся время видны в правом верхнем углу экрана ученика."),
     ("O'quvchiga \"Ofarin!\" xabari boradi", "The student gets a \"Well done!\" message", "Ученик получит сообщение «Молодец!»"),
-    ("O'quvchi kompyuterida VIMORA papkasidagi Files ichiga tushadi. Papka ichidagi hamma narsa bilan yuboriladi (jami 100 MB gacha).", "Lands in the Files folder inside VIMORA on the student's computer. A folder is sent with everything in it (up to 100 MB in total).", "Попадает в папку Files внутри VIMORA на компьютере ученика. Папка отправляется со всем содержимым (до 100 МБ)."),
+    ("O'quvchi kompyuterida Ish stolidagi Files papkasiga tushadi. Papka ichidagi hamma narsa bilan yuboriladi (jami 100 MB gacha).", "Lands in the Files folder on the Desktop of the student's computer. A folder is sent with everything in it (up to 100 MB in total).", "Попадает в папку Files внутри VIMORA на компьютере ученика. Папка отправляется со всем содержимым (до 100 МБ)."),
     ("O'quvchilar ishini Hujjatlar → Topshiriq papkasiga saqlaydi. \"Yig'ish\" bosilganda hammasi sizning Hujjatlar/Vimora/Topshiriqlar papkangizga kompyuter nomi bilan tushadi.", "Students save their work in Documents → Topshiriq. \"Collect\" brings everything into your Documents/VIMORA/Topshiriqlar, one folder per computer.", "Ученики сохраняют работы в Документы → Topshiriq. «Собрать» переносит всё в ваши Документы/VIMORA/Topshiriqlar, по папке на компьютер."),
     ("O'rin", "Place", "Место"),
     ("O'rtacha", "So-so", "Средне"),
@@ -722,7 +722,7 @@ pub static ROWS: &[Row] = &[
     ("notepad.exe · C:\\Program Files\\…\\app.exe · firefox", "notepad.exe · C:\\Program Files\\…\\app.exe · firefox", "notepad.exe · C:\\Program Files\\…\\app.exe · firefox"),
     ("Argumentlar (ixtiyoriy)", "Arguments (optional)", "Аргументы (необязательно)"),
     ("Fayl yo'li: C:\\Users\\…\\dars.pdf yoki /home/…/dars.pdf", "File path: C:\\Users\\…\\lesson.pdf or /home/…/lesson.pdf", "Путь к файлу: C:\\Users\\…\\urok.pdf или /home/…/urok.pdf"),
-    ("O'quvchi kompyuterida VIMORA papkasidagi Files ichiga saqlanadi.", "Saved to the Files folder inside VIMORA on the student's computer.", "Сохраняется в папку Files внутри VIMORA на компьютере ученика."),
+    ("O'quvchi kompyuterida Ish stolidagi Files papkasiga saqlanadi.", "Saved to the Files folder on the Desktop of the student's computer.", "Сохраняется в папку Files на рабочем столе ученика."),
     ("Jarayon nomlari, har biri yangi qatorda yoki vergul bilan. Ro'yxatdagi dasturlar ochilishi bilan yopiladi.", "Process names, one per line or separated by commas. Listed programs are closed as soon as they start.", "Имена процессов — по одному в строке или через запятую. Программы из списка закрываются сразу после запуска."),
     ("chrome\nsteam.exe\ndiscord", "chrome\nsteam.exe\ndiscord", "chrome\nsteam.exe\ndiscord"),
     // --- power ---------------------------------------------------------------------------------

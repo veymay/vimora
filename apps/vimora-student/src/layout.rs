@@ -67,8 +67,15 @@ fn same(a: &Path, b: &Path) -> bool {
             .trim_end_matches(['\\', '/'])
 }
 
-/// Files the teacher sends: inside Vimora's own folder (no folder in Downloads any more).
+/// Files the teacher sends: the "Files" folder on the user's Desktop, nowhere else. A frozen
+/// computer forgets everything on the Desktop at a restart except this folder (it is excluded
+/// from the filter, see `shield::uwf`).
 pub fn files_dir() -> PathBuf {
+    if let Some(d) = dirs::desktop_dir().map(|d| d.join("Files")) {
+        if writable(&d) {
+            return d;
+        }
+    }
     #[cfg(windows)]
     let own = here().map(|d| d.join("Files"));
     #[cfg(not(windows))]
