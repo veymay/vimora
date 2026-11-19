@@ -45,6 +45,8 @@ pub struct Student {
     pub version: String,
     /// Pointer shape on the student's screen (live view).
     pub cursor: u8,
+    /// Battery as last reported (None = none / not reported yet).
+    pub battery: Option<vimora_core::BatteryInfo>,
     /// Last technical report ("Kompyuter holati" drawer) and when it arrived.
     pub sysinfo: Option<(vimora_core::SystemInfo, Instant)>,
     /// Antivirus, firewall, hardware, services (asked for when the drawer's tab opens).
@@ -702,6 +704,7 @@ async fn session(
                 prev_version: String::new(),
                 version: String::new(),
                 cursor: 0,
+                battery: None,
             },
         );
         h.log(
@@ -1008,6 +1011,13 @@ async fn session(
                     h.repaint();
                 }
                 StudentMsg::SecureOffer(_) => {}
+                StudentMsg::Battery(b) => {
+                    let mut h = hub.lock().unwrap();
+                    if let Some(s) = h.students.get_mut(&id) {
+                        s.battery = b;
+                    }
+                    h.repaint();
+                }
                 StudentMsg::Clipboard(data) => {
                     let label = info.label().to_string();
                     let res =
@@ -1163,7 +1173,11 @@ fn show_loop(hub: SharedHub, show: Arc<Show>) {
 
         if cap.is_none() {
             match capture::Capturer::new() {
-                Ok(c) => cap = Some(c),
+                Ok(mut c) => {
+                    // The class sees where the teacher's pointer is.
+                    c.set_cursor(true);
+                    cap = Some(c);
+                }
                 Err(e) => {
                     fail(&e);
                     continue;

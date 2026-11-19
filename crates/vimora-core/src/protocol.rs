@@ -726,6 +726,9 @@ pub enum StudentMsg {
     /// The student's half of the encrypted channel: its ephemeral public key, sent right after
     /// `Hello`. A teacher that does not know it skips it and the session stays plain.
     SecureOffer(Vec<u8>),
+    /// The computer's battery (None = it has none); sent on connect and when it changes, so the
+    /// teacher can draw the charge on the card.
+    Battery(Option<BatteryInfo>),
 }
 
 /// What is on a clipboard: text, a picture (PNG) or files (name, content).
@@ -799,6 +802,10 @@ mod wire_tests {
         assert_eq!(
             tag(&StudentMsg::SecureOffer(vec![])),
             tag(&StudentMsg::Clipboard(ClipData::Text(String::new()))) + 1
+        );
+        assert_eq!(
+            tag(&StudentMsg::Battery(None)),
+            tag(&StudentMsg::SecureOffer(vec![])) + 1
         );
         assert_eq!(tag(&PrivCommand::ListApps), 7);
         assert_eq!(tag(&PrivCommand::SetAppUpdates(vec![])), 8);

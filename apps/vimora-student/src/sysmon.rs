@@ -124,7 +124,7 @@ fn keep_mount(m: &str) -> bool {
 }
 
 #[cfg(windows)]
-fn battery() -> Option<BatteryInfo> {
+pub fn battery() -> Option<BatteryInfo> {
     use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
     let mut s: SYSTEM_POWER_STATUS = unsafe { std::mem::zeroed() };
     if unsafe { GetSystemPowerStatus(&mut s) } == 0 {
@@ -144,7 +144,7 @@ fn battery() -> Option<BatteryInfo> {
 }
 
 #[cfg(not(windows))]
-fn battery() -> Option<BatteryInfo> {
+pub fn battery() -> Option<BatteryInfo> {
     let read = |p: &std::path::Path, f: &str| {
         std::fs::read_to_string(p.join(f))
             .ok()

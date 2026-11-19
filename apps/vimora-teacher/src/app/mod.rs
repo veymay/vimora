@@ -573,6 +573,29 @@ impl TeacherApp {
                     changes: demo_changes,
                     version: "0.3.7".into(),
                     cursor: 0,
+                    // A mix for the screenshots: none, low, charging, half, full.
+                    battery: [
+                        None,
+                        Some(vimora_core::BatteryInfo {
+                            percent: 14,
+                            ..Default::default()
+                        }),
+                        Some(vimora_core::BatteryInfo {
+                            percent: 55,
+                            charging: true,
+                            plugged: true,
+                            secs_left: None,
+                        }),
+                        Some(vimora_core::BatteryInfo {
+                            percent: 62,
+                            ..Default::default()
+                        }),
+                        Some(vimora_core::BatteryInfo {
+                            percent: 100,
+                            plugged: true,
+                            ..Default::default()
+                        }),
+                    ][i % 5],
                     sysinfo: Some((demo_sysinfo(i), Instant::now())),
                     security: Some(vimora_core::SecurityInfo {
                         antivirus: vec![("Windows Defender".into(), false, true)],
@@ -726,6 +749,7 @@ impl TeacherApp {
                 last_seen: 0,
                 version: s.version.clone(),
                 cursor: s.cursor,
+                battery: s.battery,
             })
             .collect();
         // Computers seen before but not connected now stay in the list, greyed out.
@@ -756,6 +780,7 @@ impl TeacherApp {
                 last_seen: k.last_seen,
                 version: k.version.clone(),
                 cursor: 0,
+                battery: None,
                 key,
             });
         }
@@ -1778,7 +1803,9 @@ impl TeacherApp {
     fn stay_running(&mut self, ctx: &egui::Context) {
         if ctx.input(|i| i.viewport().close_requested()) && !self.quit.load(Ordering::Relaxed) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+            // Hidden, not minimized: a minimized window stays in Alt+Tab and the taskbar; the
+            // tray icon is the only way back.
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }
         if let Some(t) = &self.tray {
             let online = self.hub.lock().unwrap().students.len();

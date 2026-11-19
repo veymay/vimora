@@ -22,6 +22,8 @@ pub(super) fn capture_loop(
     let mut clip_at = Instant::now();
     while !stop.load(Ordering::Relaxed) {
         let c = *cfg.lock().unwrap();
+        // Live view (and what the teacher casts to the class): the pointer is in the picture.
+        cap.set_cursor(c.interval_ms > 0 && c.interval_ms <= 250);
         // Live view: tell the teacher which pointer shape the student sees.
         if c.interval_ms > 0 && c.interval_ms <= 250 {
             if let Some(k) = system::cursor_kind().filter(|k| *k != last_cursor) {

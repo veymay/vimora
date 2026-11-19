@@ -32,6 +32,8 @@ pub(super) struct View {
     pub(super) version: String,
     /// Pointer shape on the student's screen.
     pub(super) cursor: u8,
+    /// Battery charge (None = no battery or unknown).
+    pub(super) battery: Option<vimora_core::BatteryInfo>,
 }
 
 /// What the power window can do: the three remote actions, or switching computers on.

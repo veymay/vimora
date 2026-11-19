@@ -664,11 +664,16 @@ impl TeacherApp {
                     painter.galley(pos2(inner.left(), cy - g.size().y / 2.0), g, p.faint);
                 }
                 Col::Status => {
+                    let mut x = inner.left();
+                    if let Some(b) = &v.battery {
+                        battery_glyph(&painter, p, x + 22.0, cy, b);
+                        x += BATTERY_SLOT;
+                    }
                     let badge = online_badge(ui, p, &v.status);
                     let w = badge.width;
                     badge.paint(
                         &painter,
-                        Rect::from_min_size(pos2(inner.left(), cy - 10.0), vec2(w, 20.0)),
+                        Rect::from_min_size(pos2(x, cy - 10.0), vec2(w, 20.0)),
                     );
                 }
                 Col::Shadow => {
@@ -998,16 +1003,26 @@ impl TeacherApp {
         // ── Bottom info strip ──────────────────────────────────────────────
         let info_top = thumb.bottom() + 6.0;
 
-        // Line 1: name, with the online dot at its right end.
+        // Line 1: name, with the online dot at its right end (the battery before it).
+        let has_battery = v.online && v.battery.is_some();
         let name = ui_kit::truncated(
             ui,
             &v.label,
             FontId::new(13.5, ui_kit::bold()),
             p.strong,
-            tw - 16.0,
+            tw - 16.0 - if has_battery { BATTERY_SLOT } else { 0.0 },
         );
         let name_h = name.size().y;
         painter.galley(pos2(rect.left() + pad, info_top), name, p.strong);
+        if let Some(b) = v.battery.as_ref().filter(|_| v.online) {
+            battery_glyph(
+                &painter,
+                p,
+                rect.right() - pad - 12.0,
+                info_top + name_h / 2.0,
+                b,
+            );
+        }
         painter.circle_filled(
             pos2(rect.right() - pad - 4.0, info_top + name_h / 2.0),
             4.0,
@@ -1020,6 +1035,62 @@ impl TeacherApp {
         item_interactions(&resp, v, actions, self.ctx_menu.is_none());
     }
 }
+
+/// A battery drawn like Windows' own: an outline with a nub, filled to the charge (green while
+/// charging or on mains, red when nearly empty), a bolt while charging. `right` is its right edge.
+fn battery_glyph(
+    painter: &egui::Painter,
+    p: &Palette,
+    right: f32,
+    cy: f32,
+    b: &vimora_core::BatteryInfo,
+) {
+    const W: f32 = 18.0;
+    const H: f32 = 10.0;
+    let body = Rect::from_min_size(pos2(right - 2.0 - W, cy - H / 2.0), vec2(W, H));
+    let pct = b.percent.min(100) as f32 / 100.0;
+    let powered = b.charging || b.plugged;
+    let fill = if powered {
+        p.success
+    } else if b.percent <= 20 {
+        p.danger
+    } else {
+        p.strong
+    };
+    painter.rect_stroke(body, Rounding::ZERO, Stroke::new(1.2_f32, p.muted));
+    painter.rect_filled(
+        Rect::from_min_size(pos2(body.right(), cy - 2.0), vec2(2.0, 4.0)),
+        Rounding::ZERO,
+        p.muted,
+    );
+    let inner = body.shrink(2.0);
+    let w = if b.percent == 0 {
+        0.0
+    } else {
+        (inner.width() * pct).max(1.0)
+    };
+    painter.rect_filled(
+        Rect::from_min_size(inner.min, vec2(w, inner.height())),
+        Rounding::ZERO,
+        fill,
+    );
+    if b.charging {
+        let c = body.center();
+        let ink = if pct >= 0.45 { p.bg } else { p.success };
+        painter.add(egui::Shape::line(
+            vec![
+                pos2(c.x + 1.5, c.y - 3.5),
+                pos2(c.x - 1.5, c.y + 0.5),
+                pos2(c.x + 1.5, c.y - 0.5),
+                pos2(c.x - 1.5, c.y + 3.5),
+            ],
+            Stroke::new(1.3_f32, ink),
+        ));
+    }
+}
+
+/// Space the battery takes before an online mark.
+const BATTERY_SLOT: f32 = 28.0;
 
 /// "5 daq oldin" for a computer that is not connected.
 fn last_seen_text(v: &View) -> String {
@@ -1125,6 +1196,17 @@ fn details_rows(p: &Palette, v: &View) -> Vec<ui_kit::TipRow> {
         v.room.clone().unwrap_or_else(|| tr("UMUMIY").to_string()),
     ));
     rows.push(row(icons::TIMER, tr("Vaqt"), fmt_dur(v.online_secs)));
+    if let Some(b) = &v.battery {
+        rows.push(row(
+            if b.charging {
+                icons::BATTERY_CHARGING
+            } else {
+                icons::BATTERY
+            },
+            tr("Batareya"),
+            format!("{}%", b.percent),
+        ));
+    }
     rows.push(row(icons::DOWNLOAD, tr("Yangi"), updates_label(&v.status)));
     if !v.version.is_empty() {
         rows.push(row(icons::INFO, "VIMORA", format!("v{}", v.version)));

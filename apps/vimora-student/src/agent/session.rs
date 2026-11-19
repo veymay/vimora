@@ -162,6 +162,25 @@ pub(super) async fn session(
             text: "VIMORA jarayoni to'xtatilgan edi va qayta ishga tushirildi".into(),
         });
     }
+    // The battery for the teacher's card: now, then whenever it changes (checked every 20 s).
+    {
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            let mut last: Option<Option<vimora_core::BatteryInfo>> = None;
+            loop {
+                let now = tokio::task::spawn_blocking(crate::sysmon::battery)
+                    .await
+                    .unwrap_or(None);
+                if last.as_ref() != Some(&now) {
+                    last = Some(now);
+                    if tx.send(StudentMsg::Battery(now)).await.is_err() {
+                        break;
+                    }
+                }
+                tokio::time::sleep(Duration::from_secs(20)).await;
+            }
+        });
+    }
     let writer = tokio::spawn(async move {
         while let Some(m) = rx.recv().await {
             // A teacher that stops reading must not freeze the agent: give up and reconnect.

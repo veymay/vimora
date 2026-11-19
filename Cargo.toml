@@ -31,7 +31,7 @@ dirs = "5"
 hostname = "0.4"
 clap = { version = "4", features = ["derive"] }
 sysinfo = "0.32"
-x11rb = { version = "0.13", features = ["xtest"] }
+x11rb = { version = "0.13", features = ["xtest", "xfixes"] }
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
