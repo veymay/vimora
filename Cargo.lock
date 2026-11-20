@@ -4990,7 +4990,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vimora-cast"
-version = "0.3.64"
+version = "0.3.65"
 dependencies = [
  "anyhow",
  "image",
@@ -5007,7 +5007,7 @@ dependencies = [
 
 [[package]]
 name = "vimora-core"
-version = "0.3.64"
+version = "0.3.65"
 dependencies = [
  "anyhow",
  "bincode",
@@ -5027,7 +5027,7 @@ dependencies = [
 
 [[package]]
 name = "vimora-share"
-version = "0.3.64"
+version = "0.3.65"
 dependencies = [
  "anyhow",
  "serde",
@@ -5036,7 +5036,7 @@ dependencies = [
 
 [[package]]
 name = "vimora-student"
-version = "0.3.64"
+version = "0.3.65"
 dependencies = [
  "anyhow",
  "arboard",
@@ -5065,7 +5065,7 @@ dependencies = [
 
 [[package]]
 name = "vimora-teacher"
-version = "0.3.64"
+version = "0.3.65"
 dependencies = [
  "anyhow",
  "arboard",
@@ -5095,7 +5095,7 @@ dependencies = [
 
 [[package]]
 name = "vimora-tray"
-version = "0.3.64"
+version = "0.3.65"
 dependencies = [
  "image",
  "ksni",
@@ -5106,7 +5106,7 @@ dependencies = [
 
 [[package]]
 name = "vimora-ui"
-version = "0.3.64"
+version = "0.3.65"
 dependencies = [
  "egui",
  "image",
@@ -5115,7 +5115,7 @@ dependencies = [
 
 [[package]]
 name = "vimora-update"
-version = "0.3.64"
+version = "0.3.65"
 dependencies = [
  "anyhow",
  "ed25519-dalek",
