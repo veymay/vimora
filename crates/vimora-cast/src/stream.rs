@@ -170,6 +170,13 @@ pub fn ntp_from_unix(secs: u64, nanos: u32) -> (u32, u32) {
     (s, frac as u32)
 }
 
+/// NTP time of a Unix time given in seconds (may be shifted by a clock offset).
+pub fn ntp_from_unix_f64(unix_secs: f64) -> (u32, u32) {
+    let total = unix_secs + 2_208_988_800.0;
+    let secs = total.floor();
+    (secs as u32, ((total - secs) * 4_294_967_296.0) as u32)
+}
+
 /// What the video stream asks of the display.
 #[derive(Debug, Clone, Copy)]
 pub struct VideoOffer {
@@ -206,6 +213,13 @@ pub fn offer(seq: u64, v: &VideoOffer, keys: &Keys) -> Value {
                 "resolutions": [{"width": v.width, "height": v.height}],
                 "renderMode": "video",
                 "errorRecoveryMode": "castv2",
+                // The fields the reference sender (openscreen) always sends.
+                "channels": 1,
+                "receiverRtcpEventLog": true,
+                "codecParameter": "",
+                "protection": "",
+                "profile": "",
+                "level": "",
             }],
         },
     })
@@ -249,6 +263,110 @@ pub fn parse_answer(v: &Value) -> Result<Answer, String> {
 /// A packet from the display is RTCP (types 200–211), not RTP.
 pub fn is_rtcp(p: &[u8]) -> bool {
     p.len() >= 8 && p[0] >> 6 == 2 && (200..=211).contains(&p[1])
+}
+
+/// A receiver's "what time is it for me" (RFC 3611 RRTR block inside an extended report).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rrtr {
+    pub receiver_ssrc: u32,
+    pub ntp_secs: u32,
+    pub ntp_frac: u32,
+}
+
+impl Rrtr {
+    /// The middle 32 bits of the NTP time (what a DLRR answer echoes).
+    pub fn middle32(&self) -> u32 {
+        (self.ntp_secs << 16) | (self.ntp_frac >> 16)
+    }
+
+    /// The receiver's clock as NTP seconds (with fraction), for comparing with ours.
+    pub fn as_ntp_f64(&self) -> f64 {
+        self.ntp_secs as f64 + self.ntp_frac as f64 / 4_294_967_296.0
+    }
+}
+
+/// Finds a receiver reference time report in a compound RTCP packet.
+pub fn parse_rrtr(p: &[u8]) -> Option<Rrtr> {
+    let mut b = p;
+    while b.len() >= 4 {
+        let words = u16::from_be_bytes([b[2], b[3]]) as usize;
+        let len = (words + 1) * 4;
+        if len > b.len() {
+            return None;
+        }
+        if b[1] == 207 && len >= 20 {
+            // XR: header, sender ssrc, then blocks (type, reserved, length in words).
+            let ssrc = u32::from_be_bytes(b[4..8].try_into().ok()?);
+            let mut blk = &b[8..len];
+            while blk.len() >= 4 {
+                let bt = blk[0];
+                let bl = (u16::from_be_bytes([blk[2], blk[3]]) as usize + 1) * 4;
+                if bl > blk.len() {
+                    break;
+                }
+                if bt == 4 && bl >= 12 {
+                    return Some(Rrtr {
+                        receiver_ssrc: ssrc,
+                        ntp_secs: u32::from_be_bytes(blk[4..8].try_into().ok()?),
+                        ntp_frac: u32::from_be_bytes(blk[8..12].try_into().ok()?),
+                    });
+                }
+                blk = &blk[bl..];
+            }
+        }
+        b = &b[len..];
+    }
+    None
+}
+
+/// The answer to an RRTR: an extended report with a DLRR block, so the receiver can measure the
+/// round trip. `delay` is the time since the RRTR arrived, in 1/65536 s.
+pub fn dlrr_packet(sender_ssrc: u32, rrtr: &Rrtr, delay: u32) -> Vec<u8> {
+    let mut p = Vec::with_capacity(24);
+    p.push(0x80);
+    p.push(207);
+    p.extend_from_slice(&5u16.to_be_bytes()); // 6 words in all
+    p.extend_from_slice(&sender_ssrc.to_be_bytes());
+    p.push(5); // block type: DLRR
+    p.push(0);
+    p.extend_from_slice(&3u16.to_be_bytes()); // one 3-word sub-block
+    p.extend_from_slice(&rrtr.receiver_ssrc.to_be_bytes());
+    p.extend_from_slice(&rrtr.middle32().to_be_bytes());
+    p.extend_from_slice(&delay.to_be_bytes());
+    p
+}
+
+/// One line per RTCP element of a compound packet ("RR(201) len=32 …"), for the diagnostics.
+pub fn describe_rtcp(p: &[u8]) -> String {
+    let mut out = vec![];
+    let mut b = p;
+    while b.len() >= 4 {
+        let (fmt, pt) = (b[0] & 0x1f, b[1]);
+        let words = u16::from_be_bytes([b[2], b[3]]) as usize;
+        let len = (words + 1) * 4;
+        if len > b.len() {
+            out.push(format!("truncated(pt={pt})"));
+            break;
+        }
+        let name = match pt {
+            200 => "SR",
+            201 => "RR",
+            202 => "SDES",
+            203 => "BYE",
+            204 => "APP",
+            205 => "RTPFB",
+            206 => "PSFB",
+            _ => "?",
+        };
+        // Show the first bytes after the header: enough to recognise Cast's feedback ("CAST").
+        let body: String = b[4..len.min(4 + 16)]
+            .iter()
+            .map(|x| format!("{x:02x}"))
+            .collect();
+        out.push(format!("{name}({pt}) fmt={fmt} len={len} {body}"));
+        b = &b[len..];
+    }
+    out.join(" | ")
 }
 
 #[cfg(test)]
@@ -354,6 +472,37 @@ mod tests {
         assert!(is_rtcp(&r));
         // An RTP packet (payload type 96) is not RTCP.
         assert!(!is_rtcp(&[0x80, 96, 0, 0, 0, 0, 0, 0, 0, 0]));
+    }
+
+    #[test]
+    fn rrtr_is_found_in_the_boards_real_extended_report_and_answered_with_a_dlrr() {
+        // Bytes the real board sent: an RR followed by an XR carrying its reference time.
+        let xr: Vec<u8> = [
+            0x80u8, 207, 0, 4, // XR header, 5 words
+            0x00, 0x00, 0xc7, 0xbc, // the receiver's SSRC
+            0x04, 0x00, 0x00, 0x02, // RRTR block, 2 words
+            0xee, 0xaa, 0xa3, 0xb5, 0xe7, 0xc5, 0xcd, 0xd5, // its NTP time
+        ]
+        .to_vec();
+        let mut compound = vec![0x80, 201, 0, 1, 0, 0, 0xc7, 0xbc]; // an empty RR first
+        compound.extend_from_slice(&xr);
+        let r = parse_rrtr(&compound).expect("rrtr");
+        assert_eq!(r.receiver_ssrc, 0xc7bc);
+        assert_eq!((r.ntp_secs, r.ntp_frac), (0xeeaaa3b5, 0xe7c5cdd5));
+        assert_eq!(r.middle32(), 0xa3b5e7c5);
+        let d = dlrr_packet(0xc7bb, &r, 65536);
+        assert_eq!(d.len(), 24);
+        assert_eq!(d[..4], [0x80, 207, 0, 5]);
+        assert_eq!(d[8], 5); // DLRR block
+        assert_eq!(u32::from_be_bytes(d[12..16].try_into().unwrap()), 0xc7bc);
+        assert_eq!(
+            u32::from_be_bytes(d[16..20].try_into().unwrap()),
+            0xa3b5e7c5
+        );
+        assert_eq!(u32::from_be_bytes(d[20..24].try_into().unwrap()), 65536);
+        // No XR, no RRTR.
+        assert!(parse_rrtr(&compound[..8]).is_none());
+        assert!(parse_rrtr(&[1, 2, 3]).is_none());
     }
 
     #[test]

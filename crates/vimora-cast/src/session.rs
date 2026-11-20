@@ -240,6 +240,10 @@ struct Stream {
     last_sr: Instant,
     last_rtcp: Option<Instant>,
     ssrc: u32,
+    /// The display's clock minus ours (seconds), from its reference-time reports. Sender reports
+    /// carry NTP time in the display's clock so that frame times make sense to it even when its
+    /// wall clock is hours off (as on the classroom boards).
+    clock_offset: f64,
 }
 
 impl Drop for Stream {
@@ -520,6 +524,7 @@ async fn session_loop(
                             last_sr: Instant::now() - Duration::from_secs(1),
                             last_rtcp: None,
                             ssrc,
+                            clock_offset: 0.0,
                         });
                     }
                     (NS_MEDIA, "LOAD_FAILED") | (NS_MEDIA, "INVALID_REQUEST") => {
@@ -557,6 +562,19 @@ async fn session_loop(
             r = udp.recv_from(&mut udp_buf) => {
                 if let (Ok((n, from)), Some(s)) = (r, stream.as_mut()) {
                     if from.ip() == s.target.ip() && stream::is_rtcp(&udp_buf[..n]) {
+                        tracing::debug!("cast rtcp <- {}", stream::describe_rtcp(&udp_buf[..n]));
+                        // The display tells what time it is for it: answer so it can measure the
+                        // round trip, and learn how far its clock is from ours.
+                        if let Some(r) = stream::parse_rrtr(&udp_buf[..n]) {
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default();
+                            let ours = now.as_secs_f64() + 2_208_988_800.0;
+                            // Half the round trip is not known yet; the error is milliseconds.
+                            s.clock_offset = r.as_ntp_f64() - ours;
+                            let dlrr = stream::dlrr_packet(s.ssrc, &r, 0);
+                            let _ = udp.send_to(&dlrr, s.target).await;
+                        }
                         s.last_rtcp = Some(Instant::now());
                         let mut st = stats.lock().unwrap();
                         st.acked += 1;
@@ -604,7 +622,8 @@ async fn session_loop(
                             let now = std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default();
-                            let (ns, nf) = stream::ntp_from_unix(now.as_secs(), now.subsec_nanos());
+                            let shifted = now.as_secs_f64() + s.clock_offset;
+                            let (ns, nf) = stream::ntp_from_unix_f64(shifted);
                             let rtp_ts = (s.started.elapsed().as_micros() as u64 * stream::RTP_CLOCK as u64 / 1_000_000) as u32;
                             let sr = stream::sender_report(
                                 s.ssrc, ns, nf, rtp_ts, s.packetizer.packets, s.packetizer.octets,
