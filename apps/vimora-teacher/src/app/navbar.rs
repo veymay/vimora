@@ -672,12 +672,15 @@ impl TeacherApp {
                         // with the pointer and the board's touch, whatever the program.
                         {
                             divider(ui, p, h);
-                            if btn(icons::CAST, "", false)
+                            let casting = crate::cast::manager()
+                                .current()
+                                .is_some_and(|(_, s)| s == vimora_cast::State::Casting);
+                            if btn(icons::CAST, "", casting)
                                 .show(ui, p)
                                 .tip(tr("Simsiz displeyga uzatish (aqlli doska)"))
                                 .clicked()
                             {
-                                crate::config::open_wireless_display();
+                                self.open_dialog(Dialog::Cast);
                             }
                         }
                         // Live screens on / off: with it off the cards show a plain icon and the

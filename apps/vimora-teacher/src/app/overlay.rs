@@ -393,6 +393,7 @@ impl TeacherApp {
             Dialog::Room { .. } => (tr("Xona nomini o'zgartirish"), 440.0),
             Dialog::Activity => (tr("Faollik"), 440.0),
             Dialog::Jobs => (tr("Jarayonlar"), 440.0),
+            Dialog::Cast => (tr("Simsiz displeylar"), 440.0),
             Dialog::Freeze { .. } => (tr("Muzlatish"), 520.0),
             Dialog::Rename { .. } => (tr("Nomini o'zgartirish"), 460.0),
             Dialog::Updates { .. } => (tr("Yangilanishlar"), 600.0),
@@ -413,6 +414,7 @@ impl TeacherApp {
                 | Dialog::Room { .. }
                 | Dialog::Activity
                 | Dialog::Jobs
+                | Dialog::Cast
                 | Dialog::Rename { .. }
                 | Dialog::Message { .. }
                 | Dialog::Machine { .. }
@@ -437,6 +439,7 @@ impl TeacherApp {
             Dialog::Room { .. } => icons::LAYOUT_GRID,
             Dialog::Activity => icons::BELL,
             Dialog::Jobs => icons::REFRESH_CW,
+            Dialog::Cast => icons::CAST,
             Dialog::Freeze { .. } => icons::SNOWFLAKE,
             Dialog::Rename { .. } => icons::SETTINGS,
             Dialog::Updates { .. } => icons::DOWNLOAD,
@@ -561,6 +564,7 @@ impl TeacherApp {
                     dialog,
                     Dialog::Activity
                         | Dialog::Jobs
+                        | Dialog::Cast
                         | Dialog::Message { .. }
                         | Dialog::Settings(_)
                         | Dialog::Freeze { .. }
@@ -1628,7 +1632,7 @@ impl TeacherApp {
                 self.save_room(name, rename);
                 return;
             }
-            Dialog::Activity | Dialog::Jobs => return,
+            Dialog::Activity | Dialog::Jobs | Dialog::Cast => return,
             Dialog::Freeze { .. }
             | Dialog::Machine { .. }
             | Dialog::Lesson(_)

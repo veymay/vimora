@@ -202,6 +202,163 @@ pub(super) fn collect_jobs(all: &[View], hub: &SharedHub, latest: &str) -> Vec<J
     out
 }
 
+/// The wireless displays drawer, laid out like the scan drawer: a status row (what the search is
+/// doing, a hint, "search again"), then one row per Google Cast display with "connect" (the
+/// screen goes to it) and, while casting, "stop".
+fn cast_body(ui: &mut egui::Ui, p: &Palette) {
+    use vimora_cast::State;
+    /// The first seconds of a search: answers are still coming.
+    const SCANNING: f32 = 6.0;
+    let m = crate::cast::manager();
+    m.ensure_discovery();
+    ui.ctx()
+        .request_repaint_after(std::time::Duration::from_millis(250));
+    let devices = m.devices();
+    let current = m.current();
+    let scanning = m.scan_age() < SCANNING;
+    let w = ui.available_width();
+    let (bar, _) = ui.allocate_exact_size(vec2(w, 46.0), Sense::hover());
+    ui.painter()
+        .rect(bar, Rounding::ZERO, p.bg, Stroke::new(1.0_f32, p.line));
+    let status = tf!("{n} ta displey topildi", n = devices.len());
+    ui_kit::progress(
+        ui,
+        Rect::from_min_max(
+            pos2(bar.left() + 14.0, bar.top()),
+            pos2(bar.right() - 220.0, bar.bottom()),
+        ),
+        if scanning {
+            ui_kit::Progress::Waiting(tr("Qidirilmoqda…"))
+        } else if devices.is_empty() {
+            ui_kit::Progress::Idle(tr("Displey topilmadi"), p.muted)
+        } else {
+            ui_kit::Progress::Idle(&status, p.text)
+        },
+    );
+    let mut ctl = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(bar.shrink2(vec2(6.0, 6.0)))
+            .layout(Layout::right_to_left(Align::Center)),
+    );
+    ctl.add_enabled_ui(!scanning, |ui| {
+        if ui_kit::button(
+            ui,
+            Some(icons::REFRESH_CW),
+            tr("Qayta qidirish"),
+            Kind::Outline,
+        )
+        .clicked()
+        {
+            m.rescan();
+        }
+    });
+    ctl.add_space(6.0);
+    ui_kit::info(
+        &mut ctl,
+        tr("Chromecast yoki Google Cast bor doska va televizorlar shu yerda chiqadi. Displey va bu kompyuter bir tarmoqda (Wi-Fi yoki LAN) bo'lishi kerak."),
+    );
+    ui.add_space(7.0);
+    if devices.is_empty() {
+        // An empty list: a calm picture instead of a paragraph.
+        ui.add_space(28.0);
+        ui.vertical_centered(|ui| {
+            ui.label(ui_kit::icon(
+                if scanning { icons::WIFI } else { icons::CAST },
+                44.0,
+                p.faint,
+            ));
+        });
+        return;
+    }
+    let w = ui.available_width();
+    ui.spacing_mut().item_spacing.y = 0.0;
+    Frame::none()
+        .stroke(Stroke::new(1.0_f32, p.line))
+        .show(ui, |ui| {
+            ui.set_width(w);
+            for (i, d) in devices.iter().enumerate() {
+                let mine = current.as_ref().filter(|(c, _)| c.id == d.id);
+                let (r, _) = ui.allocate_exact_size(vec2(w, 52.0), Sense::hover());
+                if i > 0 {
+                    ui.painter()
+                        .hline(r.x_range(), r.top(), Stroke::new(1.0_f32, p.line));
+                }
+                ui.painter().text(
+                    pos2(r.left() + 22.0, r.center().y),
+                    Align2::CENTER_CENTER,
+                    icons::CAST,
+                    FontId::proportional(18.0),
+                    p.accent,
+                );
+                ui.painter().text(
+                    pos2(r.left() + 44.0, r.center().y - 9.0),
+                    Align2::LEFT_CENTER,
+                    &d.name,
+                    FontId::new(14.0, ui_kit::bold()),
+                    p.strong,
+                );
+                // Under the name: the state while connecting / casting / failed, else the model.
+                let (sub, col) = match mine.map(|(_, s)| s) {
+                    Some(State::Connecting) => (tr("Ulanmoqda…").to_string(), p.muted),
+                    Some(State::Casting) => (tr("Ulangan").to_string(), p.success),
+                    Some(State::Failed(e)) => (tf!("Ulanmadi: {e}", e = e), p.danger),
+                    _ => (
+                        if d.model.is_empty() {
+                            d.addr.to_string()
+                        } else {
+                            format!("{} · {}", d.model, d.addr)
+                        },
+                        p.muted,
+                    ),
+                };
+                ui.painter().text(
+                    pos2(r.left() + 44.0, r.center().y + 10.0),
+                    Align2::LEFT_CENTER,
+                    sub,
+                    FontId::new(12.0, ui_kit::mono()),
+                    col,
+                );
+                let mut b = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(Rect::from_min_max(
+                            pos2(r.right() - 150.0, r.top()),
+                            r.max - vec2(10.0, 0.0),
+                        ))
+                        .layout(Layout::right_to_left(Align::Center)),
+                );
+                let busy = matches!(
+                    mine.map(|(_, s)| s),
+                    Some(State::Connecting | State::Casting)
+                );
+                if busy {
+                    if ui_kit::button(&mut b, Some(icons::X), tr("To'xtatish"), Kind::Cancel)
+                        .clicked()
+                    {
+                        m.stop();
+                    }
+                } else if ui_kit::button(&mut b, Some(icons::CAST), tr("Ulash"), Kind::Primary)
+                    .clicked()
+                {
+                    m.connect(d.clone());
+                }
+            }
+        });
+    #[cfg(windows)]
+    {
+        ui.add_space(7.0);
+        if ui_kit::button(
+            ui,
+            Some(icons::MONITOR),
+            tr("Miracast (Windows)"),
+            Kind::Outline,
+        )
+        .clicked()
+        {
+            crate::config::open_wireless_display();
+        }
+    }
+}
+
 /// The Jobs drawer: one card per unfinished process — an icon, the computer (and its address),
 /// what is going on, the percent at the right and a bar under it.
 fn jobs_body(ui: &mut egui::Ui, p: &Palette, all: &[View], hub: &SharedHub, latest: &str) {
@@ -365,6 +522,7 @@ pub(super) fn dialog_body(
     match dialog {
         Dialog::Activity => activity_body(ui, p, hub, all, clear_help),
         Dialog::Jobs => jobs_body(ui, p, all, hub, cx.latest),
+        Dialog::Cast => cast_body(ui, p),
         Dialog::Freeze {
             tab,
             chosen,

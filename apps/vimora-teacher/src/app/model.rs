@@ -121,6 +121,8 @@ pub(super) enum Dialog {
     Activity,
     /// Unfinished processes (updates, installs, freezes) on the computers.
     Jobs,
+    /// Wireless displays (Google Cast): the list, connect / disconnect.
+    Cast,
     Rename {
         id: u64,
         key: String,

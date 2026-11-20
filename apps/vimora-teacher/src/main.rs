@@ -5,6 +5,7 @@
 mod app;
 mod avi;
 mod blockcat;
+mod cast;
 mod config;
 mod i18n_table;
 mod lanupdate;

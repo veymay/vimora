@@ -370,18 +370,13 @@ pub fn open(target: &str) {
     }
 }
 
-/// Opens the system's wireless display list (Miracast / smart boards): Windows' "Connect" panel;
-/// on Linux the display settings.
+/// Opens Windows' own "Connect" panel (Miracast displays).
+#[cfg(windows)]
 pub fn open_wireless_display() {
-    #[cfg(windows)]
-    let r = std::process::Command::new("explorer")
+    if let Err(e) = std::process::Command::new("explorer")
         .arg("ms-settings-connectabledevices:devicediscovery")
-        .spawn();
-    #[cfg(not(windows))]
-    let r = std::process::Command::new("gnome-control-center")
-        .arg("display")
-        .spawn();
-    if let Err(e) = r {
+        .spawn()
+    {
         tracing::warn!("cannot open the wireless display list: {e}");
     }
 }

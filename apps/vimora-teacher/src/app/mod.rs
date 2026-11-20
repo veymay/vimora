@@ -275,6 +275,7 @@ impl TeacherApp {
             }
             Ok("activity") => app.dev_open = Some(Dialog::Activity),
             Ok("jobs") => app.dev_open = Some(Dialog::Jobs),
+            Ok("cast") => app.dev_open = Some(Dialog::Cast),
             Ok(s) if s.starts_with("lesson") => {
                 let mut l = Lesson {
                     tab: match s.trim_start_matches("lesson").trim_start_matches(':') {

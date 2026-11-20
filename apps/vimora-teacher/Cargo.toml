@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 vimora-core.workspace = true
+vimora-cast = { path = "../../crates/vimora-cast" }
 vimora-ui.workspace = true
 vimora-update.workspace = true
 vimora-tray.workspace = true
