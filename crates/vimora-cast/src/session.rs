@@ -207,21 +207,44 @@ async fn run(
     let port = pictures.local_addr()?.port();
     let latest = Arc::new(Mutex::new(Latest::default()));
     let server = tokio::spawn(serve_pictures(pictures, latest.clone()));
-    let result = session_loop(dev, frames, state, stop, stats, ip, port, &latest).await;
+    let result = session_loop(
+        dev,
+        frames,
+        &Shared {
+            state,
+            stop,
+            stats,
+            latest: &latest,
+        },
+        ip,
+        port,
+    )
+    .await;
     server.abort();
     result
+}
+
+/// What a running cast shares with its owner and its picture server.
+struct Shared<'a> {
+    state: &'a Mutex<State>,
+    stop: &'a StopFlag,
+    stats: &'a Mutex<Stats>,
+    latest: &'a Mutex<Latest>,
 }
 
 async fn session_loop(
     dev: &Device,
     frames: FrameSource,
-    state: &Mutex<State>,
-    stop: &StopFlag,
-    stats: &Mutex<Stats>,
+    shared: &Shared<'_>,
     ip: IpAddr,
     port: u16,
-    latest: &Mutex<Latest>,
 ) -> Result<()> {
+    let Shared {
+        state,
+        stop,
+        stats,
+        latest,
+    } = *shared;
     let tcp = tokio::time::timeout(
         Duration::from_secs(6),
         TcpStream::connect((dev.addr, dev.port)),

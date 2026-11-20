@@ -30,7 +30,7 @@ pub enum Role {
 /// Decodes the hex subelement string (`"00000600111c440032"`: id, length, 6 bytes of data).
 pub fn parse_device_info(hex: &str) -> Result<DeviceInfo> {
     let hex = hex.trim();
-    if !hex.is_ascii() || hex.len() % 2 != 0 {
+    if !hex.is_ascii() || !hex.len().is_multiple_of(2) {
         bail!("not a hex string");
     }
     let bytes: Vec<u8> = (0..hex.len())
