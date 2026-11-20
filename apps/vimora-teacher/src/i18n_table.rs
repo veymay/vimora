@@ -394,6 +394,8 @@ pub static ROWS: &[Row] = &[
     ("Qidirilmoqda…", "Searching…", "Поиск…"),
     ("Displey topilmadi", "No display found", "Дисплеи не найдены"),
     ("Tajribaviy. Chromecast yoki Google Cast bor doska va televizorlar shu yerda chiqadi; ba'zi doskalar (faqat Chrome oqimi) rasm qabul qilmaydi. Displey va bu kompyuter bir tarmoqda bo'lishi kerak.", "Experimental. Chromecast and boards or TVs with Google Cast appear here; some boards (Chrome streaming only) do not accept pictures. The display and this computer must be on the same network.", "Экспериментально. Здесь появятся Chromecast и доски или телевизоры с Google Cast; некоторые доски (только потоки Chrome) не принимают изображения. Дисплей и этот компьютер должны быть в одной сети."),
+    ("Kodlovchi uchun GStreamer kerak: sudo apt install gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-bad", "The video encoder needs GStreamer: sudo apt install gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-bad", "Для кодировщика нужен GStreamer: sudo apt install gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-bad"),
+    ("Displey oqim qabul qilganini bildirmadi", "The display did not report receiving the stream", "Дисплей не сообщил о приёме потока"),
     ("Displey rasm qabul qilmaydi (faqat Cast oqimi)", "The display does not accept pictures (Cast streaming only)", "Дисплей не принимает изображения (только потоковая передача Cast)"),
     ("Simsiz displeylar", "Wireless displays", "Беспроводные дисплеи"),
     ("Displeylar qidirilmoqda…", "Looking for displays…", "Поиск дисплеев…"),

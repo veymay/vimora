@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use vimora_cast::{Device, Session, State};
+use vimora_cast::{Device, RawFrame, Session, Sources, State};
 
 fn card(n: u32) -> Vec<u8> {
     let (w, h) = (1280u32, 720u32);
@@ -59,7 +59,47 @@ async fn main() {
         let n = n.clone();
         Arc::new(move || Some(card(n.fetch_add(1, Ordering::Relaxed))))
     };
-    let s = Session::start(&tokio::runtime::Handle::current(), dev, src);
+    let raw = {
+        let n = n.clone();
+        Arc::new(move || {
+            let (w, h) = (1280u32, 720u32);
+            let k = n.fetch_add(1, Ordering::Relaxed);
+            let bars = [
+                [255u8, 255, 255],
+                [255, 255, 0],
+                [0, 255, 255],
+                [0, 255, 0],
+                [255, 0, 255],
+                [255, 0, 0],
+                [0, 0, 255],
+                [20, 20, 20],
+            ];
+            let sx = (k * 12) % (w - 100);
+            let mut rgba = vec![255u8; (w * h * 4) as usize];
+            for y in 0..h {
+                for x in 0..w {
+                    let i = ((y * w + x) * 4) as usize;
+                    let c = if (300..400).contains(&y) && x >= sx && x < sx + 100 {
+                        [0, 0, 0]
+                    } else {
+                        bars[(x * 8 / w) as usize]
+                    };
+                    rgba[i..i + 3].copy_from_slice(&c);
+                }
+            }
+            Some(RawFrame {
+                width: w,
+                height: h,
+                rgba,
+            })
+        })
+    };
+    let sources = Sources {
+        jpeg: src,
+        raw,
+        encoder: vimora_cast::gstreamer_vp8(),
+    };
+    let s = Session::start(&tokio::runtime::Handle::current(), dev, sources);
     let t0 = Instant::now();
     let mut last = None;
     while t0.elapsed() < Duration::from_secs(secs) {

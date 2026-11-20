@@ -65,7 +65,7 @@ capture ─▶ normalise ─▶ bounded newest-wins queue ─▶ encoder ─▶ 
 | Cast TLS for legacy certificates | `vimora-cast::tls` | done (below) |
 | Receiver diagnostics (read-only) | `vimora-cast::diag` + `examples/probe.rs` | done, verified on the real board |
 | Picture mode (Default Media Receiver) | `vimora-cast::session` | works against the mock; **rejected by the real boards**; reported as failed, never as "connected" |
-| Cast streaming (OFFER/ANSWER, RTP, RTCP, AES) | — | **not implemented** (the next step for these boards) |
+| Cast streaming (OFFER/ANSWER, Cast RTP, AES-CTR, RTCP SR, VP8 via GStreamer) | `vimora-cast::stream`, `::encoder`, `::session` | **implemented 2026-11-20**: the real board answers the OFFER (`ANSWER ok`, 1920×1080@30) and sends RTCP back, state becomes Casting in ~1 s; **picture on the board not yet confirmed by a person**; no retransmission/PLI handling; Linux teacher only (needs GStreamer: `gstreamer1.0-tools`, `-plugins-good`, `-plugins-bad`); a Windows teacher needs an in-process encoder (not done) |
 | Miracast / Wi-Fi Direct sender | — | **not implemented** |
 | Capability probe + real encode test | `vimora-share::probe` | done, verified on this machine |
 | Bounded queue with drop/age statistics | `vimora-share::queue` | done, unit-tested |
@@ -100,10 +100,9 @@ verification; nothing global was relaxed.
 
 ## Next steps (in order)
 
-1. **Cast streaming sender** for these boards, developed against the real board: launch the mirroring
-   app, `OFFER` (H.264 from `openh264enc`/`x264enc`, AES key, SSRC, payload type), read `ANSWER`
-   (UDP port), send encrypted Cast RTP frames, RTCP sender reports, handle receiver feedback;
-   keyframe on demand; honest status from receiver reports.
+1. **Cast streaming**: confirm the picture on the board; handle receiver feedback (NACK/PLI,
+   keyframe on demand), adapt bitrate from receiver reports, in-process encoder for Windows,
+   audio.
 2. Device authentication for Cast (needs the Cast root CA list).
 3. Miracast source: NetworkManager `wifi-p2p` (D-Bus) discovery and group, then RTSP source
    (M1–M7, WFD capability exchange), H.264 in MPEG-TS over RTP, teardown and cleanup. P2P must not
@@ -117,7 +116,7 @@ verification; nothing global was relaxed.
 |---|---|---|---|
 | Chromecast Ultra-class board "1-XONA" (fw 1.36) | Cast control channel | TLS + status OK | 2026-11-20 |
 | same | Cast picture mode | not accepted by the display | 2026-11-20 |
-| same | Cast streaming | not implemented | — |
+| same | Cast streaming (VP8, 720p15 start) | OFFER accepted, RTCP received, ~15 fps sent for 13 s; visual result to be confirmed on the board | 2026-11-20 |
 | Hisense board (model unknown) | Miracast | not implemented; WFD data decoded | — |
 
 Nothing else is marked as tested.

@@ -3,7 +3,7 @@
 //! the window (the program stays in the tray) does not end it.
 
 use std::sync::{Arc, Mutex, OnceLock};
-use vimora_cast::{Device, Discovery, FrameSource, Session, State};
+use vimora_cast::{Device, Discovery, RawFrame, Session, Sources, State};
 use vimora_core::capture;
 
 pub struct Manager {
@@ -75,7 +75,7 @@ impl Manager {
         if let Some(old) = s.take() {
             old.stop();
         }
-        *s = Some(Session::start(self.rt.handle(), device, screen_source()));
+        *s = Some(Session::start(self.rt.handle(), device, sources()));
     }
 
     pub fn stop(&self) {
@@ -126,21 +126,58 @@ impl Screen {
             },
         }
     }
+
+    /// The screen now as raw pixels (for the video encoder); `Err` = the source is gone.
+    fn raw(&mut self) -> Result<Option<RawFrame>, ()> {
+        match self {
+            Screen::Grab(c) => c
+                .capture()
+                .map(|f| {
+                    Some(RawFrame {
+                        width: f.width,
+                        height: f.height,
+                        rgba: f.rgba,
+                    })
+                })
+                .map_err(|_| ()),
+            #[cfg(all(unix, not(target_os = "macos")))]
+            Screen::Portal(..) => match self.jpeg()? {
+                Some(j) => Ok(capture::decode_jpeg(&j).ok().map(|f| RawFrame {
+                    width: f.width,
+                    height: f.height,
+                    rgba: f.rgba,
+                })),
+                None => Ok(None),
+            },
+        }
+    }
 }
 
-fn screen_source() -> FrameSource {
-    let screen: Mutex<Option<Screen>> = Mutex::new(None);
-    Arc::new(move || {
+/// The screen for a cast, in both forms (pictures and raw video), and the video encoder.
+fn sources() -> Sources {
+    let screen: Arc<Mutex<Option<Screen>>> = Arc::new(Mutex::new(None));
+    let s1 = screen.clone();
+    let s2 = screen;
+    // Takes the screen, opening it first if needed; closes it again when it breaks.
+    fn with<T>(
+        screen: &Mutex<Option<Screen>>,
+        f: impl FnOnce(&mut Screen) -> Result<Option<T>, ()>,
+    ) -> Option<T> {
         let mut g = screen.lock().unwrap();
         if g.is_none() {
             *g = Screen::open();
         }
-        match g.as_mut()?.jpeg() {
-            Ok(j) => j,
+        match f(g.as_mut()?) {
+            Ok(v) => v,
             Err(()) => {
                 *g = None; // opened again on the next try
                 None
             }
         }
-    })
+    }
+    Sources {
+        jpeg: Arc::new(move || with(&s1, |s| s.jpeg())),
+        raw: Arc::new(move || with(&s2, |s| s.raw())),
+        encoder: vimora_cast::gstreamer_vp8(),
+    }
 }

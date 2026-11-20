@@ -10,11 +10,14 @@
 //! transport; slides, documents and a quiet desktop work, fast video is slower.
 
 pub mod diag;
+pub mod encoder;
 pub mod proto;
 mod session;
+pub mod stream;
 pub mod tls;
 
-pub use session::{FrameSource, Session, State, Stats};
+pub use encoder::{gstreamer_vp8, EncoderFactory, VideoEncoder};
+pub use session::{FrameSource, RawFrame, RawSource, Session, Sources, State, Stats};
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
