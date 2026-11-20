@@ -4993,13 +4993,16 @@ name = "vimora-cast"
 version = "0.3.64"
 dependencies = [
  "anyhow",
+ "image",
  "mdns-sd",
  "rcgen",
+ "ring",
  "rustls",
  "serde_json",
  "tokio",
  "tokio-rustls",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -5020,6 +5023,15 @@ dependencies = [
  "windows-sys 0.59.0",
  "x11rb",
  "x25519-dalek",
+]
+
+[[package]]
+name = "vimora-share"
+version = "0.3.64"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

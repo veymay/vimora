@@ -255,7 +255,7 @@ fn cast_body(ui: &mut egui::Ui, p: &Palette) {
     ctl.add_space(6.0);
     ui_kit::info(
         &mut ctl,
-        tr("Chromecast yoki Google Cast bor doska va televizorlar shu yerda chiqadi. Displey va bu kompyuter bir tarmoqda (Wi-Fi yoki LAN) bo'lishi kerak."),
+        tr("Tajribaviy. Chromecast yoki Google Cast bor doska va televizorlar shu yerda chiqadi; ba'zi doskalar (faqat Chrome oqimi) rasm qabul qilmaydi. Displey va bu kompyuter bir tarmoqda bo'lishi kerak."),
     );
     ui.add_space(7.0);
     if devices.is_empty() {
@@ -301,6 +301,10 @@ fn cast_body(ui: &mut egui::Ui, p: &Palette) {
                 let (sub, col) = match mine.map(|(_, s)| s) {
                     Some(State::Connecting) => (tr("Ulanmoqda…").to_string(), p.muted),
                     Some(State::Casting) => (tr("Ulangan").to_string(), p.success),
+                    Some(State::Failed(e)) if e.contains("does not show pictures") => (
+                        tr("Displey rasm qabul qilmaydi (faqat Cast oqimi)").to_string(),
+                        p.danger,
+                    ),
                     Some(State::Failed(e)) => (tf!("Ulanmadi: {e}", e = e), p.danger),
                     _ => (
                         if d.model.is_empty() {

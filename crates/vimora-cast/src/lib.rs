@@ -9,10 +9,12 @@
 //! This is the picture mode: smooth video would need a video encoder and Cast's streaming
 //! transport; slides, documents and a quiet desktop work, fast video is slower.
 
+pub mod diag;
 pub mod proto;
 mod session;
+pub mod tls;
 
-pub use session::{FrameSource, Session, State};
+pub use session::{FrameSource, Session, State, Stats};
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};

@@ -36,10 +36,25 @@ pub enum State {
     Stopped,
 }
 
+/// What the display did with the pictures (for the diagnostics and for telling "sent" from
+/// "shown").
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Stats {
+    /// Pictures we told the display to load.
+    pub sent: u64,
+    /// Status reports the display sent back about them.
+    pub acked: u64,
+    /// Pictures the display refused or failed to load.
+    pub failed: u64,
+    /// The display's last player state ("PLAYING", "IDLE/ERROR" …).
+    pub last_status: String,
+}
+
 /// A running cast. Dropping it does not stop it; call [`Session::stop`].
 pub struct Session {
     device: Device,
     state: Arc<Mutex<State>>,
+    stats: Arc<Mutex<Stats>>,
     stop: Arc<StopFlag>,
 }
 
@@ -52,10 +67,11 @@ struct StopFlag {
 impl Session {
     pub fn start(rt: &tokio::runtime::Handle, device: Device, frames: FrameSource) -> Self {
         let state = Arc::new(Mutex::new(State::Connecting));
+        let stats = Arc::new(Mutex::new(Stats::default()));
         let stop = Arc::new(StopFlag::default());
-        let (st, sp, dev) = (state.clone(), stop.clone(), device.clone());
+        let (st, sp, dev, sx) = (state.clone(), stop.clone(), device.clone(), stats.clone());
         rt.spawn(async move {
-            let r = run(&dev, frames, &st, &sp).await;
+            let r = run(&dev, frames, &st, &sp, &sx).await;
             let mut s = st.lock().unwrap();
             *s = match r {
                 _ if sp.on.load(Ordering::Relaxed) => State::Stopped,
@@ -69,8 +85,13 @@ impl Session {
         Self {
             device,
             state,
+            stats,
             stop,
         }
+    }
+
+    pub fn stats(&self) -> Stats {
+        self.stats.lock().unwrap().clone()
     }
 
     pub fn device(&self) -> &Device {
@@ -92,55 +113,15 @@ impl Session {
     }
 }
 
-/// Cast displays present their own certificate (not one a browser would trust), so it is not
-/// checked — as every Cast sender does. Nothing secret goes over this link: it carries the
-/// screen to a display the teacher picked on the local network.
-#[derive(Debug)]
-struct AcceptAny(Arc<rustls::crypto::CryptoProvider>);
-
-impl rustls::client::danger::ServerCertVerifier for AcceptAny {
-    fn verify_server_cert(
-        &self,
-        _: &rustls::pki_types::CertificateDer<'_>,
-        _: &[rustls::pki_types::CertificateDer<'_>],
-        _: &rustls::pki_types::ServerName<'_>,
-        _: &[u8],
-        _: rustls::pki_types::UnixTime,
-    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        _: &[u8],
-        _: &rustls::pki_types::CertificateDer<'_>,
-        _: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        _: &[u8],
-        _: &rustls::pki_types::CertificateDer<'_>,
-        _: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        self.0.signature_verification_algorithms.supported_schemes()
-    }
-}
-
-fn tls_config() -> Result<Arc<rustls::ClientConfig>> {
+fn tls_config() -> Result<(Arc<rustls::ClientConfig>, Arc<crate::tls::CastVerifier>)> {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
-    let cfg = rustls::ClientConfig::builder_with_provider(provider.clone())
+    let verifier = crate::tls::CastVerifier::new(provider.clone());
+    let cfg = rustls::ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()?
         .dangerous()
-        .with_custom_certificate_verifier(Arc::new(AcceptAny(provider)))
+        .with_custom_certificate_verifier(verifier.clone())
         .with_no_client_auth();
-    Ok(Arc::new(cfg))
+    Ok((Arc::new(cfg), verifier))
 }
 
 /// The newest picture and its number (the URL changes with it, so the display never reuses an
@@ -219,13 +200,14 @@ async fn run(
     frames: FrameSource,
     state: &Mutex<State>,
     stop: &StopFlag,
+    stats: &Mutex<Stats>,
 ) -> Result<()> {
     let ip = local_ip_towards(dev).await.context("no network route")?;
     let pictures = TcpListener::bind("0.0.0.0:0").await?;
     let port = pictures.local_addr()?.port();
     let latest = Arc::new(Mutex::new(Latest::default()));
     let server = tokio::spawn(serve_pictures(pictures, latest.clone()));
-    let result = session_loop(dev, frames, state, stop, ip, port, &latest).await;
+    let result = session_loop(dev, frames, state, stop, stats, ip, port, &latest).await;
     server.abort();
     result
 }
@@ -235,6 +217,7 @@ async fn session_loop(
     frames: FrameSource,
     state: &Mutex<State>,
     stop: &StopFlag,
+    stats: &Mutex<Stats>,
     ip: IpAddr,
     port: u16,
     latest: &Mutex<Latest>,
@@ -246,7 +229,8 @@ async fn session_loop(
     .await
     .context("display did not answer")??;
     tcp.set_nodelay(true)?;
-    let connector = tokio_rustls::TlsConnector::from(tls_config()?);
+    let (cfg, verifier) = tls_config()?;
+    let connector = tokio_rustls::TlsConnector::from(cfg);
     let tls = connector
         .connect(
             rustls::pki_types::ServerName::IpAddress(IpAddr::V4(dev.addr).into()),
@@ -254,6 +238,9 @@ async fn session_loop(
         )
         .await
         .context("secure connection failed")?;
+    if let Some(fp) = verifier.seen_fingerprint() {
+        tracing::info!("cast: {} presented certificate {fp}", dev.name);
+    }
     let (rd, mut wr) = tokio::io::split(tls);
     let (tx, mut rx) = tokio::sync::mpsc::channel::<CastMessage>(64);
     let reader = tokio::spawn(read_frames(rd, tx));
@@ -290,13 +277,19 @@ async fn session_loop(
     let mut transport: Option<(String, String)> = None; // (transportId, sessionId)
     let mut last_hash = 0u64;
     let mut last_load = Instant::now() - MIN_GAP;
+    let mut first_load: Option<Instant> = None;
     let mut last_ping = Instant::now();
     let mut tick = tokio::time::interval(POLL);
     let outcome: Result<()> = loop {
+        // `notify_waiters` is lost if nobody waits at that instant: the flag is the truth.
+        if stop.on.load(Ordering::Relaxed) {
+            break Ok(());
+        }
         tokio::select! {
             _ = stop.wake.notified() => break Ok(()),
             m = rx.recv() => {
                 let Some(m) = m else { break Err(anyhow!("display closed the connection")) };
+                tracing::debug!("cast <- {} {} {}", m.source, m.namespace, m.payload);
                 let v: Value = serde_json::from_str(&m.payload).unwrap_or(Value::Null);
                 let kind = v["type"].as_str().unwrap_or("");
                 match (m.namespace.as_str(), kind) {
@@ -315,7 +308,6 @@ async fn session_loop(
                                 {
                                     say!(t, NS_CONNECTION, json!({"type": "CONNECT"}));
                                     transport = Some((t.into(), s.into()));
-                                    *state.lock().unwrap() = State::Casting;
                                 }
                             }
                             // The receiver app was closed on the display (or replaced).
@@ -325,6 +317,31 @@ async fn session_loop(
                     }
                     (NS_MEDIA, "LOAD_FAILED") | (NS_MEDIA, "INVALID_REQUEST") => {
                         tracing::warn!("display refused a picture: {}", m.payload);
+                        let mut s = stats.lock().unwrap();
+                        s.failed += 1;
+                        s.last_status = kind.to_string();
+                        if s.failed >= 4 && s.acked == 0 {
+                            drop(s);
+                            break Err(anyhow!("the display refuses the pictures"));
+                        }
+                    }
+                    (NS_MEDIA, "MEDIA_STATUS") => {
+                        let st = &v["status"][0];
+                        let player = st["playerState"].as_str().unwrap_or("");
+                        let idle = st["idleReason"].as_str().unwrap_or("");
+                        let mut s = stats.lock().unwrap();
+                        s.acked += 1;
+                        s.last_status = if idle.is_empty() {
+                            player.to_string()
+                        } else {
+                            format!("{player}/{idle}")
+                        };
+                        if idle == "ERROR" {
+                            s.failed += 1;
+                        } else if s.acked == 1 {
+                            // The first answer: the display really shows our pictures now.
+                            *state.lock().unwrap() = State::Casting;
+                        }
                     }
                     _ => {}
                 }
@@ -335,6 +352,16 @@ async fn session_loop(
                         break Err(anyhow!("the display did not start the receiver"));
                     }
                     continue;
+                }
+                // Pictures went out but the display never answered one: it does not take pictures
+                // (some boards run only Chrome's streaming receiver). Say so instead of showing
+                // "connected" over a blank screen.
+                if first_load.is_some_and(|t| t.elapsed() > Duration::from_secs(7))
+                    && stats.lock().unwrap().acked == 0
+                {
+                    break Err(anyhow!(
+                        "the display does not show pictures (it accepts only Cast streaming)"
+                    ));
                 }
                 if last_ping.elapsed() >= Duration::from_secs(5) {
                     last_ping = Instant::now();
@@ -360,6 +387,8 @@ async fn session_loop(
                     l.n += 1;
                     l.n
                 };
+                stats.lock().unwrap().sent += 1;
+                first_load.get_or_insert_with(Instant::now);
                 let (t, sid) = transport.clone().expect("checked above");
                 say!(
                     t,

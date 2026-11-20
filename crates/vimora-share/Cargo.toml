@@ -1,0 +1,11 @@
+[package]
+name = "vimora-share"
+description = "Vimora screen sharing building blocks: capability probe, encoder choice, bounded frame queue, session state machine, receiver profiles"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true

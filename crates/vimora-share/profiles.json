@@ -1,0 +1,49 @@
+[
+  {
+    "id": "generic-miracast",
+    "vendor": "",
+    "protocol": "miracast",
+    "codecs": ["h264"],
+    "max_width": 1280,
+    "max_height": 720,
+    "max_fps": 30,
+    "quirks": [],
+    "confidence": "assumed",
+    "tested": { "status": "untested", "notes": "Conservative start for any Wi-Fi Display sink; the real limits come from the receiver's own capability exchange." }
+  },
+  {
+    "id": "generic-cast",
+    "vendor": "",
+    "protocol": "cast",
+    "codecs": ["h264", "vp8"],
+    "max_width": 1280,
+    "max_height": 720,
+    "max_fps": 30,
+    "quirks": [],
+    "confidence": "assumed",
+    "tested": { "status": "untested", "notes": "Conservative start for any Google Cast display." }
+  },
+  {
+    "id": "google-chromecast-ultra-fw1.36",
+    "vendor": "Google Inc.",
+    "model_contains": ["Chromecast Ultra"],
+    "protocol": "cast",
+    "codecs": ["h264", "vp8"],
+    "max_width": 1920,
+    "max_height": 1080,
+    "max_fps": 30,
+    "quirks": [
+      "x509_v1_certificate",
+      "shared_certificate",
+      "certificate_valid_two_days",
+      "ignores_default_media_receiver",
+      "app_CC1AD845_is_chrome_mirroring"
+    ],
+    "confidence": "observed",
+    "tested": {
+      "status": "partial",
+      "date": "2026-11-20",
+      "notes": "Seen on two classroom boards (names 1-XONA, 2-XONA; cast build 1.36.151708, system build PPR1.180610.011). TLS and the control channel work; the Default Media Receiver LOAD is ignored (no answer), so the display needs Cast streaming (OFFER/ANSWER on the webrtc namespace), which is not implemented yet. Real streaming: untested."
+    }
+  }
+]

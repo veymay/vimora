@@ -79,6 +79,13 @@ async fn casts_a_picture_to_a_display() {
                     if let Some(t) = got_tx.take() {
                         let _ = t.send((url, resp[at..].to_vec()));
                     }
+                    write_msg(
+                        &mut tls,
+                        "sender-0",
+                        NS_MEDIA,
+                        r#"{"type":"MEDIA_STATUS","status":[{"playerState":"PLAYING"}]}"#,
+                    )
+                    .await;
                 }
                 (NS_HEARTBEAT, "PING") => {
                     write_msg(&mut tls, "sender-0", NS_HEARTBEAT, r#"{"type":"PONG"}"#).await;
@@ -109,7 +116,15 @@ async fn casts_a_picture_to_a_display() {
         .unwrap();
     assert!(url.ends_with(".jpg"));
     assert_eq!(body, picture);
+    // "Casting" is shown only once the display has answered the picture.
+    for _ in 0..30 {
+        if session.state() == State::Casting {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
     assert_eq!(session.state(), State::Casting);
+    assert_eq!(session.stats().acked, 1);
 
     session.stop();
     for _ in 0..50 {
@@ -119,4 +134,61 @@ async fn casts_a_picture_to_a_display() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     panic!("session did not stop: {:?}", session.state());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_display_that_ignores_pictures_is_reported_failed_not_connected() {
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let cert = rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_string()]).unwrap();
+    let cfg = rustls::ServerConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![cert.cert.der().clone()],
+            rustls::pki_types::PrivateKeyDer::try_from(cert.key_pair.serialize_der()).unwrap(),
+        )
+        .unwrap();
+    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(cfg));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        let (tcp, _) = listener.accept().await.unwrap();
+        let mut tls = acceptor.accept(tcp).await.unwrap();
+        while let Some(m) = read_msg(&mut tls).await {
+            // Like the real board: starts the app, then ignores every media request.
+            if m.namespace == NS_RECEIVER && m.payload.contains("LAUNCH") {
+                write_msg(
+                    &mut tls,
+                    "sender-0",
+                    NS_RECEIVER,
+                    r#"{"type":"RECEIVER_STATUS","status":{"applications":[{"appId":"CC1AD845","sessionId":"S","transportId":"t"}]}}"#,
+                )
+                .await;
+            }
+        }
+    });
+    let device = Device {
+        id: "mute".into(),
+        name: "Mute".into(),
+        model: String::new(),
+        addr: "127.0.0.1".parse().unwrap(),
+        port,
+    };
+    let session = Session::start(
+        &tokio::runtime::Handle::current(),
+        device,
+        Arc::new(|| Some(vec![0xff, 0xd8, 0xff, 0xd9])),
+    );
+    for _ in 0..150 {
+        match session.state() {
+            State::Failed(why) => {
+                assert!(why.contains("does not show pictures"), "{why}");
+                return;
+            }
+            State::Casting => panic!("must never claim to be casting"),
+            _ => tokio::time::sleep(Duration::from_millis(100)).await,
+        }
+    }
+    panic!("never failed: {:?}", session.state());
 }
