@@ -390,6 +390,7 @@ pub static ROWS: &[Row] = &[
     ("USB fleshka", "USB drive", "USB-накопитель"),
     ("Yoqilgan — ruxsat, o'chirilgan — taqiqlangan. \"Qo'llash\" bosilganda kuchga kiradi va dastur yopiq bo'lsa ham saqlanadi.", "On means allowed, off means blocked. Takes effect when you press \"Apply\" and stays even when the teacher is closed.", "Включено — разрешено, выключено — запрещено. Действует после «Применить» и сохраняется, даже если учитель закрыта."),
     ("Batareya", "Battery", "Батарея"),
+    ("Simsiz displeyga uzatish (aqlli doska)", "Cast to a wireless display (smart board)", "Передать на беспроводной дисплей (умная доска)"),
     ("Batareyada", "On battery", "От батареи"),
     ("Batareyada · {t} qoldi", "On battery · {t} left", "От батареи · осталось {t}"),
     ("Disklar", "Disks", "Диски"),

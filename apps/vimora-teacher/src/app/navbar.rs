@@ -668,6 +668,18 @@ impl TeacherApp {
                                 }
                             }
                         }
+                        // The system's wireless display list (smart boards): the screen goes there
+                        // with the pointer and the board's touch, whatever the program.
+                        {
+                            divider(ui, p, h);
+                            if btn(icons::CAST, "", false)
+                                .show(ui, p)
+                                .tip(tr("Simsiz displeyga uzatish (aqlli doska)"))
+                                .clicked()
+                            {
+                                crate::config::open_wireless_display();
+                            }
+                        }
                         // Live screens on / off: with it off the cards show a plain icon and the
                         // computers send no pictures.
                         {
