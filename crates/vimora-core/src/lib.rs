@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod capture;
+pub mod fsutil;
 pub mod input;
 pub mod net;
 pub mod pin;

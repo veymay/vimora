@@ -6,7 +6,7 @@
 //!   classroom PCs for full capture.
 
 use anyhow::{anyhow, Result};
-use image::{codecs::jpeg::JpegEncoder, imageops::FilterType, ExtendedColorType, RgbaImage};
+use image::{codecs::jpeg::JpegEncoder, ExtendedColorType};
 
 /// Raw RGBA screen image.
 pub struct Frame {
@@ -45,32 +45,82 @@ impl Capturer {
     }
 }
 
+/// Shrinks an RGBA picture to `tw` pixels wide by averaging the source pixels that fall into each
+/// output pixel (a box filter): every source pixel is read about once, which is several times
+/// faster than the general resampling filters and looks right for thumbnails and screens.
+/// Returns the new height and RGB pixels (3 bytes each).
+fn downscale_box(src: &[u8], w: usize, h: usize, tw: usize) -> (usize, Vec<u8>) {
+    let th = (h * tw / w).max(1);
+    let mut out = vec![0u8; tw * th * 3];
+    // Source column range of each output column.
+    let xr: Vec<(usize, usize)> = (0..tw)
+        .map(|x| {
+            let x0 = x * w / tw;
+            let x1 = (((x + 1) * w).div_ceil(tw)).clamp(x0 + 1, w);
+            (x0, x1)
+        })
+        .collect();
+    let mut acc = vec![0u32; tw * 4];
+    for y in 0..th {
+        let y0 = y * h / th;
+        let y1 = (((y + 1) * h).div_ceil(th)).clamp(y0 + 1, h);
+        acc.iter_mut().for_each(|a| *a = 0);
+        for sy in y0..y1 {
+            let row = &src[sy * w * 4..(sy + 1) * w * 4];
+            for (x, &(x0, x1)) in xr.iter().enumerate() {
+                let (mut r, mut g, mut b) = (0u32, 0u32, 0u32);
+                for px in row[x0 * 4..x1 * 4].as_chunks::<4>().0 {
+                    r += px[0] as u32;
+                    g += px[1] as u32;
+                    b += px[2] as u32;
+                }
+                acc[x * 4] += r;
+                acc[x * 4 + 1] += g;
+                acc[x * 4 + 2] += b;
+                acc[x * 4 + 3] += (x1 - x0) as u32;
+            }
+        }
+        let orow = &mut out[y * tw * 3..(y + 1) * tw * 3];
+        for (x, o) in orow.as_chunks_mut::<3>().0.iter_mut().enumerate() {
+            let n = acc[x * 4 + 3].max(1);
+            o[0] = (acc[x * 4] / n) as u8;
+            o[1] = (acc[x * 4 + 1] / n) as u8;
+            o[2] = (acc[x * 4 + 2] / n) as u8;
+        }
+    }
+    (th, out)
+}
+
 /// Downscale to `max_width` (keeping aspect ratio) and JPEG-encode.
 pub fn encode_jpeg(frame: &Frame, max_width: u32, quality: u8) -> Result<(u32, u32, Vec<u8>)> {
-    let img = RgbaImage::from_raw(frame.width, frame.height, frame.rgba.clone())
-        .ok_or_else(|| anyhow!("bad frame buffer"))?;
-    let img = if max_width > 0 && frame.width > max_width {
-        let h = (frame.height as u64 * max_width as u64 / frame.width as u64).max(1) as u32;
-        image::imageops::resize(&img, max_width, h, FilterType::Triangle)
+    let (w, h) = (frame.width as usize, frame.height as usize);
+    if w == 0 || h == 0 || frame.rgba.len() < w * h * 4 {
+        return Err(anyhow!("bad frame buffer"));
+    }
+    let (ow, oh, rgb): (usize, usize, Vec<u8>) = if max_width > 0 && frame.width > max_width {
+        let (th, px) = downscale_box(&frame.rgba, w, h, max_width as usize);
+        (max_width as usize, th, px)
     } else {
-        img
+        // No shrinking: only the alpha byte is dropped.
+        let mut rgb = vec![0u8; w * h * 3];
+        for (o, p) in rgb
+            .as_chunks_mut::<3>()
+            .0
+            .iter_mut()
+            .zip(frame.rgba.as_chunks::<4>().0)
+        {
+            o.copy_from_slice(&p[..3]);
+        }
+        (w, h, rgb)
     };
-    let (w, h) = img.dimensions();
-    let rgb: Vec<u8> = img
-        .as_raw()
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .flat_map(|p| [p[0], p[1], p[2]])
-        .collect();
-    let mut out = Vec::with_capacity((w * h / 4) as usize);
+    let mut out = Vec::with_capacity(ow * oh / 4);
     JpegEncoder::new_with_quality(&mut out, quality.clamp(1, 100)).encode(
         &rgb,
-        w,
-        h,
+        ow as u32,
+        oh as u32,
         ExtendedColorType::Rgb8,
     )?;
-    Ok((w, h, out))
+    Ok((ow as u32, oh as u32, out))
 }
 
 /// Decode a JPEG into RGBA (used by the teacher for thumbnails and by the student for "show").
@@ -350,6 +400,116 @@ mod imp {
         }
         pub fn capture(&mut self, _cursor: bool) -> Result<Frame> {
             bail!("unsupported")
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn frame(w: u32, h: u32, f: impl Fn(u32, u32) -> [u8; 3]) -> Frame {
+        let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                let c = f(x, y);
+                rgba.extend_from_slice(&[c[0], c[1], c[2], 255]);
+            }
+        }
+        Frame {
+            width: w,
+            height: h,
+            rgba,
+        }
+    }
+
+    #[test]
+    fn a_solid_picture_stays_solid_and_keeps_its_proportions() {
+        let f = frame(1920, 1080, |_, _| [200, 40, 90]);
+        let (w, h, jpeg) = encode_jpeg(&f, 480, 60).unwrap();
+        assert_eq!((w, h), (480, 270));
+        let d = decode_jpeg(&jpeg).unwrap();
+        assert_eq!((d.width, d.height), (480, 270));
+        let mid = ((135 * 480 + 240) * 4) as usize;
+        for (got, want) in d.rgba[mid..mid + 3].iter().zip([200u8, 40, 90]) {
+            assert!((*got as i32 - want as i32).abs() <= 6, "{got} vs {want}");
+        }
+    }
+
+    #[test]
+    fn fine_detail_is_averaged_not_dropped() {
+        // One pixel black, one white, alternating: the average is grey.
+        let f = frame(800, 100, |x, _| if x % 2 == 0 { [0; 3] } else { [255; 3] });
+        let (th, px) = downscale_box(&f.rgba, 800, 100, 200);
+        assert_eq!(th, 25);
+        let v = px[(10 * 200 + 50) * 3] as i32;
+        assert!((v - 127).abs() <= 2, "{v}");
+    }
+
+    #[test]
+    fn odd_ratios_and_tiny_targets_work() {
+        let f = frame(1366, 768, |x, y| [(x % 256) as u8, (y % 256) as u8, 7]);
+        for tw in [1366usize, 1365, 1600, 1000, 481, 7, 1] {
+            let (th, px) = downscale_box(&f.rgba, 1366, 768, tw.min(1366));
+            assert_eq!(px.len(), tw.min(1366) * th * 3);
+        }
+        // Smaller than the limit: unchanged size.
+        let (w, h, _) = encode_jpeg(&f, 1600, 70).unwrap();
+        assert_eq!((w, h), (1366, 768));
+        assert!(encode_jpeg(
+            &Frame {
+                width: 4,
+                height: 4,
+                rgba: vec![0; 8]
+            },
+            0,
+            50
+        )
+        .is_err());
+    }
+
+    /// `cargo test -p vimora-core --release -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn speed_of_a_1080p_thumbnail_and_live_frame() {
+        let f = frame(1920, 1080, |x, y| {
+            [(x ^ y) as u8, (x * 3) as u8, (y * 5) as u8]
+        });
+        for (name, mw, q) in [("thumbnail 480", 480, 55), ("live 1600", 1600, 70)] {
+            let t = std::time::Instant::now();
+            let n = 20;
+            let mut len = 0;
+            for _ in 0..n {
+                len = encode_jpeg(&f, mw, q).unwrap().2.len();
+            }
+            println!(
+                "{name}: {:.1} ms per frame, {} KB",
+                t.elapsed().as_secs_f64() * 1000.0 / n as f64,
+                len / 1024
+            );
+            // The way it was before (copy, general resize filter, iterator conversion).
+            let t = std::time::Instant::now();
+            for _ in 0..n {
+                let img = image::RgbaImage::from_raw(f.width, f.height, f.rgba.clone()).unwrap();
+                let hh = (f.height as u64 * mw as u64 / f.width as u64) as u32;
+                let img =
+                    image::imageops::resize(&img, mw, hh, image::imageops::FilterType::Triangle);
+                let rgb: Vec<u8> = img
+                    .as_raw()
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .flat_map(|p| [p[0], p[1], p[2]])
+                    .collect();
+                let mut out = Vec::new();
+                JpegEncoder::new_with_quality(&mut out, q)
+                    .encode(&rgb, mw, hh, ExtendedColorType::Rgb8)
+                    .unwrap();
+            }
+            println!(
+                "{name} (old way): {:.1} ms per frame",
+                t.elapsed().as_secs_f64() * 1000.0 / n as f64
+            );
         }
     }
 }

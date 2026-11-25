@@ -302,9 +302,10 @@ pub fn identity() -> vimora_core::auth::Identity {
 }
 
 pub fn load() -> TeacherConfig {
+    // A file that cannot be read is never taken for "no settings": the backup is used and the
+    // broken file is kept (see `fsutil`).
     let mut c: TeacherConfig = path()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
+        .and_then(|p| vimora_core::fsutil::read_json(&p))
         .unwrap_or_default();
     // Once: the lists typed in by hand start empty (the ready-made categories are untouched).
     if !c.manual_cleared {
@@ -321,7 +322,12 @@ pub fn save(cfg: &TeacherConfig) {
         if let Some(d) = p.parent() {
             let _ = std::fs::create_dir_all(d);
         }
-        if let Err(e) = std::fs::write(&p, serde_json::to_string_pretty(cfg).unwrap_or_default()) {
+        if let Err(e) = vimora_core::fsutil::write_atomic(
+            &p,
+            serde_json::to_string_pretty(cfg)
+                .unwrap_or_default()
+                .as_bytes(),
+        ) {
             tracing::warn!("cannot save config {}: {e}", p.display());
         }
     }

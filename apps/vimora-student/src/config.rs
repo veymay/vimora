@@ -167,7 +167,7 @@ pub fn save(cfg: &Config) -> anyhow::Result<PathBuf> {
                 continue;
             }
         }
-        match std::fs::write(&p, serde_json::to_string_pretty(cfg)?) {
+        match vimora_core::fsutil::write_atomic(&p, serde_json::to_string_pretty(cfg)?.as_bytes()) {
             Ok(()) => return Ok(p),
             Err(e) => last_err = Some(e),
         }

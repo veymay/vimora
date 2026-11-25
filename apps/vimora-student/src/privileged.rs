@@ -981,7 +981,7 @@ fn save_policy<T: Serialize>(name: &str, value: &T) {
         if let Some(d) = path.parent() {
             let _ = std::fs::create_dir_all(d);
         }
-        let _ = std::fs::write(path, j);
+        let _ = vimora_core::fsutil::write_atomic(&path, j.as_bytes());
     }
 }
 
@@ -999,7 +999,7 @@ pub fn block_summary() -> (usize, usize, bool, bool) {
 }
 
 fn load_policy<T: serde::de::DeserializeOwned>(name: &str) -> Option<T> {
-    serde_json::from_str(&std::fs::read_to_string(policy_path(name)).ok()?).ok()
+    vimora_core::fsutil::read_json(&policy_path(name))
 }
 
 /// The installer for `version` (or newer) already finished well, only this service still runs
@@ -1138,15 +1138,13 @@ impl PendingUpdate {
     }
 
     fn load() -> Option<Self> {
-        std::fs::read_to_string(Self::file())
-            .ok()
-            .and_then(|j| serde_json::from_str(&j).ok())
+        vimora_core::fsutil::read_json(&Self::file())
     }
 
     fn save(&self) {
         let _ = std::fs::create_dir_all(update_dir());
         if let Ok(j) = serde_json::to_string(self) {
-            let _ = std::fs::write(Self::file(), j);
+            let _ = vimora_core::fsutil::write_atomic(&Self::file(), j.as_bytes());
         }
     }
 

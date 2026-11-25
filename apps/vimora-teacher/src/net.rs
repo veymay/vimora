@@ -165,6 +165,8 @@ pub struct Hub {
     /// Free computers the teacher told to join ("Qo'shish"), and when: the list shows them as
     /// "joining" until they connect, instead of making them vanish.
     pub claiming: BTreeMap<String, Instant>,
+    /// The network runtime, to let a command wait for room in a computer's queue.
+    pub rt: Option<tokio::runtime::Handle>,
     /// Assignments collected in the current round: student id → number of files.
     pub collected: BTreeMap<u64, usize>,
     /// Screens being recorded (student id → video file).
@@ -189,6 +191,7 @@ impl Hub {
             collected: BTreeMap::new(),
             free: BTreeMap::new(),
             claiming: BTreeMap::new(),
+            rt: None,
             vimora_jobs: BTreeMap::new(),
             result_groups: Vec::new(),
             attendance: Default::default(),
@@ -382,7 +385,9 @@ impl Hub {
                     payload: payload.clone(),
                     sig,
                 };
-                if s.tx.try_send(msg).is_ok() {
+                // Take the queue out of the borrow of `self.students`.
+                let tx = s.tx.clone();
+                if self.queue(&tx, msg, false) {
                     n += 1;
                 }
             }
@@ -392,10 +397,35 @@ impl Hub {
 
     /// Sends to the given students; returns how many accepted the message.
     pub fn send(&self, ids: &[u64], msg: &TeacherMsg) -> usize {
+        // Pictures, pointer events and pings may be dropped when a computer is behind (the next
+        // one replaces them); a command may not: it waits for room (up to 10 s) instead.
+        let droppable = matches!(
+            msg,
+            TeacherMsg::ShowFrame { .. } | TeacherMsg::Input(_) | TeacherMsg::Ping
+        );
         ids.iter()
             .filter_map(|id| self.students.get(id))
-            .filter(|s| s.tx.try_send(msg.clone()).is_ok())
+            .filter(|s| self.queue(&s.tx, msg.clone(), droppable))
             .count()
+    }
+
+    /// Puts a message on a computer's queue. A full queue drops a droppable message and makes
+    /// any other wait for room. Returns whether the message was taken.
+    fn queue(&self, tx: &mpsc::Sender<TeacherMsg>, msg: TeacherMsg, droppable: bool) -> bool {
+        match tx.try_send(msg) {
+            Ok(()) => true,
+            Err(mpsc::error::TrySendError::Full(m)) if !droppable => match &self.rt {
+                Some(rt) => {
+                    let tx = tx.clone();
+                    rt.spawn(async move {
+                        let _ = tokio::time::timeout(Duration::from_secs(10), tx.send(m)).await;
+                    });
+                    true
+                }
+                None => false,
+            },
+            Err(_) => false,
+        }
     }
 }
 
@@ -437,6 +467,7 @@ pub fn start(hub: SharedHub, cfg: SharedConfig, show: Arc<Show>) {
                 .build()
                 .expect("tokio runtime");
             rt.block_on(async move {
+                hub.lock().unwrap().rt = Some(tokio::runtime::Handle::current());
                 tokio::spawn(beacon_task(cfg.clone(), teacher_key));
                 if let Err(e) = listen(hub.clone(), cfg).await {
                     hub.lock().unwrap().log(

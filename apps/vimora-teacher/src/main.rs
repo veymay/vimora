@@ -9,6 +9,7 @@ mod cast;
 mod config;
 mod i18n_table;
 mod lanupdate;
+mod logfile;
 mod net;
 mod single;
 mod sound;
@@ -36,7 +37,10 @@ fn main() -> eframe::Result<()> {
         // Still single-threaded here, so changing the environment is safe.
         std::env::remove_var("WAYLAND_DISPLAY");
     }
+    logfile::init();
     tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(logfile::Tee)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "info,wgpu=warn,eframe=warn".into()),

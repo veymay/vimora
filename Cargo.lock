@@ -5040,6 +5040,7 @@ dependencies = [
  "image",
  "rand 0.8.8",
  "serde",
+ "serde_json",
  "sha2",
  "tokio",
  "windows-sys 0.59.0",

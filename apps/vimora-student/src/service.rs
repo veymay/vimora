@@ -93,16 +93,13 @@ pub struct ServiceConfig {
 
 impl ServiceConfig {
     fn load() -> Self {
-        std::fs::read_to_string(config_path())
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        vimora_core::fsutil::read_json(&config_path()).unwrap_or_default()
     }
 
     fn save(&self) -> Result<()> {
         let path = config_path();
         std::fs::create_dir_all(path.parent().unwrap())?;
-        std::fs::write(&path, serde_json::to_string_pretty(self)?)?;
+        vimora_core::fsutil::write_atomic(&path, serde_json::to_string_pretty(self)?.as_bytes())?;
         restrict(&path)
     }
 
