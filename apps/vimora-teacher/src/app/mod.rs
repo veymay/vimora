@@ -525,6 +525,7 @@ impl TeacherApp {
             h.students.insert(
                 id,
                 crate::net::Student {
+                    kick: Default::default(),
                     addr: format!("192.168.1.{}:5000", 10 + i).parse().unwrap(),
                     info: vimora_core::StudentInfo {
                         hostname: format!("PC-{}", i + 1),

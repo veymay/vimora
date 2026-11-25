@@ -121,6 +121,17 @@ pub fn broadcast_targets() -> Vec<std::net::Ipv4Addr> {
     v
 }
 
+/// Is `ip` still one of this computer's addresses? A session whose local address is gone (the
+/// network changed: another Wi-Fi, a cable pulled, a new lease) is dead; waiting for a timeout to
+/// find out only keeps the computer out of the list for longer.
+pub fn local_ip_exists(ip: std::net::IpAddr) -> bool {
+    match if_addrs::get_if_addrs() {
+        Ok(list) => list.iter().any(|i| i.ip() == ip),
+        // Cannot tell: assume it is there (a timeout will find out).
+        Err(_) => true,
+    }
+}
+
 /// "Who is waiting to be added?": broadcast by a teacher when the teacher presses "Skanerlash".
 /// Computers that belong to no teacher answer at once with `StudentMsg::Free` over TCP to the
 /// datagram's source address and the teacher TCP port it carries.

@@ -23,6 +23,8 @@ use vimora_core::{
 use vimora_ui::{tf, tr};
 
 pub struct Student {
+    /// Rung when the same computer connects again: this (old, maybe dead) session ends at once.
+    pub kick: Arc<tokio::sync::Notify>,
     pub addr: SocketAddr,
     pub info: StudentInfo,
     pub status: StudentStatus,
@@ -160,6 +162,9 @@ pub struct Hub {
     pub vimora_jobs: BTreeMap<String, VimoraJob>,
     pub result_groups: Vec<ResultGroup>,
     pub free: BTreeMap<String, (vimora_core::StudentInfo, std::net::IpAddr, Instant, bool)>,
+    /// Free computers the teacher told to join ("Qo'shish"), and when: the list shows them as
+    /// "joining" until they connect, instead of making them vanish.
+    pub claiming: BTreeMap<String, Instant>,
     /// Assignments collected in the current round: student id → number of files.
     pub collected: BTreeMap<u64, usize>,
     /// Screens being recorded (student id → video file).
@@ -183,6 +188,7 @@ impl Hub {
             relay: None,
             collected: BTreeMap::new(),
             free: BTreeMap::new(),
+            claiming: BTreeMap::new(),
             vimora_jobs: BTreeMap::new(),
             result_groups: Vec::new(),
             attendance: Default::default(),
@@ -350,9 +356,12 @@ impl Hub {
         self.repaint();
     }
 
+    /// Asks for a new UI frame soon. Many computers send something every second, so this asks
+    /// "within 40 ms" (requests merge into the earliest one) instead of "now": the screen is
+    /// redrawn at most ~25 times a second however many messages arrive, not once per message.
     pub fn repaint(&self) {
         if let Some(c) = &self.ctx {
-            c.request_repaint();
+            c.request_repaint_after(Duration::from_millis(40));
         }
     }
 
@@ -543,6 +552,7 @@ async fn session(
     cfg: SharedConfig,
 ) -> Result<()> {
     stream.set_nodelay(true)?;
+    let local_ip = stream.local_addr().ok().map(|a| a.ip());
     let (rd, wr) = stream.into_split();
     let (mut rd, mut wr) = (
         vimora_core::secure::Reader::new(rd),
@@ -675,13 +685,32 @@ async fn session(
     .await?;
 
     let (tx, mut rx) = mpsc::channel::<TeacherMsg>(64);
+    let kick = Arc::new(tokio::sync::Notify::new());
     let id = {
         let mut h = hub.lock().unwrap();
+        // The same computer connecting again (its network changed, it restarted): the older
+        // session is a dead one still waiting for its timeout. It goes now, so the computer is
+        // never listed twice and commands never go down a dead connection.
+        let key = info.key();
+        let old: Vec<u64> = h
+            .students
+            .iter()
+            .filter(|(_, s)| s.info.key() == key)
+            .map(|(i, _)| *i)
+            .collect();
+        for i in old {
+            if let Some(s) = h.students.remove(&i) {
+                s.kick.notify_one();
+            }
+        }
+        h.free.remove(&key);
+        h.claiming.remove(&key);
         h.next_id += 1;
         let id = h.next_id;
         h.students.insert(
             id,
             Student {
+                kick: kick.clone(),
                 addr,
                 info: info.clone(),
                 status: StudentStatus::default(),
@@ -771,7 +800,7 @@ async fn session(
         let tx = tx.clone();
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(Duration::from_secs(5)).await;
+                tokio::time::sleep(Duration::from_secs(2)).await;
                 if tx.send(TeacherMsg::Ping).await.is_err() {
                     break;
                 }
@@ -779,15 +808,27 @@ async fn session(
         })
     };
 
+    let mut net_tick = tokio::time::interval(Duration::from_secs(2));
     let result: Result<()> = async {
         loop {
-            let msg: StudentMsg =
-                match tokio::time::timeout(Duration::from_secs(20), read_msg(&mut rd)).await? {
-                    Ok(m) => m,
-                    // A newer agent's message this teacher doesn't know: skip it, stay connected.
-                    Err(e) if vimora_core::net::is_undecodable(&e) => continue,
-                    Err(e) => return Err(e),
-                };
+            let read = loop {
+                tokio::select! {
+                    r = tokio::time::timeout(Duration::from_secs(7), read_msg(&mut rd)) => break r?,
+                    _ = kick.notified() => return Ok(()), // replaced by a newer session
+                    // This computer's address is gone (another network): the session is dead.
+                    _ = net_tick.tick() => {
+                        if local_ip.is_some_and(|ip| !vimora_core::net::local_ip_exists(ip)) {
+                            bail!("the network changed");
+                        }
+                    }
+                }
+            };
+            let msg: StudentMsg = match read {
+                Ok(m) => m,
+                // A newer agent's message this teacher doesn't know: skip it, stay connected.
+                Err(e) if vimora_core::net::is_undecodable(&e) => continue,
+                Err(e) => return Err(e),
+            };
             if cfg.read().unwrap().removed.contains(&info.key()) {
                 return Ok(()); // removed while connected
             }
@@ -1076,8 +1117,11 @@ async fn session(
         }
     }
     let mut h = hub.lock().unwrap();
-    h.students.remove(&id);
-    h.log(Level::Info, tf!("{v0} uzildi", v0 = info.label()));
+    // Only a session that is still the listed one reports the computer as gone (a replaced one
+    // was removed when its successor came).
+    if h.students.remove(&id).is_some() {
+        h.log(Level::Info, tf!("{v0} uzildi", v0 = info.label()));
+    }
     result
 }
 

@@ -9,10 +9,13 @@ pub(super) async fn session(
     ov_tx: &mpsc::Sender<OverlayReq>,
 ) -> Result<()> {
     let state = &ctx.state;
-    let stream = tokio::time::timeout(Duration::from_secs(5), TcpStream::connect(addr))
+    // A teacher on the local network answers in milliseconds: an address that does not answer
+    // within two seconds is an old one.
+    let stream = tokio::time::timeout(Duration::from_secs(2), TcpStream::connect(addr))
         .await
         .context("connect timeout")??;
     stream.set_nodelay(true)?;
+    let local_ip = stream.local_addr().ok().map(|a| a.ip());
     let (rd, wr) = stream.into_split();
     let (mut rd, mut wr) = (
         vimora_core::secure::Reader::new(rd),
@@ -254,17 +257,26 @@ pub(super) async fn session(
         })
     };
 
+    let mut net_tick = tokio::time::interval(Duration::from_secs(2));
     // --- main read loop ----------------------------------------------------------------------
     let result: Result<()> = async {
         loop {
             let msg: TeacherMsg = match if let Some(m) = carry.take() {
                 Ok(m)
             } else {
-                tokio::select! {
-                    r = tokio::time::timeout(Duration::from_secs(20), read_msg(&mut rd)) => {
-                        r.context("teacher timed out")?
+                loop {
+                    tokio::select! {
+                        r = tokio::time::timeout(Duration::from_secs(7), read_msg(&mut rd)) => {
+                            break r.context("teacher timed out")?;
+                        }
+                        _ = goodbye.notified() => bail!("o'qituvchidan ajratildi"),
+                        // The network changed under the session: it is dead, start looking again.
+                        _ = net_tick.tick() => {
+                            if local_ip.is_some_and(|ip| !vimora_core::net::local_ip_exists(ip)) {
+                                bail!("the network changed");
+                            }
+                        }
                     }
-                    _ = goodbye.notified() => bail!("o'qituvchidan ajratildi"),
                 }
             } {
                 Ok(m) => m,

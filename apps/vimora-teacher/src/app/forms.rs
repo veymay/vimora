@@ -3630,7 +3630,26 @@ fn free_pcs_form(
                         ))
                         .layout(Layout::right_to_left(Align::Center)),
                 );
-                if ui_kit::button(&mut b, Some(icons::PLUS), tr("Qo'shish"), Kind::Primary)
+                let joining = cx
+                    .hub
+                    .lock()
+                    .unwrap()
+                    .claiming
+                    .get(key)
+                    .is_some_and(|t| t.elapsed().as_secs() < 8);
+                if joining {
+                    // Told to join: it connects in a moment (and then leaves this list).
+                    egui::Spinner::new().size(16.0).color(p.accent).paint_at(
+                        &b,
+                        Rect::from_center_size(
+                            pos2(r.right() - 24.0, r.center().y),
+                            vec2(16.0, 16.0),
+                        ),
+                    );
+                    b.label(RichText::new(tr("Qo'shilmoqda…")).size(12.0).color(p.muted));
+                    b.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(100));
+                } else if ui_kit::button(&mut b, Some(icons::PLUS), tr("Qo'shish"), Kind::Primary)
                     .clicked()
                 {
                     add.push(key.clone());
@@ -3647,7 +3666,22 @@ fn free_pcs_form(
         )
         .clicked()
     {
-        add.extend(free.iter().map(|f| f.0.clone()));
+        let busy: Vec<String> = {
+            let h = cx.hub.lock().unwrap();
+            free.iter()
+                .filter(|f| {
+                    h.claiming
+                        .get(&f.0)
+                        .is_some_and(|t| t.elapsed().as_secs() < 8)
+                })
+                .map(|f| f.0.clone())
+                .collect()
+        };
+        add.extend(
+            free.iter()
+                .map(|f| f.0.clone())
+                .filter(|k| !busy.contains(k)),
+        );
     }
 }
 

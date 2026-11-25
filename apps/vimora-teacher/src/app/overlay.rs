@@ -1231,7 +1231,9 @@ impl TeacherApp {
         }
         let mut h = self.hub.lock().unwrap();
         for key in keys {
-            if let Some((info, ip, _, _)) = h.free.remove(&key) {
+            // The computer stays in the list as "joining" until it connects (or a while passes).
+            if let Some((info, ip, _, _)) = h.free.get(&key).cloned() {
+                h.claiming.insert(key.clone(), Instant::now());
                 crate::net::claim(ip, &key, port);
                 h.unpaired.remove(&key);
                 // Removed here before: welcome back.

@@ -2,6 +2,7 @@
 //! and supervision of the overlay process.
 
 mod chat_supervisor;
+mod lan;
 mod lesson_supervisor;
 mod overlay_supervisor;
 mod session;
@@ -237,6 +238,8 @@ pub async fn run(cfg: Config) -> Result<()> {
     let _ = system::assignment_dir();
     tray::start(state.clone());
     probe_ui().await;
+    // Hears the teachers' beacons, scans and claims for the whole life of the agent.
+    lan::start(my_info(cfg.name.clone()).key());
     let (ov_tx, ov_rx) = mpsc::channel(16);
     tokio::spawn(overlay_task(state.clone(), ov_rx));
     {
@@ -378,66 +381,39 @@ fn my_info(name: Option<String>) -> StudentInfo {
 
 async fn free_mode(name: Option<String>) -> String {
     let info = my_info(name);
-    let key = info.key();
     info!("free: waiting for a teacher to add this computer");
+    // The teacher used last (if any) hears "I am free" even without its broadcasts.
+    let mut teachers: std::collections::BTreeSet<String> = Default::default();
+    if let Some(last) = crate::config::last_teacher() {
+        teachers.insert(last);
+    }
+    let mut last_hello = Instant::now() - Duration::from_secs(60);
+    let say = |addr: String, info: StudentInfo| {
+        tokio::spawn(async move {
+            let _ = tokio::time::timeout(Duration::from_secs(4), say_free(&addr, info)).await;
+        });
+    };
     loop {
-        let sock = match UdpSocket::bind(("0.0.0.0", DISCOVERY_PORT)).await {
-            Ok(s) => s,
-            Err(e) => {
-                warn!("cannot listen for discovery on UDP {DISCOVERY_PORT}: {e}");
-                tokio::time::sleep(Duration::from_secs(3)).await;
-                continue;
-            }
-        };
-        let mut teachers: std::collections::BTreeSet<String> = Default::default();
-        // The teacher used last (if any) hears "I am free" even without its broadcasts.
-        if let Some(last) = crate::config::last_teacher() {
-            teachers.insert(last);
+        // A teacher said "take this computer".
+        if let Some(addr) = lan::take_claim() {
+            info!("free: added by the teacher at {addr}");
+            return addr;
         }
-        let mut last_hello = Instant::now() - Duration::from_secs(60);
-        let mut buf = [0u8; 2048];
-        loop {
-            // Say hello to every teacher seen so far, every 5 s.
-            if last_hello.elapsed() > Duration::from_secs(5) {
-                last_hello = Instant::now();
-                for addr in teachers.clone() {
-                    let info = info.clone();
-                    tokio::spawn(async move {
-                        let _ = tokio::time::timeout(Duration::from_secs(4), say_free(&addr, info))
-                            .await;
-                    });
-                }
-            }
-            let Ok(Ok((n, src))) =
-                tokio::time::timeout(Duration::from_secs(1), sock.recv_from(&mut buf)).await
-            else {
-                continue;
-            };
-            if let Some((target, port)) = vimora_core::net::decode_claim(&buf[..n]) {
-                if target == key {
-                    let addr = format!("{}:{port}", src.ip());
-                    info!("free: added by the teacher at {addr}");
-                    return addr;
-                }
-                continue;
-            }
-            // A teacher pressed "Skanerlash": answer that teacher right away.
-            if let Some(port) = vimora_core::net::decode_scan(&buf[..n]) {
-                let addr = format!("{}:{port}", src.ip());
-                teachers.insert(addr.clone());
-                let info = info.clone();
-                tokio::spawn(async move {
-                    let _ =
-                        tokio::time::timeout(Duration::from_secs(4), say_free(&addr, info)).await;
-                });
-                continue;
-            }
-            if let Some(b) = vimora_core::net::decode_beacon(&buf[..n]) {
-                if b.version >= MIN_PROTOCOL_VERSION {
-                    teachers.insert(format!("{}:{}", src.ip(), b.tcp_port));
-                }
+        // A teacher pressed "Skanerlash": answer that teacher right away.
+        for addr in lan::take_scans() {
+            teachers.insert(addr.clone());
+            say(addr, info.clone());
+        }
+        // Every teacher seen so far hears us every 5 s (and a teacher that just appeared, now).
+        let fresh = lan::fresh_teachers();
+        let new_one = fresh.iter().any(|a| teachers.insert(a.clone()));
+        if new_one || last_hello.elapsed() > Duration::from_secs(5) {
+            last_hello = Instant::now();
+            for addr in teachers.clone() {
+                say(addr, info.clone());
             }
         }
+        lan::news(Duration::from_secs(1)).await;
     }
 }
 
@@ -468,51 +444,19 @@ async fn refresh_pin(ctx: &Ctx) -> Option<vimora_core::auth::TeacherKey> {
 async fn discover(
     pin: Option<vimora_core::auth::TeacherKey>,
     skip: Vec<String>,
-    key: String,
+    _key: String,
 ) -> String {
     loop {
-        let sock = match UdpSocket::bind(("0.0.0.0", DISCOVERY_PORT)).await {
-            Ok(s) => s,
-            Err(e) => {
-                warn!("cannot listen for discovery on UDP {DISCOVERY_PORT}: {e}");
-                tokio::time::sleep(Duration::from_secs(3)).await;
-                continue;
-            }
-        };
-        let mut buf = [0u8; 2048];
-        loop {
-            let Ok((n, src)) = sock.recv_from(&mut buf).await else {
-                break;
-            };
-            if let Some((target, port)) = vimora_core::net::decode_claim(&buf[..n]) {
-                if target == key {
-                    info!("added back by the teacher at {}", src.ip());
-                    return format!("{}:{port}", src.ip());
-                }
-                continue;
-            }
-            let Some(b) = vimora_core::net::decode_beacon(&buf[..n]) else {
-                continue;
-            };
-            if b.version < MIN_PROTOCOL_VERSION || pin.is_some_and(|k| k != b.teacher_key) {
-                continue;
-            }
-            if skip.contains(&format!("{}:{}", src.ip(), b.tcp_port)) {
-                continue;
-            }
-            info!(
-                "found teacher '{}' at {} ({})",
-                b.server_name,
-                src.ip(),
-                vimora_core::auth::fingerprint(&b.teacher_key)
-            );
-            let addr = format!("{}:{}", src.ip(), b.tcp_port);
-            TEACHER_NAMES
-                .lock()
-                .unwrap()
-                .insert(addr.clone(), b.server_name.clone());
+        // "Added back" by a teacher that turned this computer away before.
+        if let Some(addr) = lan::take_claim() {
+            info!("added back by the teacher at {addr}");
             return addr;
         }
+        if let Some(addr) = lan::best_teacher(pin, &skip) {
+            info!("found teacher at {addr}");
+            return addr;
+        }
+        lan::news(Duration::from_millis(500)).await;
     }
 }
 

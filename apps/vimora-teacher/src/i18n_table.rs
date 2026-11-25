@@ -180,6 +180,7 @@ pub static ROWS: &[Row] = &[
     ("Hozir bo'sh kompyuter yo'q.", "No free computers right now.", "Сейчас свободных компьютеров нет."),
     ("O'qituvchidan olib tashlangan kompyuterlar: qo'shish uchun bosing", "Computers removed from a teacher: click to add", "Компьютеры, удалённые из учителя: нажмите, чтобы добавить"),
     ("{name} qo'shilmoqda", "Adding {name}", "Добавляется {name}"),
+    ("Qo'shilmoqda…", "Joining…", "Подключается…"),
     ("{n} ta bo'sh kompyuter", "{n} free computers", "Свободных компьютеров: {n}"),
     ("Bu yerda kompyuterdagi o'zgarishlar ko'rinadi (Ubuntu). Windows'da yo'lni o'zingiz yozing.", "Changes on the computer show up here (Ubuntu). On Windows, type the path yourself.", "Здесь видны изменения на компьютере (Ubuntu). В Windows введите путь сами."),
     ("Doim saqlanadigan fayl va papkalar", "Files and folders always kept", "Всегда сохраняемые файлы и папки"),
